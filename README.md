@@ -1,8 +1,9 @@
 <div align="center">
 
-# 📝 Agent.md
+<img src="assets/agentmd_banner.png" alt="Agent.md" width="800" alt="Agent.md - Markdown In, Agents Out" description="Agent.md - Markdown In, Agents Out"/>
+<br>
+<br/>
 
-**Markdown In, Agents Out.**
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -271,6 +272,50 @@ You are a precise text summarizer. Your task:
 4. Save the summary to `summary.txt`
 
 Be concise but don't miss important details. Use clear, direct language.
+```
+
+---
+
+## 📑 Versioning & GitOps
+
+Since every agent is a plain Markdown file, you get **developer superpowers for free**:
+
+| Practice | How it works with Agent.md |
+|---|---|
+| **Prompt versioning** | `git diff` shows exactly how a system prompt changed and when |
+| **Instant rollback** | Agent hallucinating? `git checkout` the previous `.md` version |
+| **Prompt code review** | Use Pull Requests to review agent logic before it hits production |
+| **Config as code** | Switched from `gemini-2.5-flash` to `gemini-2.5-pro`? It's in your commit history |
+
+> Think of it as **Infrastructure as Documentation** — your agents are version-controlled, diffable, and reviewable just like any other code.
+
+---
+
+## 🛡️ Security & Best Practices
+
+When you give tools to an agent, you're giving it the ability to interact with your system. Follow these guidelines for safe execution:
+
+### 1. Least Privilege
+
+- **File scope** — Agent.md writes to the `output/` directory by default. Avoid granting write access to system or config directories.
+- **Critical tools** — Only enable `http_request` if the agent actually needs external data.
+
+### 2. Secret Management
+
+- **Never** put API keys in the Markdown body or YAML frontmatter.
+- Use the `.env` file to load environment variables. The Agent.md runtime injects them automatically into model and tool calls.
+
+### 3. Infinite Loops & Costs
+
+- **Timeouts** — Always set a `timeout` in the frontmatter to prevent runaway executions.
+- **Token tracking** — Monitor usage via `agentmd logs`. Agents on `interval` or `cron` triggers can generate unexpected costs if prompts are too long or intervals too frequent.
+
+### 4. Pre-validation
+
+Before scheduling an agent, always validate it:
+
+```bash
+agentmd validate workspace/my-agent.md
 ```
 
 ---
