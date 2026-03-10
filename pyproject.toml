@@ -1,0 +1,42 @@
+[project]
+name = "agentmd"
+version = "0.1.0"
+authors = [
+    { name = "Fabricio Zillig", email = "me@zfab.me" },
+]
+description = "Agent.md is a markdown-first runtime for AI agents."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "apscheduler>=3.11.2",
+    "langchain-google-genai>=4.2.1",
+    "langgraph>=1.1.0",
+    "pydantic-settings>=2.13.1",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+    "rich>=14.3.3",
+    "typer>=0.24.1",
+    "watchdog>=6.0.0",
+]
+
+[project.scripts]
+agentmd = "agent_md.main:app"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.5",
+]
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["agent_md*"]
+
+[tool.ruff]
+line-length = 120
