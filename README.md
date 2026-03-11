@@ -188,7 +188,7 @@ MIT License — use it, fork it, build on it.
 
 **Built with ❤️ and Markdown**
 
-*If agents could write their own definition files, they'd choose Markdown too.*
+*If agents could write themselves, they'd choose Markdown too.*
 
 [⭐ Star on GitHub](https://github.com/zfab/agentmd) • [📖 Read the Docs](https://zfab.github.io/agentmd)
 
