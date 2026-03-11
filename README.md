@@ -9,8 +9,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Built with LangGraph](https://img.shields.io/badge/built%20with-LangGraph-FF6F00)](https://github.com/langchain-ai/langgraph)
 
-Agent.md is a **markdown-first runtime** for AI agents.  
-Write a `.md` file, describe what your agent should do, and let it run — manually, on a schedule, or on a loop.
+Agent.md is a **markdown-first runtime** for AI agents.
+Write a `.md` file, describe what your agent should do, and let it run — manually, on a schedule, or when files change.
 
 No boilerplate. No frameworks to learn. Just Markdown.
 
@@ -24,8 +24,8 @@ Most agent frameworks require dozens of files, complex configurations, and deep 
 
 - 📄 **One file = One agent** — each `.md` file is a complete agent definition
 - ⚡ **Zero boilerplate** — YAML frontmatter for config, Markdown body for the prompt
-- 🕐 **Built-in scheduling** — cron expressions, intervals, or manual triggers
-- 🔧 **Pluggable tools** — file I/O, HTTP requests, and more out of the box
+- 🕐 **Flexible triggers** — run manually, on schedules, or watch files for changes
+- 🔧 **Built-in tools** — file I/O, HTTP requests available without configuration
 - 📊 **Execution tracking** — every run is logged with status, duration, and token usage
 - 🔌 **MCP support** — connect to any MCP server and use its tools in your agents
 - 🖥️ **Beautiful CLI** — Rich-powered terminal output with tables, colors, and status indicators
@@ -70,9 +70,24 @@ uv pip install -e ".[anthropic]"
 uv pip install -e ".[ollama]"
 ```
 
+**Optional: Configure workspace paths**
+
+By default, Agent.md uses `./workspace` for agents and output. You can customize locations via environment variables:
+
+```bash
+# Optional: customize workspace paths in .env
+echo "AGENTMD_WORKSPACE=/path/to/my/workspace" >> .env
+echo "AGENTMD_AGENTS_DIR=/path/to/agents" >> .env
+echo "AGENTMD_OUTPUT_DIR=/path/to/output" >> .env
+echo "AGENTMD_DB_PATH=/path/to/agentmd.db" >> .env
+echo "AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json" >> .env
+```
+
+See **[Workspace & Paths](#-workspace--paths)** section for full details on path resolution.
+
 ### 3. Create your first agent
 
-Create a file at `workspace/hello-world.md`:
+Create a file at `workspace/agents/hello-world.md`:
 
 ```markdown
 ---
@@ -81,10 +96,6 @@ description: A simple test agent that greets the user
 model:
   provider: google
   name: gemini-2.5-flash
-trigger:
-  type: manual
-tools:
-  - file_write
 settings:
   temperature: 0.7
   timeout: 30
@@ -105,7 +116,7 @@ agentmd run hello-world
 ```
 
 ```
-▶ Running hello-world  google/gemini-2.5-flash  tools: file_write
+▶ Running hello-world  google/gemini-2.5-flash
 
 11:32:04 hello-world 🤖 I'll create a friendly greeting for you and save it...
 11:32:05 hello-world 🔧 file_write → {'file_path': 'greeting.txt', 'content': '...'}
@@ -127,7 +138,7 @@ Every agent is a single `.md` file with two parts:
 
 | Section | Purpose |
 |---|---|
-| **YAML Frontmatter** | Configuration (model, trigger, tools, settings) |
+| **YAML Frontmatter** | Configuration (model, trigger, settings) |
 | **Markdown Body** | System prompt — what the agent should do |
 
 ### Frontmatter Reference
@@ -135,21 +146,26 @@ Every agent is a single `.md` file with two parts:
 ```yaml
 ---
 name: my-agent              # Unique identifier (alphanumeric, hyphens, underscores)
-description: What it does    # Human-readable description
+description: What it does    # Human-readable description (optional)
 model:
   provider: google           # LLM provider (see table below)
   name: gemini-2.5-flash     # Model name
   # base_url: http://...     # For 'local' provider (or use 'url' as alias)
 trigger:
-  type: interval             # manual | interval | cron
-  interval: 30m              # For interval: 30s, 5m, 2h, 1d
-  # schedule: "0 9 * * *"    # For cron: standard cron expression
-tools:                       # Built-in tools to enable
-  - file_read
-  - file_write
-  - http_request
+  type: manual               # manual | schedule | watch (default: manual)
+  # every: 30m               # For schedule: 30s, 5m, 2h, 1d
+  # cron: "0 9 * * *"        # For schedule: standard cron expression
+  # paths: output/           # For watch: file or directory to monitor
+custom_tools:                # Custom tools from workspace/agents/tools/ (optional)
+  - my_tool
 mcp:                         # MCP servers to connect (optional)
   - fetch
+read:                        # Files/dirs agent can read (optional, defaults to workspace root)
+  - data/
+  - config.json
+write:                       # Files/dirs agent can write (optional, defaults to output/)
+  - output/
+  - reports/
 settings:
   temperature: 0.7           # LLM temperature (0.0 - 1.0)
   max_tokens: 4096           # Max output tokens
@@ -157,6 +173,55 @@ settings:
 enabled: true                # Enable/disable without deleting
 ---
 ```
+
+### Trigger Types
+
+| Type | Description | Configuration |
+|---|---|---|
+| `manual` | Run only when explicitly invoked via `agentmd run` | No additional config needed |
+| `schedule` | Run on a time-based schedule | Requires `every: "5m"` **OR** `cron: "0 9 * * *"` |
+| `watch` | Run when monitored files/directories change | Requires `paths: ["output/", "data.json"]` |
+
+**Schedule examples:**
+```yaml
+# Run every 30 seconds
+trigger:
+  type: schedule
+  every: 30s
+
+# Run daily at 9 AM
+trigger:
+  type: schedule
+  cron: "0 9 * * *"
+```
+
+**Watch examples:**
+```yaml
+# Watch a directory (recursive)
+trigger:
+  type: watch
+  paths: output/
+
+# Watch specific files
+trigger:
+  type: watch
+  paths:
+    - data/input.csv
+    - config.json
+
+# Watch multiple paths
+trigger:
+  type: watch
+  paths:
+    - logs/
+    - reports/summary.txt
+```
+
+When a watch trigger fires, the agent receives context about what changed:
+- `created: /path/to/new-file.txt`
+- `modified: /path/to/existing-file.txt`
+- `deleted: /path/to/removed-file.txt`
+- `moved: /old/path.txt -> /new/path.txt`
 
 ### Supported Providers
 
@@ -190,6 +255,31 @@ model:
 | `agentmd logs <agent>` | Show execution history with token usage |
 | `agentmd logs <agent> -e <id>` | Show detailed messages for a specific run |
 | `agentmd validate <file>` | Validate an agent file without running it |
+
+### Workspace Options
+
+All commands support optional workspace path arguments that override environment variables:
+
+| Flag | Description | Default |
+|---|---|---|
+| `--workspace PATH` | Root workspace directory | `./workspace` or `$AGENTMD_WORKSPACE` |
+| `--agents-dir PATH` | Agents directory | `{workspace}/agents` or `$AGENTMD_AGENTS_DIR` |
+| `--output-dir PATH` | Output directory | `{workspace}/output` or `$AGENTMD_OUTPUT_DIR` |
+| `--db-path PATH` | Database file path | `./data/agentmd.db` or `$AGENTMD_DB_PATH` |
+| `--mcp-config PATH` | MCP config file | `{agents_dir}/mcp-servers.json` or `$AGENTMD_MCP_CONFIG` |
+
+**Example:**
+```bash
+# Run with custom workspace
+agentmd start --workspace /opt/production/agents
+
+# Use production agents but development database
+agentmd run my-agent \
+  --workspace /opt/production/agents \
+  --db-path /tmp/dev-test.db
+```
+
+See **[Workspace & Paths](#-workspace--paths)** for full details on path resolution.
 
 ### Verbosity
 
@@ -229,14 +319,14 @@ agentmd list
 agentmd logs daily-quote -n 5
 
 # Validate before deploying
-agentmd validate workspace/my-agent.md
+agentmd validate workspace/agents/my-agent.md
 ```
 
 ---
 
 ## 🔧 Built-in Tools
 
-Agents can use tools by listing them in the `tools` frontmatter field:
+All agents have automatic access to these tools without any configuration:
 
 | Tool | Description |
 |---|---|
@@ -244,7 +334,53 @@ Agents can use tools by listing them in the `tools` frontmatter field:
 | `file_write` | Write or create files |
 | `http_request` | Make HTTP requests (GET, POST, etc.) |
 
-More tools coming soon — and the registry is designed to be easily extensible.
+**No need to declare them** — they're always available. The agent chooses when to use them based on the task.
+
+### File Access Security
+
+By default:
+- Agents can **read** from anywhere in the workspace
+- Agents can **write** only to the `output/` directory
+
+You can customize this with `read` and `write` fields:
+
+```yaml
+---
+name: data-processor
+model:
+  provider: google
+  name: gemini-2.5-flash
+read:
+  - data/          # Allow reading from data/ directory
+  - config.json    # Allow reading specific file
+write:
+  - output/
+  - reports/       # Allow writing to additional directory
+---
+```
+
+**Watch triggers automatically grant read access** to monitored paths, so agents can read files they're watching.
+
+### Custom Tools
+
+Create custom tools by adding Python files to `workspace/agents/tools/`:
+
+```python
+# workspace/agents/tools/my_tool.py
+from langchain_core.tools import tool
+
+@tool
+def my_tool(input: str) -> str:
+    """Description of what my tool does."""
+    return f"Processed: {input}"
+```
+
+Then reference them in the agent frontmatter:
+
+```yaml
+custom_tools:
+  - my_tool
+```
 
 ---
 
@@ -254,7 +390,7 @@ Agents can use tools from external [MCP (Model Context Protocol)](https://modelc
 
 ### 1. Configure servers
 
-Create a `mcp-servers.json` file in your workspace directory:
+Create `workspace/agents/mcp-servers.json`:
 
 ```json
 {
@@ -291,8 +427,6 @@ model:
   name: gemini-2.5-flash
 trigger:
   type: manual
-tools:
-  - file_write
 mcp:
   - fetch
 settings:
@@ -307,7 +441,124 @@ the content of a URL and write a structured summary to a file.
 
 MCP servers are connected lazily — only when an agent that references them is executed. Discovered tools are cached for the lifetime of the runtime.
 
-> You can also set the `MCP_CONFIG_PATH` environment variable to point to a custom config file location.
+> You can also set the `AGENTMD_MCP_CONFIG` environment variable to point to a custom config file location.
+
+---
+
+## 🗂️ Workspace & Paths
+
+Agent.md uses a flexible workspace structure that can be customized via CLI arguments, environment variables, or defaults.
+
+### Path Resolution Hierarchy
+
+Paths are resolved in this order (highest priority first):
+
+1. **CLI arguments** — `agentmd start --workspace /custom/path`
+2. **Environment variables** — `AGENTMD_WORKSPACE=/custom/path`
+3. **Defaults** — convention-based defaults
+
+### Configuration Options
+
+| Path | CLI Argument | Environment Variable | Default |
+|---|---|---|---|
+| Workspace root | `--workspace` | `AGENTMD_WORKSPACE` | `./workspace` |
+| Agents directory | `--agents-dir` | `AGENTMD_AGENTS_DIR` | `{workspace}/agents` |
+| Output directory | `--output-dir` | `AGENTMD_OUTPUT_DIR` | `{workspace}/output` |
+| Database file | `--db-path` | `AGENTMD_DB_PATH` | `./data/agentmd.db` |
+| MCP config | `--mcp-config` | `AGENTMD_MCP_CONFIG` | `{agents_dir}/mcp-servers.json` |
+
+**Note:** `tools_dir` is always `{agents_dir}/tools` and cannot be customized.
+
+### Relative vs Absolute Paths
+
+Path resolution depends on **where** the path is specified:
+
+| Location | Relative paths resolved from | Example |
+|---|---|---|
+| **CLI args / ENV vars** | Current working directory (CWD) | `--workspace ./my-agents` |
+| **Frontmatter** (`read`, `write`, `trigger.paths`) | Workspace root | `read: ["data/"]` → `{workspace}/data/` |
+| **Tool calls** (`file_read`) | Workspace root | `file_read("data/file.txt")` → `{workspace}/data/file.txt` |
+| **Tool calls** (`file_write`) | Agent's default write directory | `file_write("report.txt")` → `{output_dir}/report.txt` |
+
+All paths are automatically converted to absolute paths internally via `.resolve()`.
+
+**Examples:**
+
+```bash
+# CLI/ENV: Relative to current directory
+cd /home/user/myproject
+agentmd start --workspace ./workspace  # → /home/user/myproject/workspace
+
+# CLI/ENV: Absolute path (used as-is)
+agentmd start --workspace /opt/agents  # → /opt/agents
+
+# Environment variable with relative path (resolved from CWD)
+export AGENTMD_WORKSPACE=./my-agents
+cd /home/user
+agentmd start  # workspace = /home/user/my-agents
+```
+
+**Frontmatter paths:**
+```yaml
+# workspace = /home/user/agents
+read:
+  - data/           # → /home/user/agents/data/
+  - /tmp/external   # → /tmp/external (absolute, used as-is)
+trigger:
+  type: watch
+  paths: output/    # → /home/user/agents/output/
+```
+
+**Tool calls:**
+```python
+# Inside agent with workspace = /opt/production
+file_read("data/input.csv")     # → /opt/production/data/input.csv
+file_write("report.txt")        # → /opt/production/output/report.txt (default write dir)
+file_write("/tmp/debug.log")    # → /tmp/debug.log (absolute)
+```
+
+### Using .env File
+
+The recommended approach for persistent configuration is using a `.env` file:
+
+```bash
+# .env
+AGENTMD_WORKSPACE=/home/user/production/agents
+AGENTMD_DB_PATH=/var/lib/agentmd/production.db
+AGENTMD_OUTPUT_DIR=/mnt/storage/agent-outputs
+```
+
+Then simply run:
+```bash
+agentmd start
+```
+
+### Multi-Environment Setup
+
+You can maintain different environments by using different `.env` files:
+
+```bash
+# Development
+cp .env.example .env.dev
+# Edit .env.dev with dev paths
+
+# Production
+cp .env.example .env.prod
+# Edit .env.prod with production paths
+
+# Run with specific env
+cp .env.dev .env && agentmd start
+cp .env.prod .env && agentmd start
+```
+
+Or use CLI args for one-off overrides:
+
+```bash
+# Use production workspace, but development database
+agentmd start \
+  --workspace /opt/production/agents \
+  --db-path /tmp/dev-test.db
+```
 
 ---
 
@@ -315,11 +566,14 @@ MCP servers are connected lazily — only when an agent that references them is 
 
 ```
 agentmd/
-├── workspace/              # Your agent .md files go here
-│   ├── hello-world.md
-│   ├── daily-quote.md
-│   └── file-summarizer.md
-├── output/                 # Default output directory for agents
+├── workspace/              # Your workspace
+│   ├── agents/             # Agent .md files
+│   │   ├── hello-world.md
+│   │   ├── daily-quote.md
+│   │   ├── tools/          # Custom tools (optional)
+│   │   │   └── my_tool.py
+│   │   └── mcp-servers.json  # MCP config (optional)
+│   └── output/             # Default output directory for agents
 ├── data/                   # SQLite database (auto-created)
 ├── agent_md/
 │   ├── cli/                # Typer CLI commands
@@ -348,15 +602,12 @@ model:
   provider: google
   name: gemini-2.5-flash
 trigger:
-  type: interval
-  interval: 120s
-tools:
-  - http_request
-  - file_write
+  type: schedule
+  every: 120s
 settings:
   temperature: 0.9
   timeout: 30
-enabled: true
+enabled: false  # Disabled by default to avoid costs
 ---
 
 You are a daily inspiration curator. Your task:
@@ -383,9 +634,6 @@ model:
   name: gemini-2.5-flash
 trigger:
   type: manual
-tools:
-  - file_read
-  - file_write
 settings:
   temperature: 0.3
   timeout: 60
@@ -403,6 +651,37 @@ You are a precise text summarizer. Your task:
 4. Save the summary to `summary.txt`
 
 Be concise but don't miss important details. Use clear, direct language.
+```
+
+### 👁️ File Watcher
+
+Monitors a directory and processes new files automatically:
+
+```markdown
+---
+name: new-file-processor
+description: Processes files as soon as they appear in the watched directory
+model:
+  provider: google
+  name: gemini-2.5-flash
+trigger:
+  type: watch
+  paths: data/incoming/
+settings:
+  temperature: 0.5
+  timeout: 120
+enabled: true
+---
+
+You are a file processor that monitors incoming files.
+
+When a new file is created in the watched directory:
+1. Use `file_read` to read the file content
+2. Process or analyze the content based on the file type
+3. Write a processing report to `output/processed-{filename}.txt`
+4. Include: timestamp, file size, summary of contents
+
+Be thorough but concise in your analysis.
 ```
 
 ---
@@ -429,7 +708,7 @@ When you give tools to an agent, you're giving it the ability to interact with y
 ### 1. Least Privilege
 
 - **File scope** — Agent.md writes to the `output/` directory by default. Avoid granting write access to system or config directories.
-- **Critical tools** — Only enable `http_request` if the agent actually needs external data.
+- **Read/write paths** — Use `read` and `write` fields to restrict file access to only what's needed.
 
 ### 2. Secret Management
 
@@ -439,14 +718,15 @@ When you give tools to an agent, you're giving it the ability to interact with y
 ### 3. Infinite Loops & Costs
 
 - **Timeouts** — Always set a `timeout` in the frontmatter to prevent runaway executions.
-- **Token tracking** — Monitor usage via `agentmd logs`. Agents on `interval` or `cron` triggers can generate unexpected costs if prompts are too long or intervals too frequent.
+- **Token tracking** — Monitor usage via `agentmd logs`. Agents on `schedule` triggers can generate unexpected costs if prompts are too long or intervals too frequent.
+- **Watch debouncing** — File watch triggers automatically debounce rapid changes (500ms), preventing duplicate executions.
 
 ### 4. Pre-validation
 
 Before scheduling an agent, always validate it:
 
 ```bash
-agentmd validate workspace/my-agent.md
+agentmd validate workspace/agents/my-agent.md
 ```
 
 ---
@@ -455,8 +735,10 @@ agentmd validate workspace/my-agent.md
 
 - [x] 🔌 MCP support
 - [x] 🤖 Multi-provider support (OpenAI, Anthropic, Ollama, Local)
+- [x] 📂 File access security (read/write paths)
+- [x] 👁️ File watching triggers
+- [x] 🧰 Custom tools support
 - [ ] 🧠 Memory & context persistence
-- [ ] 🧰 More built-in tools
 - [ ] ⚡ Skills support
 - [ ] 🔗 Pipelines — chain agents together
 - [ ] 🪄 Agent generator command
