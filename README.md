@@ -132,7 +132,7 @@ mcp:
   - github     # GitHub API
 ```
 
-**[→ See all examples in documentation](https://zfab.github.io/agentmd/examples/)**
+**[→ See all examples in documentation](https://zfab.github.io/agentmd/examples)**
 
 ---
 
@@ -142,12 +142,14 @@ Comprehensive documentation is available at **[zfab.github.io/agentmd](https://z
 
 **Quick Links:**
 
-- [Installation Guide](https://zfab.github.io/agentmd/getting-started/installation/)
-- [Core Concepts](https://zfab.github.io/agentmd/core-concepts/)
-- [Agent Library](https://zfab.github.io/agentmd/agents/) (20+ ready-to-use agents)
-- [CLI Reference](https://zfab.github.io/agentmd/cli/)
-- [Configuration](https://zfab.github.io/agentmd/configuration/)
-- [Security Best Practices](https://zfab.github.io/agentmd/guides/security-best-practices/)
+- [Quick Start](https://zfab.github.io/agentmd/quick-start)
+- [Agent Configuration](https://zfab.github.io/agentmd/agent-configuration)
+- [CLI Reference](https://zfab.github.io/agentmd/cli-reference)
+- [Providers](https://zfab.github.io/agentmd/providers)
+- [Triggers](https://zfab.github.io/agentmd/triggers)
+- [Tools Documentation](https://zfab.github.io/agentmd/tools/)
+- [Examples](https://zfab.github.io/agentmd/examples)
+- [Security Best Practices](https://zfab.github.io/agentmd/guides/security-best-practices)
 
 ---
 
@@ -166,7 +168,7 @@ Comprehensive documentation is available at **[zfab.github.io/agentmd](https://z
 
 ## 🤝 Contributing
 
-Contributions are welcome! See the [Contributing Guide](https://zfab.github.io/agentmd/contributing/) for details.
+Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/zfab/agentmd).
 
 ```bash
 # Development setup
