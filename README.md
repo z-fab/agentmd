@@ -105,9 +105,16 @@ agentmd run hello-world
 ```
 
 ```
-▶ hello-world  google/gemini-2.5-flash  tools: file_write
+▶ Running hello-world  google/gemini-2.5-flash  tools: file_write
 
-✓ Done in 1823ms  tokens: 42 in / 118 out / 160 total  execution #1
+11:32:04 hello-world 🤖 I'll create a friendly greeting for you and save it...
+11:32:05 hello-world 🔧 file_write → {'file_path': 'greeting.txt', 'content': '...'}
+11:32:05 hello-world 📎 file_write ← File written successfully: greeting.txt
+
+11:32:05 hello-world ✅ Final answer:
+  I've written a creative greeting to greeting.txt!
+
+✓ hello-world done in 1823ms  tokens: 42 in / 118 out / 160 total  execution #1
 ```
 
 That's it. Your agent ran, wrote a file, and logged everything. 🎉
@@ -184,14 +191,36 @@ model:
 | `agentmd logs <agent> -e <id>` | Show detailed messages for a specific run |
 | `agentmd validate <file>` | Validate an agent file without running it |
 
+### Verbosity
+
+Both `run` and `start` support verbosity flags to control how much output is shown:
+
+| Flag | Level | Behavior |
+|---|---|---|
+| `-q` / `--quiet` | 0 | Header + footer only (no event stream) |
+| `-v` | 1 | Rich event stream (tool calls, AI reasoning, final answer) |
+| `-vv` | 2 | Event stream + INFO logs (database, registry, HTTP requests) |
+| `-vvv` | 3 | Event stream + DEBUG logs (everything) |
+
+**Defaults:** `run` defaults to level 1 (events visible), `start` defaults to level 0 (quiet, one-line summary per run). Other commands (`list`, `logs`, `validate`) are always quiet.
+
 ### Examples
 
 ```bash
 # Start the runtime — scheduled agents run automatically
 agentmd start
 
-# Run a specific agent
+# Start with real-time event stream for scheduled runs
+agentmd start -v
+
+# Run a specific agent (shows events by default)
 agentmd run daily-quote
+
+# Run without event output (quiet)
+agentmd run daily-quote -q
+
+# Run with full INFO logs
+agentmd run daily-quote -vv
 
 # List all agents with status
 agentmd list

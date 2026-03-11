@@ -2,11 +2,13 @@
 
 Classifies LangChain messages by event type and persists them to the
 database. Also emits concise real-time logs via Python logging.
+Supports an optional ``on_event`` callback for Rich console output.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from agent_md.db.database import Database
 
@@ -35,10 +37,22 @@ def _extract_text(content) -> str:
 class ExecutionLogger:
     """Processes LangChain messages and persists structured log entries."""
 
-    def __init__(self, db: Database, execution_id: int, agent_name: str):
+    def __init__(
+        self,
+        db: Database,
+        execution_id: int,
+        agent_name: str,
+        on_event: Callable[[str, dict], None] | None = None,
+    ):
         self.db = db
         self.execution_id = execution_id
         self.agent_name = agent_name
+        self.on_event = on_event
+
+    def _emit(self, event_type: str, data: dict) -> None:
+        """Fire the on_event callback if one is registered."""
+        if self.on_event is not None:
+            self.on_event(event_type, data)
 
     async def log_message(self, msg) -> None:
         """Classify a single LangChain message and persist it.
@@ -58,12 +72,16 @@ class ExecutionLogger:
             reasoning = _extract_text(getattr(msg, "content", ""))
             if reasoning:
                 logger.info(f"[{self.agent_name}] 🤖 {reasoning[:200]}")
+                self._emit("ai", {"content": reasoning[:200], "agent_name": self.agent_name})
                 await self._persist("ai", reasoning[:500])
 
             for tc in msg.tool_calls:
                 tool_name = tc.get("name", "unknown")
                 tool_args = str(tc.get("args", {}))[:300]
                 logger.info(f"[{self.agent_name}] 🔧 {tool_name}({tool_args[:80]})")
+                self._emit(
+                    "tool_call", {"tool_name": tool_name, "tool_args": tool_args[:80], "agent_name": self.agent_name}
+                )
                 await self._persist("tool_call", f"{tool_name} — args: {tool_args}")
 
         # --- Tool response ---
@@ -71,12 +89,16 @@ class ExecutionLogger:
             tool_name = getattr(msg, "name", "unknown")
             tool_content = _extract_text(getattr(msg, "content", ""))[:500]
             logger.info(f"[{self.agent_name}] 📎 {tool_name} → {tool_content[:100]}")
+            self._emit(
+                "tool_response", {"tool_name": tool_name, "content": tool_content[:100], "agent_name": self.agent_name}
+            )
             await self._persist("tool_response", f"{tool_name} — {tool_content}")
 
         # --- AI without tool calls (reasoning or final answer) ---
         elif msg_type == "ai":
             content = _extract_text(getattr(msg, "content", ""))[:500]
             logger.info(f"[{self.agent_name}] 🤖 {content[:200]}")
+            self._emit("ai", {"content": content[:200], "agent_name": self.agent_name})
             await self._persist("ai", content)
 
         # --- System / Human / other ---
@@ -86,9 +108,10 @@ class ExecutionLogger:
 
     async def mark_final_answer(self, msg) -> None:
         """Persist the last AI message as a final_answer event."""
-        content = _extract_text(getattr(msg, "content", ""))[:500]
+        content = _extract_text(getattr(msg, "content", ""))
         logger.info(f"[{self.agent_name}] ✅ {content[:200]}")
-        await self._persist("final_answer", content)
+        self._emit("final_answer", {"content": content, "agent_name": self.agent_name})
+        await self._persist("final_answer", content[:500])
 
     async def log_messages(self, messages: list) -> None:
         """Process all messages from a completed execution.

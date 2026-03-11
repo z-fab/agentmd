@@ -38,7 +38,13 @@ class Runtime:
         await self.db.close()
 
 
-async def bootstrap(workspace: Path, db_path: Path | None = None, start_scheduler: bool = False) -> Runtime:
+async def bootstrap(
+    workspace: Path,
+    db_path: Path | None = None,
+    start_scheduler: bool = False,
+    on_event=None,
+    on_complete=None,
+) -> Runtime:
     """Initialize all components and load agents from workspace.
 
     Args:
@@ -99,7 +105,7 @@ async def bootstrap(workspace: Path, db_path: Path | None = None, start_schedule
 
     # 6. Schedule enabled agents (only when explicitly requested)
     if start_scheduler:
-        scheduler = AgentScheduler(registry, runner)
+        scheduler = AgentScheduler(registry, runner, on_event=on_event, on_complete=on_complete)
         scheduler.start()
         for config in registry.enabled():
             scheduler.schedule_agent(config)

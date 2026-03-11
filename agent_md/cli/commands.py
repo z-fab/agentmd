@@ -22,14 +22,62 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 
-def _setup_logging(verbose: bool = False) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+def _setup_logging(verbosity: int = 0) -> None:
+    """Configure root logger based on verbosity level.
+
+    0-1 → WARNING (suppress INFO), 2 → INFO, 3 → DEBUG.
+    """
+    if verbosity >= 3:
+        level = logging.DEBUG
+    elif verbosity >= 2:
+        level = logging.INFO
+    else:
+        level = logging.WARNING
     logging.basicConfig(
         level=level,
         format="%(message)s",
         datefmt="[%X]",
         handlers=[RichHandler(rich_tracebacks=True, markup=True)],
     )
+
+
+def _resolve_verbosity(quiet: bool, verbose: int, default: int) -> int:
+    """Compute effective verbosity level."""
+    if quiet:
+        return 0
+    if verbose > 0:
+        return verbose
+    return default
+
+
+def _make_console_callback(con: Console):
+    """Return an on_event callback that prints Rich-formatted output.
+
+    All events except final_answer are single-line with timestamp and agent name.
+    Content is truncated to avoid line wrapping.
+    """
+    from datetime import datetime
+
+    def _on_event(event_type: str, data: dict) -> None:
+        ts = datetime.now().strftime("%H:%M:%S")
+        agent = data.get("agent_name", "")
+        prefix = f"[dim]{ts}[/dim] [bold]{agent}[/bold]"
+
+        if event_type == "ai":
+            line = f"{prefix} [cyan]🤖 {data['content'][:200]}[/cyan]"
+            con.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+        elif event_type == "tool_call":
+            line = f"{prefix} [yellow]🔧 {data['tool_name']}[/yellow] → {data['tool_args'][:80]}"
+            con.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+        elif event_type == "tool_response":
+            line = f"{prefix} [green]📎 {data['tool_name']}[/green] ← {data['content'][:100]}"
+            con.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+        elif event_type == "final_answer":
+            con.print()
+            con.print(f"{prefix} [bold green]✅ Final answer:[/bold green]")
+            con.print(f"  {data['content']}")
+
+    return _on_event
 
 
 def _print_agents_table(agents: list[AgentConfig]) -> None:
@@ -75,10 +123,14 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
 def start(
     workspace: Path = typer.Option("./workspace", "--workspace", "-w", help="Directory with .md agent files"),
     tui: bool = typer.Option(False, "--tui", help="Launch Terminal UI"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress all output except errors"),
+    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity (-v, -vv, -vvv)"),
 ):
     """Start the Agent.md runtime (scheduler + watcher)."""
-    _setup_logging(verbose)
+    verbosity = _resolve_verbosity(quiet, verbose, default=0)
+    _setup_logging(verbosity)
+
+    on_event = _make_console_callback(console) if verbosity >= 1 else None
 
     if tui:
         pass
@@ -86,13 +138,34 @@ def start(
         # tui_app = AgentMdApp(workspace=workspace)
         # tui_app.run()
     else:
-        asyncio.run(_start_cli(workspace))
+        asyncio.run(_start_cli(workspace, on_event=on_event))
 
 
-async def _start_cli(workspace: Path) -> None:
+def _make_complete_callback(con: Console):
+    """Return an on_complete callback that prints a summary line per scheduled run."""
+    from datetime import datetime
+
+    def _on_complete(agent_name: str, result: dict) -> None:
+        ts = datetime.now().strftime("%H:%M:%S")
+        status = result.get("status", "unknown")
+        duration = result.get("duration_ms", 0)
+        if status == "success":
+            tokens = result.get("total_tokens", 0)
+            con.print(f"[dim]{ts}[/dim] [green]✓ {agent_name}[/green] — done in {duration}ms ({tokens} tokens)")
+        elif status == "timeout":
+            con.print(f"[dim]{ts}[/dim] [yellow]⏱ {agent_name}[/yellow] — timeout after {duration}ms")
+        else:
+            error = result.get("error", "unknown error")
+            con.print(f"[dim]{ts}[/dim] [red]✗ {agent_name}[/red] — error after {duration}ms: {error}")
+
+    return _on_complete
+
+
+async def _start_cli(workspace: Path, on_event=None) -> None:
     from agent_md.core.bootstrap import bootstrap
 
-    runtime = await bootstrap(workspace, start_scheduler=True)
+    on_complete = _make_complete_callback(console)
+    runtime = await bootstrap(workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete)
 
     agents = runtime.registry.all()
     enabled = [a for a in agents if a.enabled]
@@ -127,12 +200,14 @@ async def _start_cli(workspace: Path) -> None:
 def run(
     agent: str = typer.Argument(help="Agent name or .md filename"),
     workspace: Path = typer.Option("./workspace", "--workspace", "-w", help="Directory with .md agent files"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress event output"),
+    verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity (-v, -vv, -vvv)"),
 ):
     """Execute a single agent manually (one-shot)."""
     from agent_md.core.services import AgentNotFoundError, run_agent
 
-    _setup_logging(verbose)
+    verbosity = _resolve_verbosity(quiet, verbose, default=1)
+    _setup_logging(verbosity)
 
     from agent_md.core.parser import parse_agent_file
 
@@ -143,14 +218,15 @@ def run(
 
     config = parse_agent_file(agent_file)
     console.print(
-        f"[cyan]▶ {config.name}[/cyan]  {config.model.provider}/{config.model.name}  "
-        f"tools: {', '.join(config.tools) or 'none'}"
-        + (f"  mcp: {', '.join(config.mcp)}" if config.mcp else "")
+        f"[cyan]▶ Running {config.name}[/cyan]  {config.model.provider}/{config.model.name}  "
+        f"tools: {', '.join(config.tools) or 'none'}" + (f"  mcp: {', '.join(config.mcp)}" if config.mcp else "")
     )
     console.print()
 
+    on_event = _make_console_callback(console) if verbosity >= 1 else None
+
     try:
-        _, result = asyncio.run(run_agent(agent, workspace))
+        _, result = asyncio.run(run_agent(agent, workspace, on_event=on_event))
     except AgentNotFoundError:
         console.print(f"[red]Agent '{agent}' not found in workspace[/red]")
         raise typer.Exit(1)
@@ -161,12 +237,12 @@ def run(
         if result.get("total_tokens"):
             tokens_info = f"  tokens: {result['input_tokens']} in / {result['output_tokens']} out / {result['total_tokens']} total"
         console.print(
-            f"[green]✓ Done[/green] in {result['duration_ms']}ms{tokens_info}  [dim]execution #{result['execution_id']}[/dim]"
+            f"[green]✓ {config.name} done[/green] in {result['duration_ms']}ms{tokens_info}  [dim]execution #{result['execution_id']}[/dim]"
         )
     elif result["status"] == "timeout":
-        console.print(f"[yellow]⏱ Timeout[/yellow] after {result['duration_ms']}ms — {result['error']}")
+        console.print(f"[yellow]⏱ {config.name} timeout[/yellow] after {result['duration_ms']}ms — {result['error']}")
     else:
-        console.print(f"[red]✗ Error[/red] after {result['duration_ms']}ms — {result['error']}")
+        console.print(f"[red]✗ {config.name} error[/red] after {result['duration_ms']}ms — {result['error']}")
 
 
 # ---------------------------------------------------------------------------
@@ -177,12 +253,11 @@ def run(
 @app.command(name="list")
 def list_agents(
     workspace: Path = typer.Option("./workspace", "--workspace", "-w", help="Directory with .md agent files"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
 ):
     """List all agents in the workspace."""
     from agent_md.core.services import list_agents as svc_list_agents
 
-    _setup_logging(verbose)
+    _setup_logging(0)
     agents = asyncio.run(svc_list_agents(workspace))
 
     if not agents:
@@ -203,10 +278,9 @@ def logs(
     n: int = typer.Option(10, "--n", "-n", help="Number of recent executions"),
     execution: int = typer.Option(None, "--execution", "-e", help="Show messages for a specific execution ID"),
     workspace: Path = typer.Option("./workspace", "--workspace", "-w"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
 ):
     """Show recent execution history for an agent."""
-    _setup_logging(verbose)
+    _setup_logging(0)
 
     # If --execution is provided, show the detailed messages for that run
     if execution is not None:

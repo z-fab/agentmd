@@ -22,12 +22,14 @@ class AgentRunner:
         self.db = db
         self.mcp_manager = mcp_manager
 
-    async def run(self, config: AgentConfig, trigger_type: str = "manual") -> dict:
+    async def run(self, config: AgentConfig, trigger_type: str = "manual", on_event=None) -> dict:
         """Execute an agent and persist the result.
 
         Args:
             config: Validated agent configuration.
             trigger_type: What triggered this execution ('manual', 'cron', 'interval').
+            on_event: Optional callback ``(event_type, data_dict) -> None`` for
+                real-time UI updates (Rich console output).
 
         Returns:
             Dict with 'status', 'output' or 'error', 'duration_ms', and token counts.
@@ -41,7 +43,7 @@ class AgentRunner:
             status="running",
         )
 
-        ex_logger = ExecutionLogger(self.db, execution_id, config.name)
+        ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=on_event)
         start_time = time.monotonic()
 
         # Token accumulators

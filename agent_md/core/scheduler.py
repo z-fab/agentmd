@@ -30,9 +30,11 @@ def parse_interval(interval_str: str) -> dict:
 class AgentScheduler:
     """Manages APScheduler jobs and Watchdog file monitoring."""
 
-    def __init__(self, registry: AgentRegistry, runner: AgentRunner):
+    def __init__(self, registry: AgentRegistry, runner: AgentRunner, on_event=None, on_complete=None):
         self.registry = registry
         self.runner = runner
+        self.on_event = on_event
+        self.on_complete = on_complete
         self.scheduler = AsyncIOScheduler()
         self.observer = Observer()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -81,7 +83,9 @@ class AgentScheduler:
         """Callback for scheduled execution."""
         config = self.registry.get(agent_id)
         if config and config.enabled:
-            await self.runner.run(config, trigger_type)
+            result = await self.runner.run(config, trigger_type, on_event=self.on_event)
+            if self.on_complete:
+                self.on_complete(config.name, result)
         elif config and not config.enabled:
             logger.debug(f"Skipping disabled agent: {agent_id}")
 
