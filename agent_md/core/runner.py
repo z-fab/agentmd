@@ -25,12 +25,30 @@ class AgentRunner:
         self.mcp_manager = mcp_manager
         self.path_context = path_context
 
-    async def run(self, config: AgentConfig, trigger_type: str = "manual", on_event=None) -> dict:
+    def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
+        """Build user input message with trigger context."""
+        if trigger_type == "manual":
+            return "Execute your task."
+
+        if trigger_type == "schedule":
+            if config.trigger.every:
+                return f"Execute your task. (scheduled: every {config.trigger.every})"
+            elif config.trigger.cron:
+                return f"Execute your task. (scheduled: cron {config.trigger.cron})"
+            return "Execute your task."
+
+        if trigger_type == "watch" and trigger_context:
+            return f"Execute your task.\n\nFile change detected:\n- {trigger_context}"
+
+        return "Execute your task."
+
+    async def run(self, config: AgentConfig, trigger_type: str = "manual", trigger_context: str | None = None, on_event=None) -> dict:
         """Execute an agent and persist the result.
 
         Args:
             config: Validated agent configuration.
-            trigger_type: What triggered this execution ('manual', 'cron', 'interval').
+            trigger_type: What triggered this execution ('manual', 'schedule', 'watch').
+            trigger_context: Optional context about what triggered the execution (e.g., file path for watch).
             on_event: Optional callback ``(event_type, data_dict) -> None`` for
                 real-time UI updates (Rich console output).
 
@@ -81,12 +99,15 @@ class AgentRunner:
             # 6. Build the graph
             graph = create_react_graph(chat_model, tools)
 
-            # 7. Stream execution — log each message in real time
+            # 7. Build user input with trigger context
+            user_input = self._build_user_input(trigger_type, trigger_context, config)
+
+            # 8. Stream execution — log each message in real time
             last_ai_msg = None
 
             async def _stream():
                 nonlocal last_ai_msg, total_input_tokens, total_output_tokens
-                async for msg in stream_agent_graph(graph, config.system_prompt, config, self.path_context):
+                async for msg in stream_agent_graph(graph, config.system_prompt, config, self.path_context, user_input=user_input):
                     await ex_logger.log_message(msg)
 
                     # Accumulate token usage from every AI message

@@ -4,6 +4,13 @@ description: A simple test agent that greets the user
 model:
   provider: google
   name: gemini-2.5-flash
+trigger:
+  type: watch
+  paths: "/Users/zfab/repos/agentmd/assets"
+settings:
+  temperature: 0.7
+  timeout: 30
+enabled: true
 ---
 
 You are a friendly assistant. When asked to execute your task, respond with a short, creative greeting message. Include the current date if you know it. Keep it under 3 sentences.

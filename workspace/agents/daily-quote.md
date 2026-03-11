@@ -5,8 +5,8 @@ model:
   provider: google
   name: gemini-2.5-flash
 trigger:
-  type: interval
-  interval: 120s
+  type: schedule
+  every: 120s
 settings:
   temperature: 0.9
   timeout: 30

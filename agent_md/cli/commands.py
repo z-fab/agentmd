@@ -93,10 +93,16 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
 
     for config in agents:
         trigger_str = config.trigger.type
-        if config.trigger.schedule:
-            trigger_str += f" ({config.trigger.schedule})"
-        elif config.trigger.interval:
-            trigger_str += f" ({config.trigger.interval})"
+        if config.trigger.type == "schedule":
+            if config.trigger.cron:
+                trigger_str += f" (cron: {config.trigger.cron})"
+            elif config.trigger.every:
+                trigger_str += f" (every: {config.trigger.every})"
+        elif config.trigger.type == "watch":
+            paths_str = ", ".join(config.trigger.paths[:2])  # Show first 2 paths
+            if len(config.trigger.paths) > 2:
+                paths_str += "..."
+            trigger_str += f" ({paths_str})"
 
         status = "[green]●[/green]" if config.enabled else "[dim]○[/dim]"
 
@@ -453,10 +459,15 @@ def validate(
     console.print(f"  Provider:     {config.model.provider}")
     console.print(f"  Model:        {config.model.name}")
     console.print(f"  Trigger:      {config.trigger.type}", end="")
-    if config.trigger.schedule:
-        console.print(f" ({config.trigger.schedule})")
-    elif config.trigger.interval:
-        console.print(f" ({config.trigger.interval})")
+    if config.trigger.type == "schedule":
+        if config.trigger.cron:
+            console.print(f" (cron: {config.trigger.cron})")
+        elif config.trigger.every:
+            console.print(f" (every: {config.trigger.every})")
+        else:
+            console.print()
+    elif config.trigger.type == "watch":
+        console.print(f" (paths: {', '.join(config.trigger.paths)})")
     else:
         console.print()
     console.print(f"  Built-in:     {', '.join(result.builtin_tools)}")

@@ -19,10 +19,24 @@ class PathContext:
         """Return resolved read paths for an agent.
 
         Defaults to [workspace_root] if the agent has no 'read' config.
+        Watch paths are automatically included to allow agents to read watched files.
         """
-        if config.read:
-            return [self._resolve_relative(p) for p in config.read]
-        return [self.workspace_root]
+        paths = [self._resolve_relative(p) for p in config.read] if config.read else [self.workspace_root]
+
+        # Include watch paths so agents can read files they're watching
+        if config.trigger.type == "watch" and config.trigger.paths:
+            watch_paths = [self._resolve_relative(p) for p in config.trigger.paths]
+            paths.extend(watch_paths)
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_paths = []
+        for p in paths:
+            if p not in seen:
+                seen.add(p)
+                unique_paths.append(p)
+
+        return unique_paths
 
     def get_write_paths(self, config) -> list[Path]:
         """Return resolved write paths for an agent.

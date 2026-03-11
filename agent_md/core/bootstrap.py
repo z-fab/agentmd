@@ -144,13 +144,12 @@ async def bootstrap(
 
     # 8. Schedule enabled agents (only when explicitly requested)
     if start_scheduler:
-        scheduler = AgentScheduler(registry, runner, on_event=on_event, on_complete=on_complete)
-        scheduler.start()
+        scheduler = AgentScheduler(registry, runner, path_context, on_event=on_event, on_complete=on_complete)
         for config in registry.enabled():
             scheduler.schedule_agent(config)
 
-        # 9. Start file watcher for hot-reload
-        scheduler.start_watcher(agents_dir)
+        # 9. Start scheduler, file watcher, and agent watchers
+        scheduler.start(agents_dir)
 
     return Runtime(
         registry=registry,

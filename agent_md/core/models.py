@@ -7,27 +7,39 @@ from pydantic import BaseModel, field_validator, model_validator
 class TriggerConfig(BaseModel):
     """Configuration for agent triggers."""
 
-    type: Optional[str] = "manual"  # 'cron', 'interval', 'manual'
-    schedule: Optional[str] = None  # cron expression
-    interval: Optional[str] = None  # e.g. '30m', '2h', '1d'
+    type: Optional[str] = "manual"  # 'manual', 'schedule', 'watch'
+    every: Optional[str] = None  # e.g. '30m', '2h', '1d' (for schedule)
+    cron: Optional[str] = None  # cron expression (for schedule)
+    paths: list[str] = []  # paths to watch (for watch)
 
     @field_validator("type")
     @classmethod
     def validate_type(cls, v: str) -> str:
-        allowed = ("cron", "interval", "manual")
+        allowed = ("manual", "schedule", "watch")
         if v not in allowed:
             raise ValueError(f"Trigger type must be one of {allowed}, got '{v}'")
         return v
 
+    @field_validator("paths", mode="before")
+    @classmethod
+    def normalize_paths(cls, v):
+        """Accept a single string or a list of strings."""
+        if isinstance(v, str):
+            return [v]
+        return v
+
     @model_validator(mode="after")
     def validate_trigger_fields(self):
-        if self.type == "cron" and not self.schedule:
-            raise ValueError("Trigger type 'cron' requires 'schedule' field")
-        if self.type == "interval" and not self.interval:
-            raise ValueError("Trigger type 'interval' requires 'interval' field")
-        if self.type == "interval" and self.interval:
-            if not re.match(r"^\d+[smhd]$", self.interval):
-                raise ValueError(f"Invalid interval format: '{self.interval}'. Use e.g. '30s', '5m', '2h', '1d'")
+        if self.type == "schedule":
+            if not self.every and not self.cron:
+                raise ValueError("Trigger type 'schedule' requires 'every' or 'cron' field")
+            if self.every and self.cron:
+                raise ValueError("Trigger type 'schedule' cannot have both 'every' and 'cron'")
+            if self.every and not re.match(r"^\d+[smhd]$", self.every):
+                raise ValueError(f"Invalid 'every' format: '{self.every}'. Use e.g. '30s', '5m', '2h', '1d'")
+        if self.type == "watch":
+            if not self.paths:
+                raise ValueError("Trigger type 'watch' requires 'paths' field")
         return self
 
 
@@ -74,7 +86,7 @@ class AgentConfig(BaseModel):
     name: str
     description: str = ""
     model: ModelConfig
-    trigger: TriggerConfig
+    trigger: TriggerConfig = TriggerConfig()
     custom_tools: list[str] = []
     mcp: list[str] = []
     settings: SettingsConfig = SettingsConfig()
