@@ -272,3 +272,4 @@ $RECYCLE.BIN/
 # Agent.md
 output/*
 !output/.gitkeep
+CLAUDE.md
