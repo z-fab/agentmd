@@ -93,6 +93,9 @@ extra:
   version:
     provider: mike
 
+extra_css:
+  - stylesheets/extra.css
+
 copyright: Copyright &copy; 2024 Agent.md
 
 nav:
@@ -104,13 +107,16 @@ nav:
   - Providers: providers.md
   - Triggers: triggers.md
   - Tools:
+      - tools/index.md
       - Built-in Tools: tools/built-in-tools.md
       - Custom Tools: tools/custom-tools.md
       - MCP Integration: tools/mcp-integration.md
   - Examples: examples.md
   - Guides:
+      - guides/index.md
       - Debugging: guides/debugging.md
       - Security Best Practices: guides/security-best-practices.md
+      - Performance: guides/performance.md
       - Multi-Environment: guides/multi-environment.md
       - Versioning & GitOps: guides/versioning-gitops.md
   - Architecture: architecture.md

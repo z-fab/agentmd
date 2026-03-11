@@ -24,7 +24,6 @@ Execute agents on-demand via CLI. Best for one-time tasks, testing, and user-ini
 - Processing uploaded files
 - Running reports on-demand
 - Testing and development
-- Triggered by external systems via webhooks
 
 ### Configuration
 
@@ -285,8 +284,11 @@ trigger:
 ### Events
 
 Watch triggers activate on:
+
 - File creation
+
 - File modification
+
 - File deletion (optional, not triggered by default)
 
 ### Execution

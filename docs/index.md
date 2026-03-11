@@ -2,7 +2,7 @@
 
 <div align="center" markdown>
 
-![Agent.md Banner](../assets/agentmd_banner.png)
+<img src="assets/agentmd_banner.png" alt="Agent.md" width="400">
 
 **Markdown-first runtime for AI agents**
 
@@ -77,9 +77,6 @@ name: hello-world
 model:
   provider: google
   name: gemini-2.5-flash
-trigger:
-  type: manual
-enabled: true
 ---
 
 You are a friendly assistant. When asked to execute your task,
@@ -95,16 +92,29 @@ agentmd run hello-world
 Output:
 
 ```
-▶ Running hello-world  google/gemini-2.5-flash
+▶ Running hello-world  google/gemini-2.5-flash  custom_tools: none
 
-11:32:04 hello-world 🤖 I'll create a friendly greeting for you...
-11:32:05 hello-world 🔧 file_write → {'file_path': 'greeting.txt', ...}
-11:32:05 hello-world 📎 file_write ← File written successfully
+17:29:32 hello-world 🤖 Greetings, esteemed user!
 
-11:32:05 hello-world ✅ Final answer:
-  I've written a creative greeting to greeting.txt!
+May your day be filled with as much wonder and intrigue as a hidden scroll in an ancient library, and may your tasks unfold with the grace and preci…
+17:29:32 hello-world 🔧 file_write → {'content': "Greetings, esteemed user!\n\nMay your day be filled with as much wo
+17:29:32 hello-world 📎 file_write ← File written successfully: /Users/.../workspace/output/greeting.txt (235 chars)
+17:29:35 hello-world 🤖 Greetings, esteemed user!
 
-✓ hello-world done in 1823ms  tokens: 42 in / 118 out / 160 total
+I've successfully written a creative greeting to 'greeting.txt'. You can find it at `/Users/.../workspace/output/greeting.txt`.
+
+May your day be filled with a
+
+17:29:35 hello-world ✅ Final answer:
+  Greetings, esteemed user!
+
+I've successfully written a creative greeting to 'greeting.txt'. You can find it at `/Users/zfab/repos/agentmd/workspace/output/greeting.txt`.
+
+May your day be filled with as much wonder and intrigue as a hidden scroll in an ancient library, and may your tasks unfold with the grace and 
+precision of a master artisan. I'm delighted to assist you today!
+
+✓ hello-world done in 5121ms  tokens: 1130 in / 243 out / 1373 total  execution #51
+
 ```
 
 That's it. Your agent ran, used tools, and logged everything. :tada:
@@ -283,7 +293,7 @@ custom_tools:
 
 **Built with :heart: and Markdown**
 
-*If agents could write their own definition files, they'd choose Markdown too.*
+*If agents could write themselves, they'd choose Markdown too.*
 
 [Get Started →](quick-start.md){ .md-button .md-button--primary }
 

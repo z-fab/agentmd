@@ -288,16 +288,6 @@ settings:
 - `0.7` — Balanced (general-purpose, default)
 - `0.9` — Creative (writing, brainstorming)
 
-## Provider Features
-
-| Feature | Google | OpenAI | Anthropic | Ollama | Local |
-|---------|--------|--------|-----------|--------|-------|
-| Online API | ✓ | ✓ | ✓ | — | — |
-| Local/Offline | — | — | — | ✓ | ✓ |
-| Long context (200K+) | — | — | ✓ | Depends | Depends |
-| Multimodal | ✓ | ✓ | Partial | Some | Depends |
-| Reasoning models | — | ✓ | — | — | — |
-| No API cost | — | — | — | ✓ | ✓ |
 
 ## Switching Providers
 
@@ -338,7 +328,9 @@ Error: OPENAI_API_KEY not found
 
 **Solution:**
 1. Create `.env` in project root
+
 2. Add: `OPENAI_API_KEY=your-key`
+
 3. Restart the runtime
 
 ### Ollama Connection Error
@@ -349,7 +341,9 @@ Error: Could not connect to Ollama at http://localhost:11434
 
 **Solution:**
 1. Install Ollama: [ollama.com/download](https://ollama.com/download)
+
 2. Start Ollama: `ollama serve`
+
 3. Pull a model: `ollama pull llama3.2`
 
 ### Local Provider 404 Error
@@ -360,8 +354,8 @@ Error: 404 Not Found at http://localhost:8000/v1/chat/completions
 
 **Solution:**
 - Verify your server is running
+
 - Check the correct port (vLLM: 8000, LM Studio: 1234)
-- Ensure `/v1` is in the path (auto-added by Agent.md)
 
 ### Token Limit Exceeded
 
@@ -371,12 +365,8 @@ Error: maximum context length exceeded
 
 **Solution:**
 - Reduce `max_tokens` in settings
+
 - Use a model with a larger context window
+
 - Split large inputs into smaller chunks
 
-## Quick Start
-
-1. **For development:** Use Google Gemini Flash (fast, free tier available)
-2. **For sensitive data:** Use Ollama (local, no API calls)
-3. **For complex tasks:** Use OpenAI GPT-4o or Anthropic Claude
-4. **Test locally first** with Ollama before deploying to cloud APIs
