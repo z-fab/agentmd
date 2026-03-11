@@ -45,6 +45,7 @@ class ModelConfig(BaseModel):
     provider: str
     name: str
     base_url: str | None = None
+    url: str | None = None  # alias for base_url
 
     @field_validator("provider")
     @classmethod
@@ -53,6 +54,18 @@ class ModelConfig(BaseModel):
         if v not in allowed:
             raise ValueError(f"Provider must be one of {allowed}, got '{v}'")
         return v
+
+    @model_validator(mode="after")
+    def normalize_url(self):
+        # Accept both 'url' and 'base_url', prefer base_url
+        resolved = self.base_url or self.url
+        if resolved:
+            # Auto-append /v1 if not present
+            if not resolved.rstrip("/").endswith("/v1"):
+                resolved = resolved.rstrip("/") + "/v1"
+            self.base_url = resolved
+        self.url = None  # clear alias after normalization
+        return self
 
 
 class AgentConfig(BaseModel):

@@ -132,7 +132,7 @@ description: What it does    # Human-readable description
 model:
   provider: google           # LLM provider (see table below)
   name: gemini-2.5-flash     # Model name
-  # base_url: http://...     # Only for 'local' provider
+  # base_url: http://...     # For 'local' provider (or use 'url' as alias)
 trigger:
   type: interval             # manual | interval | cron
   interval: 30m              # For interval: 30s, 5m, 2h, 1d
@@ -161,13 +161,14 @@ enabled: true                # Enable/disable without deleting
 | `ollama` | `uv pip install -e ".[ollama]"` | `llama3`, `mistral` | Local Ollama server |
 | `local` | `uv pip install -e ".[openai]"` | Any model name | OpenAI-compatible endpoint (vLLM, LM Studio, etc.) |
 
-The `local` provider uses any OpenAI-compatible API. Set `base_url` in the model config (defaults to `http://localhost:11434/v1`):
+The `local` provider uses any OpenAI-compatible API. Set `base_url` (or `url`) in the model config. The `/v1` path is appended automatically if missing. Defaults to `http://localhost:11434/v1` (Ollama).
 
 ```yaml
 model:
   provider: local
   name: mistral-7b
-  base_url: "http://localhost:8000/v1"
+  base_url: "http://localhost:8000"   # /v1 is appended automatically
+  # url: "http://localhost:8000"      # 'url' also works
 ```
 
 ---
