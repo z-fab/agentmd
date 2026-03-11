@@ -47,7 +47,7 @@
 
 ## Community Requests
 
-Have an idea? [Open an issue](https://github.com/zfab/agentmd/issues) or start a [discussion](https://github.com/zfab/agentmd/discussions)!
+Have an idea? [Open an issue](https://github.com/z-fab/agentmd/issues) or start a [discussion](https://github.com/z-fab/agentmd/discussions)!
 
 ### Most Requested
 
@@ -61,7 +61,7 @@ Have an idea? [Open an issue](https://github.com/zfab/agentmd/issues) or start a
 
 Want to help build these features?
 
-1. Check [open issues](https://github.com/zfab/agentmd/issues)
+1. Check [open issues](https://github.com/z-fab/agentmd/issues)
 2. Comment on features you'd like to work on
 3. Submit a PR!
 
@@ -69,6 +69,6 @@ Want to help build these features?
 
 **Stay Updated:**
 
-- :star: Star the [GitHub repo](https://github.com/zfab/agentmd)
-- :speech_balloon: Join [Discussions](https://github.com/zfab/agentmd/discussions)
-- :bug: Report bugs in [Issues](https://github.com/zfab/agentmd/issues)
+- :star: Star the [GitHub repo](https://github.com/z-fab/agentmd)
+- :speech_balloon: Join [Discussions](https://github.com/z-fab/agentmd/discussions)
+- :bug: Report bugs in [Issues](https://github.com/z-fab/agentmd/issues)

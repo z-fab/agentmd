@@ -11,7 +11,7 @@ Get Agent.md running in 10 minutes—from installation to your first working age
 
 ### Clone & Install
 ```bash
-git clone https://github.com/zfab/agentmd.git
+git clone https://github.com/z-fab/agentmd.git
 cd agentmd
 
 # Install with uv (recommended)

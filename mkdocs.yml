@@ -1,7 +1,7 @@
 site_name: Agent.md
 site_description: Markdown-first runtime for AI agents
-site_url: https://zfab.github.io/agentmd
-repo_url: https://github.com/zfab/agentmd
+site_url: https://z-fab.github.io/agentmd
+repo_url: https://github.com/z-fab/agentmd
 repo_name: agentmd
 edit_uri: edit/master/docs/
 
@@ -89,7 +89,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/zfab/agentmd
+      link: https://github.com/z-fab/agentmd
   version:
     provider: mike
 

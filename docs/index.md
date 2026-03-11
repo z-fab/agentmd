@@ -10,12 +10,12 @@ Write a `.md` file, describe what your agent should do, and let it run.
 No boilerplate. No frameworks to learn. Just Markdown.
 
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/zfab/agentmd/blob/master/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/z-fab/agentmd/blob/master/LICENSE)
 [![Built with LangGraph](https://img.shields.io/badge/built%20with-LangGraph-FF6F00)](https://github.com/langchain-ai/langgraph)
 
 [Get Started](quick-start.md){ .md-button .md-button--primary }
 [Browse Examples](examples.md){ .md-button }
-[API Docs](https://github.com/zfab/agentmd){ .md-button }
+[API Docs](https://github.com/z-fab/agentmd){ .md-button }
 
 </div>
 
@@ -251,7 +251,7 @@ custom_tools:
 
     See real-world examples for every use case and feature.
 
--   :fontawesome-solid-download:{ .lg .middle } **[Documentation](https://github.com/zfab/agentmd)**
+-   :fontawesome-solid-download:{ .lg .middle } **[Documentation](https://github.com/z-fab/agentmd)**
 
     ---
 
@@ -283,9 +283,9 @@ custom_tools:
 ## :busts_in_silhouette: Community & Support
 
 - **Documentation**: You're reading it!
-- **GitHub**: [github.com/zfab/agentmd](https://github.com/zfab/agentmd)
-- **Issues**: [Report bugs or request features](https://github.com/zfab/agentmd/issues)
-- **Discussions**: [Share your agents and ideas](https://github.com/zfab/agentmd/discussions)
+- **GitHub**: [github.com/z-fab/agentmd](https://github.com/z-fab/agentmd)
+- **Issues**: [Report bugs or request features](https://github.com/z-fab/agentmd/issues)
+- **Discussions**: [Share your agents and ideas](https://github.com/z-fab/agentmd/discussions)
 
 ---
 

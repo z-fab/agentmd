@@ -14,7 +14,7 @@
 Write a `.md` file, describe what your agent should do, and let it run.
 No boilerplate. No frameworks to learn. Just Markdown.
 
-[📖 Documentation](https://zfab.github.io/agentmd) • [🚀 Quick Start](#quick-start) • [📦 Examples](#examples) • [🤝 Contributing](#contributing)
+[📖 Documentation](https://z-fab.github.io/agentmd) • [🚀 Quick Start](#quick-start) • [📦 Examples](#examples) • [🤝 Contributing](#contributing)
 
 </div>
 
@@ -37,7 +37,7 @@ No boilerplate. No frameworks to learn. Just Markdown.
 ### 1. Install
 
 ```bash
-git clone https://github.com/zfab/agentmd.git
+git clone https://github.com/z-fab/agentmd.git
 cd agentmd
 uv sync                     # Install dependencies
 uv pip install -e ".[all]"  # Install all provider support
@@ -132,24 +132,24 @@ mcp:
   - github     # GitHub API
 ```
 
-**[→ See all examples in documentation](https://zfab.github.io/agentmd/examples)**
+**[→ See all examples in documentation](https://z-fab.github.io/agentmd/examples)**
 
 ---
 
 ## 📖 Documentation
 
-Comprehensive documentation is available at **[zfab.github.io/agentmd](https://zfab.github.io/agentmd)**
+Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://z-fab.github.io/agentmd)**
 
 **Quick Links:**
 
-- [Quick Start](https://zfab.github.io/agentmd/quick-start)
-- [Agent Configuration](https://zfab.github.io/agentmd/agent-configuration)
-- [CLI Reference](https://zfab.github.io/agentmd/cli-reference)
-- [Providers](https://zfab.github.io/agentmd/providers)
-- [Triggers](https://zfab.github.io/agentmd/triggers)
-- [Tools Documentation](https://zfab.github.io/agentmd/tools/)
-- [Examples](https://zfab.github.io/agentmd/examples)
-- [Security Best Practices](https://zfab.github.io/agentmd/guides/security-best-practices)
+- [Quick Start](https://z-fab.github.io/agentmd/quick-start)
+- [Agent Configuration](https://z-fab.github.io/agentmd/agent-configuration)
+- [CLI Reference](https://z-fab.github.io/agentmd/cli-reference)
+- [Providers](https://z-fab.github.io/agentmd/providers)
+- [Triggers](https://z-fab.github.io/agentmd/triggers)
+- [Tools Documentation](https://z-fab.github.io/agentmd/tools/)
+- [Examples](https://z-fab.github.io/agentmd/examples)
+- [Security Best Practices](https://z-fab.github.io/agentmd/guides/security-best-practices)
 
 ---
 
@@ -168,7 +168,7 @@ Comprehensive documentation is available at **[zfab.github.io/agentmd](https://z
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/zfab/agentmd).
+Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/z-fab/agentmd).
 
 ```bash
 # Development setup
@@ -192,6 +192,6 @@ MIT License — use it, fork it, build on it.
 
 *If agents could write themselves, they'd choose Markdown too.*
 
-[⭐ Star on GitHub](https://github.com/zfab/agentmd) • [📖 Read the Docs](https://zfab.github.io/agentmd)
+[⭐ Star on GitHub](https://github.com/z-fab/agentmd) • [📖 Read the Docs](https://z-fab.github.io/agentmd)
 
 </div>
