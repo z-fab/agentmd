@@ -10,6 +10,8 @@ from agent_md.core.runner import AgentRunner
 from agent_md.core.scheduler import AgentScheduler
 from agent_md.core.settings import settings
 from agent_md.db.database import Database
+from agent_md.mcp.config import load_mcp_config
+from agent_md.mcp.manager import MCPManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +25,17 @@ class Runtime:
     scheduler: AgentScheduler | None
     db: Database
     workspace: Path
+    mcp_manager: MCPManager
 
     def stop(self):
-        """Graceful shutdown."""
+        """Graceful shutdown of synchronous components."""
         if self.scheduler:
             self.scheduler.stop()
+
+    async def aclose(self):
+        """Async cleanup — call instead of stop() + db.close()."""
+        self.stop()
+        await self.db.close()
 
 
 async def bootstrap(workspace: Path, db_path: Path | None = None, start_scheduler: bool = False) -> Runtime:
@@ -55,12 +63,20 @@ async def bootstrap(workspace: Path, db_path: Path | None = None, start_schedule
     db = Database(db_path)
     await db.connect()
 
-    # 3. Create core components
+    # 3. Load MCP server configuration
+    if settings.MCP_CONFIG_PATH:
+        mcp_config_path = Path(settings.MCP_CONFIG_PATH)
+    else:
+        mcp_config_path = workspace / "mcp-servers.json"
+    mcp_servers = load_mcp_config(mcp_config_path.resolve())
+    mcp_manager = MCPManager(mcp_servers)
+
+    # 4. Create core components
     registry = AgentRegistry()
-    runner = AgentRunner(db)
+    runner = AgentRunner(db, mcp_manager)
     scheduler = None
 
-    # 4. Scan workspace for .md files
+    # 5. Scan workspace for .md files
     workspace = workspace.resolve()
     if not workspace.exists():
         workspace.mkdir(parents=True)
@@ -81,14 +97,14 @@ async def bootstrap(workspace: Path, db_path: Path | None = None, start_schedule
 
     logger.info(f"Loaded {loaded} agents ({errors} errors) from {workspace}")
 
-    # 5. Schedule enabled agents (only when explicitly requested)
+    # 6. Schedule enabled agents (only when explicitly requested)
     if start_scheduler:
         scheduler = AgentScheduler(registry, runner)
         scheduler.start()
         for config in registry.enabled():
             scheduler.schedule_agent(config)
 
-        # 6. Start file watcher for hot-reload
+        # 7. Start file watcher for hot-reload
         scheduler.start_watcher(workspace)
 
     return Runtime(
@@ -97,4 +113,5 @@ async def bootstrap(workspace: Path, db_path: Path | None = None, start_schedule
         scheduler=scheduler,
         db=db,
         workspace=workspace,
+        mcp_manager=mcp_manager,
     )

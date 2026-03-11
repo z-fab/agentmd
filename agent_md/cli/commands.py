@@ -40,6 +40,7 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
     table.add_column("Model")
     table.add_column("Trigger")
     table.add_column("Tools")
+    table.add_column("MCP", style="magenta")
     table.add_column("Status", justify="center")
 
     for config in agents:
@@ -58,6 +59,7 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
             config.model.name,
             trigger_str,
             ", ".join(config.tools) or "—",
+            ", ".join(config.mcp) or "—",
             status,
         )
 
@@ -112,7 +114,7 @@ async def _start_cli(workspace: Path) -> None:
             await asyncio.sleep(1)
     except KeyboardInterrupt:
         console.print("\n[yellow]Shutting down...[/yellow]")
-        runtime.stop()
+        await runtime.aclose()
         console.print("[green]Agent.md stopped.[/green]")
 
 
@@ -141,7 +143,9 @@ def run(
 
     config = parse_agent_file(agent_file)
     console.print(
-        f"[cyan]▶ {config.name}[/cyan]  {config.model.provider}/{config.model.name}  tools: {', '.join(config.tools) or 'none'}"
+        f"[cyan]▶ {config.name}[/cyan]  {config.model.provider}/{config.model.name}  "
+        f"tools: {', '.join(config.tools) or 'none'}"
+        + (f"  mcp: {', '.join(config.mcp)}" if config.mcp else "")
     )
     console.print()
 
@@ -315,6 +319,7 @@ def validate(
     else:
         console.print()
     console.print(f"  Tools:        {', '.join(config.tools) or 'none'}")
+    console.print(f"  MCP Servers:  {', '.join(config.mcp) or 'none'}")
     console.print(f"  Enabled:      {config.enabled}")
     console.print(f"  Prompt:       {len(config.system_prompt)} chars")
 

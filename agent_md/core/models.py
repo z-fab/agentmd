@@ -54,6 +54,7 @@ class AgentConfig(BaseModel):
     model: ModelConfig
     trigger: TriggerConfig
     tools: list[str] = []
+    mcp: list[str] = []
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
 

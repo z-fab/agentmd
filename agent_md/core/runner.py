@@ -8,6 +8,7 @@ from agent_md.core.execution_logger import ExecutionLogger
 from agent_md.core.registry import AgentConfig
 from agent_md.db.database import Database
 from agent_md.graph.builder import create_react_graph, stream_agent_graph
+from agent_md.mcp.manager import MCPManager
 from agent_md.providers.factory import create_chat_model
 from agent_md.tools.registry import resolve_tools
 
@@ -17,8 +18,9 @@ logger = logging.getLogger(__name__)
 class AgentRunner:
     """Executes agents and persists results to the database."""
 
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, mcp_manager: MCPManager):
         self.db = db
+        self.mcp_manager = mcp_manager
 
     async def run(self, config: AgentConfig, trigger_type: str = "manual") -> dict:
         """Execute an agent and persist the result.
@@ -57,7 +59,16 @@ class AgentRunner:
             # 3. Resolve tools
             tools = resolve_tools(config.tools)
 
-            # 4. Build the graph
+            # 4. Add MCP tools if the agent declares any
+            if config.mcp:
+                mcp_tools = await self.mcp_manager.get_tools(config.mcp)
+                tools.extend(mcp_tools)
+                logger.info(
+                    f"Resolving tools: {len(tools) - len(mcp_tools)} built-in + "
+                    f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
+                )
+
+            # 5. Build the graph
             graph = create_react_graph(chat_model, tools)
 
             # 5. Stream execution — log each message in real time

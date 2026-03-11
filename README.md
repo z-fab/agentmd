@@ -27,6 +27,7 @@ Most agent frameworks require dozens of files, complex configurations, and deep 
 - 🕐 **Built-in scheduling** — cron expressions, intervals, or manual triggers
 - 🔧 **Pluggable tools** — file I/O, HTTP requests, and more out of the box
 - 📊 **Execution tracking** — every run is logged with status, duration, and token usage
+- 🔌 **MCP support** — connect to any MCP server and use its tools in your agents
 - 🖥️ **Beautiful CLI** — Rich-powered terminal output with tables, colors, and status indicators
 
 ---
@@ -125,6 +126,8 @@ tools:                       # Built-in tools to enable
   - file_read
   - file_write
   - http_request
+mcp:                         # MCP servers to connect (optional)
+  - fetch
 settings:
   temperature: 0.7           # LLM temperature (0.0 - 1.0)
   max_tokens: 4096           # Max output tokens
@@ -181,6 +184,69 @@ More tools coming soon — and the registry is designed to be easily extensible.
 
 ---
 
+## 🔌 MCP Servers
+
+Agents can use tools from external [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers. This lets you extend your agents with any MCP-compatible tool — web fetching, database access, code execution, and more.
+
+### 1. Configure servers
+
+Create a `mcp-servers.json` file in your workspace directory:
+
+```json
+{
+  "fetch": {
+    "command": "uvx",
+    "args": ["mcp-server-fetch"]
+  },
+  "github": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+    }
+  }
+}
+```
+
+Each server entry supports:
+- **stdio transport** — `command` + `args` (+ optional `env`)
+- **HTTP transport** — `url` (+ optional `headers`)
+
+Environment variables can be referenced with `${VAR_NAME}` syntax and are resolved at runtime.
+
+### 2. Use MCP tools in an agent
+
+Add an `mcp` field to the frontmatter listing the servers your agent needs:
+
+```markdown
+---
+name: web-researcher
+description: Fetches a URL and summarizes the content
+model:
+  provider: google
+  name: gemini-2.5-flash
+trigger:
+  type: manual
+tools:
+  - file_write
+mcp:
+  - fetch
+settings:
+  temperature: 0.3
+  timeout: 60
+enabled: true
+---
+
+You are a web research assistant. Use the `fetch` tool to retrieve
+the content of a URL and write a structured summary to a file.
+```
+
+MCP servers are connected lazily — only when an agent that references them is executed. Discovered tools are cached for the lifetime of the runtime.
+
+> You can also set the `MCP_CONFIG_PATH` environment variable to point to a custom config file location.
+
+---
+
 ## 📂 Project Structure
 
 ```
@@ -196,6 +262,7 @@ agentmd/
 │   ├── core/               # Parser, runner, scheduler, registry
 │   ├── db/                 # Async SQLite layer
 │   ├── graph/              # LangGraph ReAct agent
+│   ├── mcp/               # MCP server integration
 │   ├── providers/          # LLM provider factory
 │   └── tools/              # Built-in tool implementations
 └── pyproject.toml
@@ -322,14 +389,15 @@ agentmd validate workspace/my-agent.md
 
 ## 🗺️ Roadmap
 
-- [ ] 🤖 Multi-provider support (OpenAI, Anthropic)
-- [ ] 🖥️ Terminal UI (TUI) with live agent monitoring
-- [ ] 🔗 Agent-to-agent communication
-- [ ] 🧰 Custom tool definitions via plugins
-- [ ] 📡 Webhook triggers
-- [ ] 🐳 Docker image for self-hosting
-- [ ] 🤖 MCP support
-- [ ] 🧠 Skills support
+- [x] 🔌 MCP support
+- [ ] 🤖 Multi-provider support (OpenAI, Anthropic, Local)
+- [ ] 🧠 Memory & context persistence
+- [ ] 🧰 More built-in tools
+- [ ] ⚡ Skills support
+- [ ] 🔗 Pipelines — chain agents together
+- [ ] 🪄 Agent generator command
+- [ ] 🖥️ Terminal UI (TUI) with live monitoring
+- [ ] 🏪 Agent Marketplace
 
 ---
 

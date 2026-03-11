@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     OUTPUT_DIR: Path | str = Path("output").resolve()
 
+    # --- MCP ---
+    MCP_CONFIG_PATH: Path | str | None = None
+
     # --- Runtime ---
     log_level: str = "INFO"
 
