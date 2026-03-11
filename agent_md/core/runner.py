@@ -54,6 +54,7 @@ class AgentRunner:
                 provider=config.model.provider,
                 model=config.model.name,
                 settings=config.settings.model_dump(),
+                base_url=config.model.base_url,
             )
 
             # 3. Resolve tools

@@ -1,6 +1,6 @@
 [project]
 name = "agentmd"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     { name = "Fabricio Zillig", email = "me@zfab.me" },
 ]
@@ -19,6 +19,17 @@ dependencies = [
     "rich>=14.3.3",
     "typer>=0.24.1",
     "watchdog>=6.0.0",
+]
+
+[project.optional-dependencies]
+openai = ["langchain-openai>=0.3.0"]
+anthropic = ["langchain-anthropic>=0.3.0"]
+ollama = ["langchain-ollama>=0.3.0"]
+local = ["langchain-openai>=0.3.0"]
+all = [
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "langchain-ollama>=0.3.0",
 ]
 
 [project.scripts]

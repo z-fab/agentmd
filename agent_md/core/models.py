@@ -44,6 +44,15 @@ class ModelConfig(BaseModel):
 
     provider: str
     name: str
+    base_url: str | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        allowed = ("google", "openai", "anthropic", "ollama", "local")
+        if v not in allowed:
+            raise ValueError(f"Provider must be one of {allowed}, got '{v}'")
+        return v
 
 
 class AgentConfig(BaseModel):

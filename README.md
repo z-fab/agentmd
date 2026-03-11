@@ -52,8 +52,22 @@ pip install -e .
 
 ```bash
 cp .env.example .env
-# Add your API key
-echo "GOOGLE_API_KEY=your-key-here" > .env
+# Add your API keys (only the providers you use)
+echo "GOOGLE_API_KEY=your-key-here" >> .env
+echo "OPENAI_API_KEY=your-key-here" >> .env
+echo "ANTHROPIC_API_KEY=your-key-here" >> .env
+```
+
+**Install provider dependencies:**
+
+```bash
+# Install all providers
+uv pip install -e ".[all]"
+
+# Or install only what you need
+uv pip install -e ".[openai]"
+uv pip install -e ".[anthropic]"
+uv pip install -e ".[ollama]"
 ```
 
 ### 3. Create your first agent
@@ -116,8 +130,9 @@ Every agent is a single `.md` file with two parts:
 name: my-agent              # Unique identifier (alphanumeric, hyphens, underscores)
 description: What it does    # Human-readable description
 model:
-  provider: google           # LLM provider (google)
+  provider: google           # LLM provider (see table below)
   name: gemini-2.5-flash     # Model name
+  # base_url: http://...     # Only for 'local' provider
 trigger:
   type: interval             # manual | interval | cron
   interval: 30m              # For interval: 30s, 5m, 2h, 1d
@@ -134,6 +149,25 @@ settings:
   timeout: 300               # Execution timeout in seconds
 enabled: true                # Enable/disable without deleting
 ---
+```
+
+### Supported Providers
+
+| Provider | Install | Model examples | Notes |
+|---|---|---|---|
+| `google` | *(included by default)* | `gemini-2.5-flash`, `gemini-2.5-pro` | Uses `GOOGLE_API_KEY` |
+| `openai` | `uv pip install -e ".[openai]"` | `gpt-4o`, `gpt-4o-mini` | Uses `OPENAI_API_KEY` |
+| `anthropic` | `uv pip install -e ".[anthropic]"` | `claude-sonnet-4-5-20250929` | Uses `ANTHROPIC_API_KEY` |
+| `ollama` | `uv pip install -e ".[ollama]"` | `llama3`, `mistral` | Local Ollama server |
+| `local` | `uv pip install -e ".[openai]"` | Any model name | OpenAI-compatible endpoint (vLLM, LM Studio, etc.) |
+
+The `local` provider uses any OpenAI-compatible API. Set `base_url` in the model config (defaults to `http://localhost:11434/v1`):
+
+```yaml
+model:
+  provider: local
+  name: mistral-7b
+  base_url: "http://localhost:8000/v1"
 ```
 
 ---
@@ -390,7 +424,7 @@ agentmd validate workspace/my-agent.md
 ## 🗺️ Roadmap
 
 - [x] 🔌 MCP support
-- [ ] 🤖 Multi-provider support (OpenAI, Anthropic, Local)
+- [x] 🤖 Multi-provider support (OpenAI, Anthropic, Ollama, Local)
 - [ ] 🧠 Memory & context persistence
 - [ ] 🧰 More built-in tools
 - [ ] ⚡ Skills support
@@ -407,7 +441,7 @@ agentmd validate workspace/my-agent.md
 |---|---|
 | Runtime | Python 3.13+ |
 | Agent Framework | [LangGraph](https://github.com/langchain-ai/langgraph) |
-| LLM Provider | [Google Gemini](https://ai.google.dev/) (via LangChain) |
+| LLM Providers | Google Gemini, OpenAI, Anthropic, Ollama, Local (via LangChain) |
 | CLI | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) |
 | Database | SQLite (async via [aiosqlite](https://github.com/omnilib/aiosqlite)) |
 | Scheduling | [APScheduler](https://apscheduler.readthedocs.io/) |
