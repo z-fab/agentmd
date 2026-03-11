@@ -121,7 +121,11 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
 
 @app.command()
 def start(
-    workspace: Path = typer.Option("./workspace", "--workspace", "-w", help="Directory with .md agent files"),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Root workspace directory"),
+    agents_dir: Path = typer.Option(None, "--agents-dir", help="Directory with .md agent files"),
+    output_dir: Path = typer.Option(None, "--output-dir", help="Default output directory for agents"),
+    db_path: Path = typer.Option(None, "--db-path", help="Path to SQLite database"),
+    mcp_config: Path = typer.Option(None, "--mcp-config", help="Path to MCP servers JSON config"),
     tui: bool = typer.Option(False, "--tui", help="Launch Terminal UI"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress all output except errors"),
     verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity (-v, -vv, -vvv)"),
@@ -138,7 +142,9 @@ def start(
         # tui_app = AgentMdApp(workspace=workspace)
         # tui_app.run()
     else:
-        asyncio.run(_start_cli(workspace, on_event=on_event))
+        asyncio.run(
+            _start_cli(workspace, agents_dir=agents_dir, output_dir=output_dir, db_path=db_path, mcp_config=mcp_config, on_event=on_event)
+        )
 
 
 def _make_complete_callback(con: Console):
@@ -161,19 +167,38 @@ def _make_complete_callback(con: Console):
     return _on_complete
 
 
-async def _start_cli(workspace: Path, on_event=None) -> None:
+async def _start_cli(
+    workspace: Path,
+    agents_dir: Path | None = None,
+    output_dir: Path | None = None,
+    db_path: Path | None = None,
+    mcp_config: Path | None = None,
+    on_event=None,
+) -> None:
     from agent_md.core.bootstrap import bootstrap
 
     on_complete = _make_complete_callback(console)
-    runtime = await bootstrap(workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete)
+    runtime = await bootstrap(
+        workspace,
+        agents_dir=agents_dir,
+        output_dir=output_dir,
+        db_path=db_path,
+        mcp_config=mcp_config,
+        start_scheduler=True,
+        on_event=on_event,
+        on_complete=on_complete,
+    )
 
     agents = runtime.registry.all()
     enabled = [a for a in agents if a.enabled]
     scheduled = [a for a in enabled if a.trigger.type != "manual"]
 
+    ctx = runtime.path_context
     console.print()
     console.print("[bold green]Agent.md is running[/bold green]")
-    console.print(f"  Workspace:  {runtime.workspace}")
+    console.print(f"  Workspace:  {ctx.workspace_root}")
+    console.print(f"  Agents dir: {ctx.agents_dir}")
+    console.print(f"  Output dir: {ctx.output_dir}")
     console.print(f"  Agents:     {len(agents)} loaded, {len(enabled)} enabled, {len(scheduled)} scheduled")
     console.print()
 
@@ -199,21 +224,35 @@ async def _start_cli(workspace: Path, on_event=None) -> None:
 @app.command()
 def run(
     agent: str = typer.Argument(help="Agent name or .md filename"),
-    workspace: Path = typer.Option("./workspace", "--workspace", "-w", help="Directory with .md agent files"),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Root workspace directory"),
+    agents_dir: Path = typer.Option(None, "--agents-dir", help="Directory with .md agent files"),
+    output_dir: Path = typer.Option(None, "--output-dir", help="Default output directory for agents"),
+    db_path: Path = typer.Option(None, "--db-path", help="Path to SQLite database"),
+    mcp_config: Path = typer.Option(None, "--mcp-config", help="Path to MCP servers JSON config"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress event output"),
     verbose: int = typer.Option(0, "--verbose", "-v", count=True, help="Increase verbosity (-v, -vv, -vvv)"),
 ):
     """Execute a single agent manually (one-shot)."""
     from agent_md.core.services import AgentNotFoundError, run_agent
+    from agent_md.core.settings import settings
 
     verbosity = _resolve_verbosity(quiet, verbose, default=1)
     _setup_logging(verbosity)
 
+    # Resolve agents_dir for file lookup
+    resolved_agents_dir = agents_dir
+    if resolved_agents_dir is None:
+        if settings.AGENTMD_AGENTS_DIR:
+            resolved_agents_dir = Path(settings.AGENTMD_AGENTS_DIR)
+        else:
+            ws = workspace or (Path(settings.AGENTMD_WORKSPACE) if settings.AGENTMD_WORKSPACE else Path("./workspace"))
+            resolved_agents_dir = ws / "agents"
+
     from agent_md.core.parser import parse_agent_file
 
-    agent_file = workspace / f"{agent.replace('.md', '')}.md"
+    agent_file = resolved_agents_dir / f"{agent.replace('.md', '')}.md"
     if not agent_file.exists():
-        console.print(f"[red]Agent '{agent}' not found in workspace[/red]")
+        console.print(f"[red]Agent '{agent}' not found in {resolved_agents_dir}[/red]")
         raise typer.Exit(1)
 
     config = parse_agent_file(agent_file)
@@ -226,7 +265,11 @@ def run(
     on_event = _make_console_callback(console) if verbosity >= 1 else None
 
     try:
-        _, result = asyncio.run(run_agent(agent, workspace, on_event=on_event))
+        _, result = asyncio.run(
+            run_agent(
+                agent, workspace, agents_dir=agents_dir, output_dir=output_dir, db_path=db_path, mcp_config=mcp_config, on_event=on_event
+            )
+        )
     except AgentNotFoundError:
         console.print(f"[red]Agent '{agent}' not found in workspace[/red]")
         raise typer.Exit(1)
@@ -252,13 +295,17 @@ def run(
 
 @app.command(name="list")
 def list_agents(
-    workspace: Path = typer.Option("./workspace", "--workspace", "-w", help="Directory with .md agent files"),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Root workspace directory"),
+    agents_dir: Path = typer.Option(None, "--agents-dir", help="Directory with .md agent files"),
+    output_dir: Path = typer.Option(None, "--output-dir", help="Default output directory for agents"),
+    db_path: Path = typer.Option(None, "--db-path", help="Path to SQLite database"),
+    mcp_config: Path = typer.Option(None, "--mcp-config", help="Path to MCP servers JSON config"),
 ):
     """List all agents in the workspace."""
     from agent_md.core.services import list_agents as svc_list_agents
 
     _setup_logging(0)
-    agents = asyncio.run(svc_list_agents(workspace))
+    agents = asyncio.run(svc_list_agents(workspace, agents_dir=agents_dir, output_dir=output_dir, db_path=db_path, mcp_config=mcp_config))
 
     if not agents:
         console.print("[yellow]No agents found in workspace[/yellow]")
@@ -277,7 +324,11 @@ def logs(
     agent: str = typer.Argument(help="Agent name"),
     n: int = typer.Option(10, "--n", "-n", help="Number of recent executions"),
     execution: int = typer.Option(None, "--execution", "-e", help="Show messages for a specific execution ID"),
-    workspace: Path = typer.Option("./workspace", "--workspace", "-w"),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Root workspace directory"),
+    agents_dir: Path = typer.Option(None, "--agents-dir", help="Directory with .md agent files"),
+    output_dir: Path = typer.Option(None, "--output-dir", help="Default output directory for agents"),
+    db_path: Path = typer.Option(None, "--db-path", help="Path to SQLite database"),
+    mcp_config: Path = typer.Option(None, "--mcp-config", help="Path to MCP servers JSON config"),
 ):
     """Show recent execution history for an agent."""
     _setup_logging(0)
@@ -286,7 +337,9 @@ def logs(
     if execution is not None:
         from agent_md.core.services import get_execution_messages
 
-        messages = asyncio.run(get_execution_messages(execution, workspace))
+        messages = asyncio.run(
+            get_execution_messages(execution, workspace, agents_dir=agents_dir, output_dir=output_dir, db_path=db_path, mcp_config=mcp_config)
+        )
 
         if not messages:
             console.print(f"[yellow]No messages found for execution #{execution}[/yellow]")
@@ -320,7 +373,9 @@ def logs(
     # Default: show list of recent executions
     from agent_md.core.services import get_agent_logs
 
-    executions = asyncio.run(get_agent_logs(agent, n, workspace))
+    executions = asyncio.run(
+        get_agent_logs(agent, n, workspace, agents_dir=agents_dir, output_dir=output_dir, db_path=db_path, mcp_config=mcp_config)
+    )
 
     if not executions:
         console.print(f"[yellow]No executions found for '{agent}'[/yellow]")
@@ -394,6 +449,8 @@ def validate(
         console.print()
     console.print(f"  Tools:        {', '.join(config.tools) or 'none'}")
     console.print(f"  MCP Servers:  {', '.join(config.mcp) or 'none'}")
+    console.print(f"  Read paths:   {', '.join(config.read) or 'default (workspace)'}")
+    console.print(f"  Write paths:  {', '.join(config.write) or 'default (output)'}")
     console.print(f"  Enabled:      {config.enabled}")
     console.print(f"  Prompt:       {len(config.system_prompt)} chars")
 

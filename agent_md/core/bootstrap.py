@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent_md.core.parser import parse_agent_file
+from agent_md.core.path_context import PathContext
 from agent_md.core.registry import AgentRegistry
 from agent_md.core.runner import AgentRunner
 from agent_md.core.scheduler import AgentScheduler
@@ -26,6 +27,7 @@ class Runtime:
     db: Database
     workspace: Path
     mcp_manager: MCPManager
+    path_context: PathContext
 
     def stop(self):
         """Graceful shutdown of synchronous components."""
@@ -39,8 +41,11 @@ class Runtime:
 
 
 async def bootstrap(
-    workspace: Path,
+    workspace: Path | None = None,
+    agents_dir: Path | None = None,
+    output_dir: Path | None = None,
     db_path: Path | None = None,
+    mcp_config: Path | None = None,
     start_scheduler: bool = False,
     on_event=None,
     on_complete=None,
@@ -48,11 +53,14 @@ async def bootstrap(
     """Initialize all components and load agents from workspace.
 
     Args:
-        workspace: Directory containing .md agent files.
-        db_path: Path to SQLite database. Defaults to ./data/agent_md.db
+        workspace: Root workspace directory.
+        agents_dir: Directory containing .md agent files. Defaults to {workspace}/agents.
+        output_dir: Default output directory for agents. Defaults to {workspace}/output.
+        db_path: Path to SQLite database. Defaults to ./data/agentmd.db.
+        mcp_config: Path to MCP servers JSON config. Defaults to {agents_dir}/mcp-servers.json.
         start_scheduler: Whether to start the scheduler and file watcher.
-            Set to True only for `agentmd start`. Read-only commands
-            (list, logs, run) should leave this as False.
+        on_event: Optional callback for real-time UI updates.
+        on_complete: Optional callback when execution completes.
 
     Returns:
         A fully initialized Runtime instance.
@@ -60,35 +68,63 @@ async def bootstrap(
     # 1. Settings are loaded automatically by pydantic-settings (see core/settings.py)
     logger.debug(f"Settings loaded — log_level={settings.log_level}")
 
-    # 2. Initialize database
-    if db_path is None:
-        db_path = workspace.parent / "data" / "agentmd.db"
-        if not (workspace.parent / "data").exists():
-            db_path = Path("data") / "agentmd.db"
+    # 2. Resolve paths: CLI > env var > convention
+    if workspace is None:
+        workspace = Path(settings.AGENTMD_WORKSPACE) if settings.AGENTMD_WORKSPACE else Path("./workspace")
+    workspace = workspace.resolve()
 
+    if agents_dir is None:
+        agents_dir = Path(settings.AGENTMD_AGENTS_DIR) if settings.AGENTMD_AGENTS_DIR else workspace / "agents"
+    agents_dir = agents_dir.resolve()
+
+    if output_dir is None:
+        output_dir = Path(settings.AGENTMD_OUTPUT_DIR) if settings.AGENTMD_OUTPUT_DIR else workspace / "output"
+    output_dir = output_dir.resolve()
+
+    if db_path is None:
+        if settings.AGENTMD_DB_PATH:
+            db_path = Path(settings.AGENTMD_DB_PATH)
+        else:
+            db_path = workspace.parent / "data" / "agentmd.db"
+            if not (workspace.parent / "data").exists():
+                db_path = Path("data") / "agentmd.db"
+    db_path = db_path.resolve()
+
+    if mcp_config is None:
+        mcp_config = (
+            Path(settings.AGENTMD_MCP_CONFIG) if settings.AGENTMD_MCP_CONFIG else agents_dir / "mcp-servers.json"
+        )
+    mcp_config = mcp_config.resolve()
+
+    path_context = PathContext(
+        workspace_root=workspace,
+        agents_dir=agents_dir,
+        output_dir=output_dir,
+        db_path=db_path,
+        mcp_config=mcp_config,
+    )
+
+    # 3. Ensure directories exist
+    for d in (workspace, agents_dir, output_dir, db_path.parent):
+        if not d.exists():
+            d.mkdir(parents=True)
+            logger.info(f"Created directory: {d}")
+
+    # 4. Initialize database
     db = Database(db_path)
     await db.connect()
 
-    # 3. Load MCP server configuration
-    if settings.MCP_CONFIG_PATH:
-        mcp_config_path = Path(settings.MCP_CONFIG_PATH)
-    else:
-        mcp_config_path = workspace / "mcp-servers.json"
-    mcp_servers = load_mcp_config(mcp_config_path.resolve())
+    # 5. Load MCP server configuration
+    mcp_servers = load_mcp_config(mcp_config)
     mcp_manager = MCPManager(mcp_servers)
 
-    # 4. Create core components
+    # 6. Create core components
     registry = AgentRegistry()
-    runner = AgentRunner(db, mcp_manager)
+    runner = AgentRunner(db, mcp_manager, path_context)
     scheduler = None
 
-    # 5. Scan workspace for .md files
-    workspace = workspace.resolve()
-    if not workspace.exists():
-        workspace.mkdir(parents=True)
-        logger.info(f"Created workspace directory: {workspace}")
-
-    md_files = sorted(workspace.glob("*.md"))
+    # 7. Scan agents directory for .md files
+    md_files = sorted(agents_dir.glob("*.md"))
     loaded = 0
     errors = 0
 
@@ -101,17 +137,17 @@ async def bootstrap(
             logger.error(f"Failed to load {md_file.name}: {e}")
             errors += 1
 
-    logger.info(f"Loaded {loaded} agents ({errors} errors) from {workspace}")
+    logger.info(f"Loaded {loaded} agents ({errors} errors) from {agents_dir}")
 
-    # 6. Schedule enabled agents (only when explicitly requested)
+    # 8. Schedule enabled agents (only when explicitly requested)
     if start_scheduler:
         scheduler = AgentScheduler(registry, runner, on_event=on_event, on_complete=on_complete)
         scheduler.start()
         for config in registry.enabled():
             scheduler.schedule_agent(config)
 
-        # 7. Start file watcher for hot-reload
-        scheduler.start_watcher(workspace)
+        # 9. Start file watcher for hot-reload
+        scheduler.start_watcher(agents_dir)
 
     return Runtime(
         registry=registry,
@@ -120,4 +156,5 @@ async def bootstrap(
         db=db,
         workspace=workspace,
         mcp_manager=mcp_manager,
+        path_context=path_context,
     )

@@ -63,8 +63,7 @@ def create_chat_model(
                 from langchain_anthropic import ChatAnthropic
             except ImportError:
                 raise ImportError(
-                    "Provider 'anthropic' requires langchain-anthropic. "
-                    "Install with: pip install langchain-anthropic"
+                    "Provider 'anthropic' requires langchain-anthropic. Install with: pip install langchain-anthropic"
                 )
             return ChatAnthropic(
                 model=model,

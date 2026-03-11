@@ -270,6 +270,5 @@ $RECYCLE.BIN/
 *.db-wal
 
 # Agent.md
-output/*
-!output/.gitkeep
+workspace/output/
 CLAUDE.md

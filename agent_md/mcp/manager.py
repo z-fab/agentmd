@@ -45,9 +45,7 @@ class MCPManager:
         unknown = [n for n in server_names if n not in self._configs]
         if unknown:
             available = ", ".join(sorted(self._configs)) or "(none)"
-            raise ValueError(
-                f"Unknown MCP server(s): {', '.join(unknown)}. Available: {available}"
-            )
+            raise ValueError(f"Unknown MCP server(s): {', '.join(unknown)}. Available: {available}")
 
         all_tools: list = []
         for name in server_names:

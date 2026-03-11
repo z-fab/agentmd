@@ -79,11 +79,21 @@ class AgentConfig(BaseModel):
     mcp: list[str] = []
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
+    read: list[str] = []
+    write: list[str] = []
 
     # Computed fields (not from YAML)
     system_prompt: str = ""
     file_path: str = ""
     config_hash: str = ""
+
+    @field_validator("read", "write", mode="before")
+    @classmethod
+    def normalize_to_list(cls, v):
+        """Accept a single string or a list of strings."""
+        if isinstance(v, str):
+            return [v]
+        return v
 
     @field_validator("name")
     @classmethod

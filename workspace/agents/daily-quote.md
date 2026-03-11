@@ -2,8 +2,8 @@
 name: daily-quote
 description: Fetches an inspirational quote from the web and saves it to a file
 model:
-  provider: openai
-  name: gpt-5-mini
+  provider: google
+  name: gemini-2.5-flash
 trigger:
   type: interval
   interval: 120s

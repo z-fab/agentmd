@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,13 +21,12 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
 
-    # --- Database ---
-    DB_PATH: Path | str = Path("data/agentmd.db").resolve()
-
-    OUTPUT_DIR: Path | str = Path("output").resolve()
-
-    # --- MCP ---
-    MCP_CONFIG_PATH: Path | str | None = None
+    # --- Paths (overridable via env vars) ---
+    AGENTMD_WORKSPACE: str | None = None
+    AGENTMD_AGENTS_DIR: str | None = None
+    AGENTMD_OUTPUT_DIR: str | None = None
+    AGENTMD_DB_PATH: str | None = None
+    AGENTMD_MCP_CONFIG: str | None = None
 
     # --- Runtime ---
     log_level: str = "INFO"

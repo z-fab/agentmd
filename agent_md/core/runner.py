@@ -5,6 +5,7 @@ import logging
 import time
 
 from agent_md.core.execution_logger import ExecutionLogger
+from agent_md.core.path_context import PathContext
 from agent_md.core.registry import AgentConfig
 from agent_md.db.database import Database
 from agent_md.graph.builder import create_react_graph, stream_agent_graph
@@ -18,9 +19,10 @@ logger = logging.getLogger(__name__)
 class AgentRunner:
     """Executes agents and persists results to the database."""
 
-    def __init__(self, db: Database, mcp_manager: MCPManager):
+    def __init__(self, db: Database, mcp_manager: MCPManager, path_context: PathContext):
         self.db = db
         self.mcp_manager = mcp_manager
+        self.path_context = path_context
 
     async def run(self, config: AgentConfig, trigger_type: str = "manual", on_event=None) -> dict:
         """Execute an agent and persist the result.
@@ -60,7 +62,7 @@ class AgentRunner:
             )
 
             # 3. Resolve tools
-            tools = resolve_tools(config.tools)
+            tools = resolve_tools(config.tools, config, self.path_context)
 
             # 4. Add MCP tools if the agent declares any
             if config.mcp:
@@ -79,7 +81,7 @@ class AgentRunner:
 
             async def _stream():
                 nonlocal last_ai_msg, total_input_tokens, total_output_tokens
-                async for msg in stream_agent_graph(graph, config.system_prompt):
+                async for msg in stream_agent_graph(graph, config.system_prompt, config, self.path_context):
                     await ex_logger.log_message(msg)
 
                     # Accumulate token usage from every AI message
