@@ -87,7 +87,7 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
     table.add_column("Provider", style="green")
     table.add_column("Model")
     table.add_column("Trigger")
-    table.add_column("Tools")
+    table.add_column("Custom Tools")
     table.add_column("MCP", style="magenta")
     table.add_column("Status", justify="center")
 
@@ -106,7 +106,7 @@ def _print_agents_table(agents: list[AgentConfig]) -> None:
             config.model.provider,
             config.model.name,
             trigger_str,
-            ", ".join(config.tools) or "—",
+            ", ".join(config.custom_tools) or "—",
             ", ".join(config.mcp) or "—",
             status,
         )
@@ -258,7 +258,7 @@ def run(
     config = parse_agent_file(agent_file)
     console.print(
         f"[cyan]▶ Running {config.name}[/cyan]  {config.model.provider}/{config.model.name}  "
-        f"tools: {', '.join(config.tools) or 'none'}" + (f"  mcp: {', '.join(config.mcp)}" if config.mcp else "")
+        f"custom_tools: {', '.join(config.custom_tools) or 'none'}" + (f"  mcp: {', '.join(config.mcp)}" if config.mcp else "")
     )
     console.print()
 
@@ -425,12 +425,24 @@ def logs(
 @app.command()
 def validate(
     file: Path = typer.Argument(help="Path to the .md agent file"),
+    agents_dir: Path = typer.Option(None, "--agents-dir", help="Directory with .md agent files (used to locate tools/)"),
 ):
     """Validate an agent file without executing it."""
     from agent_md.core.services import validate_agent
+    from agent_md.core.settings import settings
+
+    # Resolve tools_dir for custom tool validation
+    resolved_agents_dir = agents_dir
+    if resolved_agents_dir is None:
+        if settings.AGENTMD_AGENTS_DIR:
+            resolved_agents_dir = Path(settings.AGENTMD_AGENTS_DIR)
+        else:
+            ws = Path(settings.AGENTMD_WORKSPACE) if settings.AGENTMD_WORKSPACE else Path("./workspace")
+            resolved_agents_dir = ws / "agents"
+    tools_dir = resolved_agents_dir / "tools"
 
     try:
-        result = validate_agent(file)
+        result = validate_agent(file, tools_dir=tools_dir)
     except Exception as e:
         console.print(f"[red]✗ Validation failed:[/red] {e}")
         raise typer.Exit(1)
@@ -447,13 +459,14 @@ def validate(
         console.print(f" ({config.trigger.interval})")
     else:
         console.print()
-    console.print(f"  Tools:        {', '.join(config.tools) or 'none'}")
+    console.print(f"  Built-in:     {', '.join(result.builtin_tools)}")
+    console.print(f"  Custom tools: {', '.join(config.custom_tools) or 'none'}")
     console.print(f"  MCP Servers:  {', '.join(config.mcp) or 'none'}")
     console.print(f"  Read paths:   {', '.join(config.read) or 'default (workspace)'}")
     console.print(f"  Write paths:  {', '.join(config.write) or 'default (output)'}")
     console.print(f"  Enabled:      {config.enabled}")
     console.print(f"  Prompt:       {len(config.system_prompt)} chars")
 
-    if result.unknown_tools:
-        console.print(f"\n[yellow]⚠ Unknown tools: {', '.join(result.unknown_tools)}[/yellow]")
-        console.print(f"  Available: {', '.join(result.available_tools)}")
+    if result.custom_tools_missing:
+        console.print(f"\n[yellow]⚠ Missing custom tools: {', '.join(result.custom_tools_missing)}[/yellow]")
+        console.print(f"  Expected in: {tools_dir}")

@@ -96,12 +96,15 @@ async def bootstrap(
         )
     mcp_config = mcp_config.resolve()
 
+    tools_dir = (agents_dir / "tools").resolve()
+
     path_context = PathContext(
         workspace_root=workspace,
         agents_dir=agents_dir,
         output_dir=output_dir,
         db_path=db_path,
         mcp_config=mcp_config,
+        tools_dir=tools_dir,
     )
 
     # 3. Ensure directories exist

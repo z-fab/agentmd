@@ -6,9 +6,6 @@ model:
   name: gemini-2.5-flash
 trigger:
   type: manual
-tools:
-  - file_read
-  - file_write
 settings:
   temperature: 0.3
   timeout: 60

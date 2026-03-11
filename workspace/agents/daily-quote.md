@@ -7,9 +7,6 @@ model:
 trigger:
   type: interval
   interval: 120s
-tools:
-  - http_request
-  - file_write
 settings:
   temperature: 0.9
   timeout: 30

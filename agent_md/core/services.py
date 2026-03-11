@@ -54,22 +54,36 @@ class ValidationResult:
     """Result of validating an agent file."""
 
     config: AgentConfig
-    available_tools: list[str]
-    unknown_tools: list[str]
+    builtin_tools: list[str]
+    custom_tools_found: list[str]
+    custom_tools_missing: list[str]
 
 
-def validate_agent(file: Path) -> ValidationResult:
+def validate_agent(file: Path, tools_dir: Path | None = None) -> ValidationResult:
     """Parse and validate an agent file, returning structured results."""
-    from agent_md.tools.registry import list_tools
+    from agent_md.tools.registry import list_builtin_tools
 
     config = parse_agent_file(file)
-    available = list_tools()
-    unknown = [t for t in config.tools if t not in available]
+    builtins = list_builtin_tools()
+
+    # Check custom tools exist on disk
+    found = []
+    missing = []
+    if config.custom_tools and tools_dir:
+        for name in config.custom_tools:
+            tool_file = tools_dir / f"{name}.py"
+            if tool_file.exists():
+                found.append(name)
+            else:
+                missing.append(name)
+    elif config.custom_tools:
+        missing = list(config.custom_tools)
 
     return ValidationResult(
         config=config,
-        available_tools=available,
-        unknown_tools=unknown,
+        builtin_tools=builtins,
+        custom_tools_found=found,
+        custom_tools_missing=missing,
     )
 
 

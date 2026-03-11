@@ -13,6 +13,7 @@ class PathContext:
     output_dir: Path
     db_path: Path
     mcp_config: Path
+    tools_dir: Path
 
     def get_read_paths(self, config) -> list[Path]:
         """Return resolved read paths for an agent.

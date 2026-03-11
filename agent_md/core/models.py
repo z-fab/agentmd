@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator, model_validator
 class TriggerConfig(BaseModel):
     """Configuration for agent triggers."""
 
-    type: str  # 'cron', 'interval', 'manual'
+    type: Optional[str] = "manual"  # 'cron', 'interval', 'manual'
     schedule: Optional[str] = None  # cron expression
     interval: Optional[str] = None  # e.g. '30m', '2h', '1d'
 
@@ -75,7 +75,7 @@ class AgentConfig(BaseModel):
     description: str = ""
     model: ModelConfig
     trigger: TriggerConfig
-    tools: list[str] = []
+    custom_tools: list[str] = []
     mcp: list[str] = []
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
@@ -86,6 +86,14 @@ class AgentConfig(BaseModel):
     system_prompt: str = ""
     file_path: str = ""
     config_hash: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_tools_alias(cls, data):
+        """Accept 'tools' in YAML frontmatter as alias for 'custom_tools'."""
+        if isinstance(data, dict) and "tools" in data and "custom_tools" not in data:
+            data["custom_tools"] = data.pop("tools")
+        return data
 
     @field_validator("read", "write", mode="before")
     @classmethod

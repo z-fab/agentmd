@@ -11,7 +11,8 @@ from agent_md.db.database import Database
 from agent_md.graph.builder import create_react_graph, stream_agent_graph
 from agent_md.mcp.manager import MCPManager
 from agent_md.providers.factory import create_chat_model
-from agent_md.tools.registry import resolve_tools
+from agent_md.tools.custom_loader import load_custom_tools
+from agent_md.tools.registry import resolve_builtin_tools
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +62,14 @@ class AgentRunner:
                 base_url=config.model.base_url,
             )
 
-            # 3. Resolve tools
-            tools = resolve_tools(config.tools, config, self.path_context)
+            # 3. Resolve built-in tools (always available)
+            tools = resolve_builtin_tools(config, self.path_context)
 
-            # 4. Add MCP tools if the agent declares any
+            # 4. Load custom tools if declared
+            if config.custom_tools:
+                tools.extend(load_custom_tools(config.custom_tools, self.path_context.tools_dir))
+
+            # 5. Add MCP tools if the agent declares any
             if config.mcp:
                 mcp_tools = await self.mcp_manager.get_tools(config.mcp)
                 tools.extend(mcp_tools)
@@ -73,10 +78,10 @@ class AgentRunner:
                     f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
                 )
 
-            # 5. Build the graph
+            # 6. Build the graph
             graph = create_react_graph(chat_model, tools)
 
-            # 5. Stream execution — log each message in real time
+            # 7. Stream execution — log each message in real time
             last_ai_msg = None
 
             async def _stream():

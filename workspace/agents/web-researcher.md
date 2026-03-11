@@ -6,8 +6,6 @@ model:
   name: gemini-2.5-flash
 trigger:
   type: manual
-tools:
-  - file_write
 mcp:
   - fetch
 settings:
