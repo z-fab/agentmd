@@ -241,10 +241,11 @@ http_request(
 3. **Environment files**: Never make `.env` files readable
 
 ### HTTP Requests
-1. **Use environment variables**: Never hardcode secrets in URLs or headers
+1. **Use environment variables**: Never hardcode secrets in URLs or headers — use `${VAR}` syntax in the prompt body, which is resolved from `.env` at runtime
    ```yaml
    Call the API at ${API_ENDPOINT} with header "X-API-Key: ${API_KEY}"
    ```
+   See [Environment Variable Substitution](../agent-configuration.md#environment-variable-substitution) for details.
 2. **Validate responses**: Check HTTP status codes before processing
 3. **Rate limiting**: Use scheduled triggers (`every: 1m`) to avoid overwhelming APIs
 4. **Timeout awareness**: 30-second limit may be too short for slow APIs

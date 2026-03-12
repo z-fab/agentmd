@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from agent_md.core.env import resolve_env_vars
 from agent_md.core.models import AgentConfig
 
 
@@ -29,7 +30,7 @@ def parse_agent_file(path: Path) -> AgentConfig:
         raise ValueError(f"Malformed frontmatter in {path.name}: missing closing '---'")
 
     frontmatter_raw = parts[1].strip()
-    body = parts[2].strip()
+    body = resolve_env_vars(parts[2].strip())
 
     # Parse YAML
     try:

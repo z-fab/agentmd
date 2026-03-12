@@ -4,25 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import re
 from pathlib import Path
 from typing import Any
 
+from agent_md.core.env import resolve_env_vars
+
 logger = logging.getLogger(__name__)
-
-_ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
-
-
-def _resolve_env_vars(value: Any) -> Any:
-    """Recursively resolve ${VAR_NAME} patterns in strings, lists, and dicts."""
-    if isinstance(value, str):
-        return _ENV_VAR_RE.sub(lambda m: os.environ.get(m.group(1), m.group(0)), value)
-    if isinstance(value, list):
-        return [_resolve_env_vars(item) for item in value]
-    if isinstance(value, dict):
-        return {k: _resolve_env_vars(v) for k, v in value.items()}
-    return value
 
 
 def _infer_transport(name: str, raw: dict) -> dict[str, Any]:
@@ -93,7 +80,7 @@ def load_mcp_config(config_path: Path) -> dict[str, dict[str, Any]]:
     for name, server_raw in raw.items():
         if not isinstance(server_raw, dict):
             raise ValueError(f"MCP server '{name}': config must be an object")
-        resolved = _resolve_env_vars(server_raw)
+        resolved = resolve_env_vars(server_raw)
         servers[name] = _infer_transport(name, resolved)
 
     if servers:

@@ -132,6 +132,7 @@ Use `${VAR_NAME}` syntax to reference environment variables. They are resolved a
 - Variables read from your `.env` file or shell environment
 - Undefined variables remain as `${VAR_NAME}` (no substitution)
 - **Never commit secrets to `mcp-servers.json`** — always use `${VAR}` references
+- The same `${VAR}` syntax works in [agent prompt bodies](../agent-configuration.md#environment-variable-substitution)
 
 ### Fields
 

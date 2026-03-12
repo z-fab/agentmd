@@ -56,6 +56,9 @@ ANTHROPIC_API_KEY=your-key-here
 !!! warning "Security"
     Never commit `.env` to git. It's in `.gitignore` by default.
 
+!!! tip "Using secrets in prompts"
+    Use `${VAR_NAME}` in your agent's prompt body to inject `.env` values at runtime — no need to hardcode secrets. See [Environment Variable Substitution](agent-configuration.md#environment-variable-substitution).
+
 ## 3. Create Your First Agent
 
 Create `workspace/agents/hello.md`:

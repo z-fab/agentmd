@@ -64,10 +64,9 @@ name: slack-bot
 model:
   provider: openai
   # API key loaded from OPENAI_API_KEY env var
-settings:
-  env:
-    SLACK_WEBHOOK: ${SLACK_WEBHOOK}  # Loaded from .env
 ---
+
+Send a notification to ${SLACK_WEBHOOK} with today's summary.
 ```
 
 `.env` file:
@@ -75,6 +74,8 @@ settings:
 OPENAI_API_KEY=sk-proj-abc123...
 SLACK_WEBHOOK=https://hooks.slack.com/services/T00/B00/xxx
 ```
+
+At runtime, `${SLACK_WEBHOOK}` in the prompt is replaced with the actual URL from `.env`.
 
 ### 3. Use Environment Variables
 
@@ -107,18 +108,23 @@ OUTPUT_DIR=/output
 MAX_ITERATIONS=10
 ```
 
-**Access in agents:**
+**Access in agent prompts:**
+
+Use `${VAR_NAME}` syntax in the prompt body to inject secrets at runtime:
+
 ```yaml
 ---
 name: api-poller
-settings:
-  env:
-    API_TOKEN: ${API_TOKEN}
-    API_BASE_URL: ${API_BASE_URL}
+model:
+  provider: google
+  name: gemini-2.5-flash
 ---
 
-You have access to an API. Use the API_TOKEN and API_BASE_URL from settings to make requests.
+Poll the API at ${API_BASE_URL}/status with header "Authorization: Bearer ${API_TOKEN}".
+Report any issues.
 ```
+
+The `${VAR}` values are resolved from `.env` before the prompt is sent to the LLM. Variables without the `$` prefix (e.g., `{date}`) are not substituted — use those as placeholders for the LLM to fill in.
 
 ### 4. Set Timeouts and Limits
 

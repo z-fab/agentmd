@@ -415,6 +415,58 @@ model:
   url: http://localhost:8000
 ```
 
+## Environment Variable Substitution
+
+Use `${VAR_NAME}` syntax in the prompt body (Markdown section) to inject values from `.env` or shell environment at runtime. This keeps secrets out of agent files.
+
+```markdown
+---
+name: api-caller
+model:
+  provider: google
+  name: gemini-2.5-flash
+---
+
+Fetch data from ${API_ENDPOINT} using header "Authorization: Bearer ${API_TOKEN}".
+Summarize the response and save to `output/result.txt`.
+```
+
+With `.env`:
+```bash
+API_ENDPOINT=https://api.example.com/data
+API_TOKEN=sk-my-secret-token
+```
+
+At runtime, the prompt becomes:
+```
+Fetch data from https://api.example.com/data using header "Authorization: Bearer sk-my-secret-token".
+```
+
+### Rules
+
+- **Syntax:** `${VAR_NAME}` — the `$` prefix is required
+- **Undefined variables** remain as literal `${VAR_NAME}` (no error)
+- **`{var}` without `$`** is **not** substituted — use this for placeholders the LLM should fill in (e.g., `{date}`, `{filename}`)
+- Substitution applies to the **Markdown body only**, not YAML frontmatter
+- Same syntax used in [MCP configuration](tools/mcp-integration.md)
+
+### Example: Mixing env vars and LLM placeholders
+
+```markdown
+---
+name: gmail-digest
+model:
+  provider: google
+  name: gemini-2.5-flash
+---
+
+1. Fetch emails from ${GMAIL_SCRIPT_URL}?token=${GMAIL_SECRET}
+2. Analyze and classify each email
+3. Save result to output/digest-{date}.md
+```
+
+Here `${GMAIL_SCRIPT_URL}` and `${GMAIL_SECRET}` are replaced with `.env` values, while `{date}` is left for the LLM to fill with the current date.
+
 ## Complete Examples
 
 ### Example 1: Basic File Processor
