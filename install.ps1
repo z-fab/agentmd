@@ -15,6 +15,13 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 Write-Host "Installing agentmd..." -ForegroundColor Cyan
 uv tool install "agentmd[all] @ git+https://github.com/z-fab/agentmd.git" --force --python 3.13
 
+# Ensure ~/.local/bin is on PATH for this session
+$LocalBin = Join-Path $env:USERPROFILE ".local\bin"
+if ($env:Path -notlike "*$LocalBin*") {
+    $env:Path = "$LocalBin;$env:Path"
+    Write-Host "Added $LocalBin to PATH for this session" -ForegroundColor Yellow
+}
+
 # Run setup wizard
 Write-Host "`nRunning setup wizard..." -ForegroundColor Cyan
 agentmd setup
