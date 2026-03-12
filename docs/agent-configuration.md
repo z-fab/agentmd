@@ -10,9 +10,6 @@ Every agent is defined in a `.md` file with YAML frontmatter and a Markdown body
 ---
 name: my-agent
 description: What this agent does
-model:
-  provider: google
-  name: gemini-2.5-flash
 settings:
   temperature: 0.7
   max_tokens: 4096
@@ -23,6 +20,8 @@ trigger:
 
 Your system prompt goes here...
 ```
+
+> **Note:** The `model` field is optional. When omitted, Agent.md uses the default provider and model from your `config.yaml`.
 
 ## Required Fields
 
@@ -46,22 +45,35 @@ name: daily-report-generator
 name: api_poller
 ```
 
+## Optional Fields
+
 ### `model`
 
 | Property | Value |
 |----------|-------|
 | **Type** | object |
-| **Required** | Yes |
-| **Default** | None |
+| **Required** | No |
+| **Default** | From `config.yaml` defaults |
 
 LLM configuration object with provider, model name, and optional API endpoint.
+
+When omitted, the agent uses the default provider and model defined in `config.yaml`:
+
+```yaml
+# config.yaml
+defaults:
+  provider: google
+  model: gemini-2.5-flash
+```
+
+To override the default for a specific agent:
 
 #### `model.provider`
 
 | Property | Value |
 |----------|-------|
 | **Type** | string |
-| **Required** | Yes |
+| **Required** | Yes (when `model` is specified) |
 | **Allowed values** | `google`, `openai`, `anthropic`, `ollama`, `local` |
 
 LLM provider to use. Each provider requires its API key in environment variables:
@@ -81,8 +93,8 @@ model:
 | Property | Value |
 |----------|-------|
 | **Type** | string |
-| **Required** | Yes |
-| **Default** | None |
+| **Required** | Yes (when `model` is specified) |
+| **Default** | From `config.yaml` defaults |
 
 Model identifier (provider-specific):
 
@@ -124,8 +136,6 @@ model:
   name: mistral-7b
   url: http://vllm:5000  # Alias: url instead of base_url
 ```
-
-## Optional Fields
 
 ### `description`
 
@@ -599,8 +609,9 @@ The system validates agent configuration during startup and before execution:
 - Cannot be empty
 
 ### Model Configuration
-- `provider` must be one of: `google`, `openai`, `anthropic`, `ollama`, `local`
-- `name` must not be empty
+- `model` is optional — when omitted, uses defaults from `config.yaml`
+- When specified: `provider` must be one of: `google`, `openai`, `anthropic`, `ollama`, `local`
+- When specified: `name` must not be empty
 - `base_url` required for `local` provider
 
 ### Trigger Configuration
@@ -628,14 +639,12 @@ The system validates agent configuration during startup and before execution:
 When fields are omitted, defaults are applied:
 
 ```yaml
-# Minimal valid agent
+# Minimal valid agent — uses default model from config.yaml
 ---
 name: minimal-agent
-model:
-  provider: google
-  name: gemini-2.5-flash
 ---
 # Defaults:
+# - model: from config.yaml defaults (e.g., google/gemini-2.5-flash)
 # - trigger: { type: manual }
 # - settings: { temperature: 0.7, max_tokens: 4096, timeout: 300 }
 # - custom_tools: []

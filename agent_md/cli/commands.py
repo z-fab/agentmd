@@ -248,11 +248,9 @@ def run(
     # Resolve agents_dir for file lookup
     resolved_agents_dir = agents_dir
     if resolved_agents_dir is None:
-        if settings.AGENTMD_AGENTS_DIR:
-            resolved_agents_dir = Path(settings.AGENTMD_AGENTS_DIR)
-        else:
-            ws = workspace or (Path(settings.AGENTMD_WORKSPACE) if settings.AGENTMD_WORKSPACE else Path("./workspace"))
-            resolved_agents_dir = ws / "agents"
+        ws = workspace or (Path(settings.workspace).expanduser() if settings.workspace else Path("./workspace"))
+        agents_path = Path(settings.agents_dir)
+        resolved_agents_dir = agents_path if agents_path.is_absolute() else ws / agents_path
 
     from agent_md.core.parser import parse_agent_file
 
@@ -440,11 +438,9 @@ def validate(
     # Resolve tools_dir for custom tool validation
     resolved_agents_dir = agents_dir
     if resolved_agents_dir is None:
-        if settings.AGENTMD_AGENTS_DIR:
-            resolved_agents_dir = Path(settings.AGENTMD_AGENTS_DIR)
-        else:
-            ws = Path(settings.AGENTMD_WORKSPACE) if settings.AGENTMD_WORKSPACE else Path("./workspace")
-            resolved_agents_dir = ws / "agents"
+        ws = Path(settings.workspace).expanduser() if settings.workspace else Path("./workspace")
+        agents_path = Path(settings.agents_dir)
+        resolved_agents_dir = agents_path if agents_path.is_absolute() else ws / agents_path
     tools_dir = resolved_agents_dir / "tools"
 
     try:

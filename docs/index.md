@@ -69,19 +69,18 @@ Most agent frameworks require dozens of files, complex configurations, and deep 
 
 ## :rocket: Quick Example
 
-Create `workspace/agents/hello-world.md`:
+Create `agents/hello-world.md` in your workspace:
 
 ```markdown
 ---
 name: hello-world
-model:
-  provider: google
-  name: gemini-2.5-flash
 ---
 
 You are a friendly assistant. When asked to execute your task,
 write a creative greeting and save it to 'greeting.txt'.
 ```
+
+> No `model` needed — uses the default from your `config.yaml`.
 
 Run it:
 

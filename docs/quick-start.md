@@ -1,15 +1,29 @@
 # Quick Start Guide
 
-Get Agent.md running in 10 minutes—from installation to your first working agent.
+Get Agent.md running in 5 minutes—from installation to your first working agent.
 
 ## 1. Installation
 
 ### Prerequisites
 - **Python 3.13+** ([download](https://www.python.org/downloads/))
-- **git** ([download](https://git-scm.com/downloads))
 - **API key** for one LLM provider (or skip with Ollama)
 
-### Clone & Install
+### Option A: One-line install (recommended)
+
+**Linux/macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/z-fab/agentmd/master/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/z-fab/agentmd/master/install.ps1 | iex
+```
+
+This installs `uv` (if needed), `agentmd`, and runs the interactive setup wizard that configures your workspace, provider, and API key.
+
+### Option B: Developer setup
+
 ```bash
 git clone https://github.com/z-fab/agentmd.git
 cd agentmd
@@ -25,26 +39,41 @@ uv pip install -e ".[all]"        # All providers
 # uv pip install -e ".[ollama]"     # Ollama
 ```
 
+Then run the setup wizard:
+```bash
+agentmd setup
+```
+
 ### Verify Installation
 ```bash
-agentmd --version
+agentmd --help
+agentmd config    # Show current configuration
 ```
 
-## 2. Set Up API Keys
+## 2. Configuration
 
-Create `.env` file in project root:
-```bash
-cp .env.example .env
+The setup wizard creates two files in your workspace:
+
+### `config.yaml` — Application settings
+
+```yaml
+workspace: ~/agentmd
+agents_dir: agents
+output_dir: output
+db_path: data/agentmd.db
+mcp_config: agents/mcp-servers.json
+
+defaults:
+  provider: google
+  model: gemini-2.5-flash
+
+log_level: INFO
 ```
 
-Edit `.env` and add your API key:
+### `.env` — API keys (secrets only)
+
 ```bash
-# .env
 GOOGLE_API_KEY=your-key-here
-# OR
-OPENAI_API_KEY=your-key-here
-# OR
-ANTHROPIC_API_KEY=your-key-here
 ```
 
 **Get a free API key:**
@@ -61,21 +90,12 @@ ANTHROPIC_API_KEY=your-key-here
 
 ## 3. Create Your First Agent
 
-Create `workspace/agents/hello.md`:
+Create `agents/hello.md` in your workspace:
 
 ```markdown
 ---
 name: hello
 description: First agent
-model:
-  provider: google
-  name: gemini-2.5-flash
-trigger:
-  type: manual
-settings:
-  temperature: 0.7
-  timeout: 30
-enabled: true
 ---
 
 You are a friendly assistant. Create a warm greeting message
@@ -86,8 +106,15 @@ under 3 sentences and mention the date if possible.
 **What this means:**
 - **YAML frontmatter** (between `---`) = agent configuration
 - **Markdown body** = system prompt (what the agent does)
-- **provider/name** = which LLM to use
-- **trigger: manual** = runs only when you execute it
+- **No `model` needed** — uses the default from `config.yaml`
+
+!!! tip "Override the default model"
+    To use a specific model for an agent, add a `model` section:
+    ```yaml
+    model:
+      provider: openai
+      name: gpt-4o
+    ```
 
 ## 4. Run Your Agent
 
@@ -112,7 +139,7 @@ You'll see live output:
 ## 5. Check the Output
 
 ```bash
-cat workspace/output/hello-output.txt
+cat ~/agentmd/output/hello-output.txt
 ```
 
 Example:
@@ -132,6 +159,9 @@ Shows table with execution ID, status, duration, tokens used, etc.
 ## Next Steps
 
 ### Try Different Providers
+
+Override the default model per agent:
+
 ```yaml
 # Use Claude
 model:
@@ -171,11 +201,6 @@ Fetch data from APIs:
 ```markdown
 ---
 name: quote-fetcher
-model:
-  provider: google
-  name: gemini-2.5-flash
-trigger:
-  type: manual
 ---
 
 Fetch a random quote from https://zenquotes.io/api/random
@@ -199,31 +224,32 @@ Copy and customize from our library:
 - `agentmd list` — List all agents
 - `agentmd logs <agent>` — View execution history
 - `agentmd validate <file>` — Check agent syntax
+- `agentmd config` — Show current configuration
+- `agentmd setup` — Interactive setup wizard
+- `agentmd update` — Update to latest version
 
 → [Full CLI reference](cli-reference.md)
 
 ## Troubleshooting
 
 **"API key not found"**
-- Check `.env` exists in project root
+- Check `.env` exists in your workspace
 - Verify key name matches provider (e.g., `GOOGLE_API_KEY`)
-- No spaces around `=` in `.env`
+- Run `agentmd config` to see which files are being loaded
 
-**"No such file or directory"**
-- Run `agentmd` from project root
-- Verify workspace/agents/ directory exists
+**"No agents found in workspace"**
+- Run `agentmd config` to check your workspace path
+- Verify the `agents/` directory exists and contains `.md` files
 
 **"Provider requires langchain-..."**
-- Install the provider: `uv pip install -e ".[openai]"`
-
-→ [View troubleshooting above](#troubleshooting)
+- Install the provider: `pip install agentmd[openai]`
 
 ---
 
 **You've got this!** You now understand:
 - How to install Agent.md
-- How to configure API keys
-- How to create an agent file
+- How to configure with `config.yaml` and `.env`
+- How to create an agent file (with optional model override)
 - How to execute agents and view results
 
 Start building! 🚀

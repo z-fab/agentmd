@@ -34,41 +34,45 @@ No boilerplate. No frameworks to learn. Just Markdown.
 
 ## 🚀 Quick Start
 
-### 1. Install
+### Option A: One-line install (Linux/macOS)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/z-fab/agentmd/master/install.sh | bash
+```
+
+This installs `uv`, `agentmd`, and runs the interactive setup wizard.
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/z-fab/agentmd/master/install.ps1 | iex
+```
+
+### Option B: Developer setup
 
 ```bash
 git clone https://github.com/z-fab/agentmd.git
 cd agentmd
-uv sync                     # Install dependencies
-uv pip install -e ".[all]"  # Install all provider support
+uv sync
+uv pip install -e ".[all]"
+agentmd setup
 ```
 
-### 2. Configure
+### Create Your First Agent
 
-```bash
-cp .env.example .env
-echo "GOOGLE_API_KEY=your-key-here" >> .env
-```
-
-### 3. Create Your First Agent
-
-Create `workspace/agents/hello-world.md`:
+After setup, create `agents/hello-world.md` in your workspace:
 
 ```markdown
 ---
 name: hello-world
-model:
-  provider: google
-  name: gemini-2.5-flash
-trigger:
-  type: manual
 ---
 
 You are a friendly assistant. When asked to execute your task,
 write a creative greeting and save it to 'greeting.txt'.
 ```
 
-### 4. Run It
+> **Note:** No `model` needed — Agent.md uses the default provider/model you configured during setup.
+
+### Run It
 
 ```bash
 agentmd run hello-world
@@ -87,6 +91,35 @@ agentmd run hello-world
 ```
 
 That's it! 🎉
+
+---
+
+## ⚙️ Configuration
+
+Agent.md uses two configuration files in your workspace:
+
+| File | Purpose |
+|------|---------|
+| `config.yaml` | Application settings (paths, default model, log level) |
+| `.env` | Secrets only (API keys) |
+
+```yaml
+# config.yaml
+workspace: ~/agentmd
+agents_dir: agents
+output_dir: output
+
+defaults:
+  provider: google
+  model: gemini-2.5-flash
+```
+
+```bash
+# .env
+GOOGLE_API_KEY=your-key-here
+```
+
+Run `agentmd config` to see the current effective configuration.
 
 ---
 
@@ -172,10 +205,12 @@ Contributions are welcome! Please open an issue or pull request on [GitHub](http
 
 ```bash
 # Development setup
+git clone https://github.com/z-fab/agentmd.git
+cd agentmd
 uv sync
 uv pip install -e ".[all]"
-pytest              # Run tests
-ruff format .       # Format code
+agentmd setup              # Interactive setup wizard
+ruff format .              # Format code
 ```
 
 ---

@@ -85,7 +85,7 @@ class AgentConfig(BaseModel):
 
     name: str
     description: str = ""
-    model: ModelConfig
+    model: ModelConfig | None = None
     trigger: TriggerConfig = TriggerConfig()
     custom_tools: list[str] = []
     mcp: list[str] = []

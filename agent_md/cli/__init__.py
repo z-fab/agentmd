@@ -10,3 +10,4 @@ app = typer.Typer(
 
 # Register commands (side-effect import)
 import agent_md.cli.commands  # noqa: F401, E402
+import agent_md.cli.setup  # noqa: F401, E402

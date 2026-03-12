@@ -6,7 +6,8 @@ from pathlib import Path
 import yaml
 
 from agent_md.core.env import resolve_env_vars
-from agent_md.core.models import AgentConfig
+from agent_md.core.models import AgentConfig, ModelConfig
+from agent_md.core.settings import settings
 
 
 def parse_agent_file(path: Path) -> AgentConfig:
@@ -14,6 +15,9 @@ def parse_agent_file(path: Path) -> AgentConfig:
 
     The file must start with YAML frontmatter delimited by '---' lines,
     followed by the Markdown body which becomes the system prompt.
+
+    If the agent does not define a ``model`` section, the default provider
+    and model from ``config.yaml`` are used.
 
     Raises:
         ValueError: If the file format or frontmatter is invalid.
@@ -51,5 +55,12 @@ def parse_agent_file(path: Path) -> AgentConfig:
         file_path=str(path.resolve()),
         config_hash=config_hash,
     )
+
+    # Apply default model from config.yaml if not specified in agent
+    if config.model is None:
+        config.model = ModelConfig(
+            provider=settings.defaults_provider,
+            name=settings.defaults_model,
+        )
 
     return config
