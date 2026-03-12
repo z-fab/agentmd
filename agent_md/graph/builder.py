@@ -39,7 +39,8 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
         f"You have access to file tools with the following permissions:\n\n"
         f"READ (you can read files from):\n{read_list}\n\n"
         f"WRITE (you can create and save files to):\n{write_list}\n\n"
-        f"When saving files without a full path, they will be saved to: {default_write}\n"
+        f"When saving files, use just the filename or a relative sub-path (e.g., 'report.txt', 'data/file.json'). "
+        f"Do NOT prefix paths with '{default_write.name}/' — files are automatically saved to: {default_write}\n"
         f"Do not attempt to access files outside these directories."
     )
 

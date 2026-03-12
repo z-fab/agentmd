@@ -117,11 +117,20 @@ class PathContext:
         return p.resolve()
 
     def _resolve_for_write(self, path: str, config) -> Path:
-        """Resolve a write path (relative to default write dir)."""
+        """Resolve a write path (relative to default write dir).
+
+        Detects and strips duplicated directory prefixes — e.g., if the default
+        write dir ends with 'output' and path starts with 'output/', the
+        redundant prefix is removed to avoid 'output/output/'.
+        """
         p = Path(path).expanduser()
         if not p.is_absolute():
             default_dir = self.get_default_write_dir(config)
-            p = default_dir / p
+            parts = p.parts
+            if len(parts) > 1 and parts[0] == default_dir.name:
+                p = default_dir / Path(*parts[1:])
+            else:
+                p = default_dir / p
         return p.resolve()
 
     def _check_security_read(self, resolved: Path) -> str | None:
