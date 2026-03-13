@@ -45,13 +45,21 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
     )
 
 
-def _build_initial_state(
+def build_system_message(
     system_prompt: str,
     agent_config=None,
     path_context=None,
-    user_input: str = "Execute your task.",
-) -> AgentState:
-    """Build the initial state dict for graph execution."""
+) -> SystemMessage:
+    """Build the system message for an agent, shared by run and chat modes.
+
+    Args:
+        system_prompt: The agent's system prompt (from .md body).
+        agent_config: AgentConfig for path context injection.
+        path_context: PathContext for path resolution.
+
+    Returns:
+        A SystemMessage with date/time info, file access context, and system prompt.
+    """
     now = datetime.now()
     extra_info = f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
 
@@ -59,10 +67,20 @@ def _build_initial_state(
         extra_info += "\n" + _build_file_access_prompt(agent_config, path_context)
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
+    return SystemMessage(content=full_prompt)
 
+
+def _build_initial_state(
+    system_prompt: str,
+    agent_config=None,
+    path_context=None,
+    user_input: str = "Execute your task.",
+) -> AgentState:
+    """Build the initial state dict for graph execution."""
+    system_msg = build_system_message(system_prompt, agent_config, path_context)
     return {
         "messages": [
-            SystemMessage(content=full_prompt),
+            system_msg,
             HumanMessage(content=user_input),
         ]
     }
@@ -91,6 +109,14 @@ async def run_agent_graph(
     return await graph.ainvoke(initial_state)
 
 
+async def _stream_state(graph, state: dict) -> AsyncGenerator[BaseMessage, None]:
+    """Stream graph execution from a state dict, yielding each message."""
+    async for step in graph.astream(state):
+        for _node_name, node_output in step.items():
+            for msg in node_output.get("messages", []):
+                yield msg
+
+
 async def stream_agent_graph(
     graph,
     system_prompt: str,
@@ -111,8 +137,26 @@ async def stream_agent_graph(
         Individual LangChain BaseMessage objects as they are emitted.
     """
     initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input)
+    async for msg in _stream_state(graph, initial_state):
+        yield msg
 
-    async for step in graph.astream(initial_state):
-        for _node_name, node_output in step.items():
-            for msg in node_output.get("messages", []):
-                yield msg
+
+async def stream_chat_turn(
+    graph,
+    messages: list[BaseMessage],
+) -> AsyncGenerator[BaseMessage, None]:
+    """Stream one chat turn from a pre-built messages list.
+
+    Unlike ``stream_agent_graph``, this does not build initial state --
+    it takes an existing conversation (system + history + new human message)
+    and streams the agent's response.
+
+    Args:
+        graph: A compiled LangGraph graph.
+        messages: Full conversation history including the latest HumanMessage.
+
+    Yields:
+        Individual LangChain BaseMessage objects as they are emitted.
+    """
+    async for msg in _stream_state(graph, {"messages": messages}):
+        yield msg

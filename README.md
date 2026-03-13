@@ -103,6 +103,31 @@ agentmd run hello-world
     Execution #1
 ```
 
+### Or Chat with It
+
+Start a multi-turn conversation instead of a one-shot run:
+
+```bash
+agentmd chat hello-world
+```
+
+```
+  Chat with hello-world
+    google / gemini-2.5-flash
+    Type /exit or Ctrl+C to end session
+
+  > Write me a greeting in Portuguese
+  11:33:01  🤖 Olá! Que seu dia seja cheio de...
+  11:33:02  ✅ Done!
+
+  > Now save it to greeting-pt.txt
+  11:33:10  🔧 file_write → greeting-pt.txt
+  11:33:10  ✅ Saved!
+
+  Session ended: 2 turns, 280 tokens (84 in / 196 out), 12.3s
+  Execution #2
+```
+
 That's it! 🎉
 
 ---

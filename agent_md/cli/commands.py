@@ -19,6 +19,8 @@ from agent_md.cli.theme import (
     make_panel,
     make_table,
     print_banner,
+    print_chat_header,
+    print_chat_summary,
     print_error,
     print_kv,
     print_success,
@@ -514,6 +516,76 @@ def run(
         console.print(
             f"  [red]\u2717 {config.name} error[/red] after {format_duration(result.get('duration_ms'))} \u2014 {result.get('error', 'unknown')}"
         )
+
+
+# ---------------------------------------------------------------------------
+# agentmd chat
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def chat(
+    agent: str = typer.Argument(None, help="Agent name (interactive picker if omitted)"),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
+):
+    """Start an interactive chat session with an agent."""
+    agent_name = _pick_or_resolve_agent(agent, workspace)
+    on_event = _make_console_callback()
+
+    try:
+        asyncio.run(_chat_loop(agent_name, workspace, on_event))
+    except KeyboardInterrupt:
+        pass
+
+
+async def _chat_loop(agent_name: str, workspace: Path | None, on_event) -> None:
+    import time
+
+    from agent_md.core.services import AgentNotFoundError, chat_session
+
+    try:
+        async with chat_session(agent_name, workspace, on_event=on_event) as session:
+            config = session.config
+            model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
+            print_chat_header(config.name, model_info)
+
+            loop = asyncio.get_running_loop()
+            start_time = time.monotonic()
+
+            while True:
+                try:
+                    user_input = await loop.run_in_executor(None, lambda: input("  > "))
+                except EOFError:
+                    break
+                except KeyboardInterrupt:
+                    break
+
+                stripped = user_input.strip()
+                if not stripped:
+                    continue
+                if stripped.lower() in ("/exit", "/quit"):
+                    break
+
+                try:
+                    await session.send(stripped)
+                except asyncio.TimeoutError:
+                    print_error(f"Timeout after {config.settings.timeout}s")
+                except Exception as e:
+                    print_error(f"{type(e).__name__}: {e}")
+
+                console.print()
+
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            print_chat_summary(
+                session.turns,
+                session.total_input_tokens,
+                session.total_output_tokens,
+                duration_ms,
+                session.execution_id,
+            )
+
+    except AgentNotFoundError:
+        print_error(f"Agent '{agent_name}' not found in workspace.", "Run 'agentmd list' to see available agents.")
 
 
 # ---------------------------------------------------------------------------

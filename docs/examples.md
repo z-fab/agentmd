@@ -494,8 +494,11 @@ trigger:
 ### Common Commands
 
 ```bash
-# Run single agent
+# Run single agent (one-shot)
 agentmd run agent-name
+
+# Interactive chat with agent
+agentmd chat agent-name
 
 # List all agents
 agentmd list

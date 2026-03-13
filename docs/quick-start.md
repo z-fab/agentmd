@@ -146,7 +146,36 @@ You'll see live output:
     Execution #1
 ```
 
-## 5. Check the Output
+## 5. Or Chat with Your Agent
+
+Want a conversation instead of a one-shot run? Use `chat`:
+
+```bash
+agentmd chat hello
+```
+
+This opens an interactive session where you type messages and the agent responds with full context of the conversation:
+
+```
+  Chat with hello
+    google / gemini-2.5-flash
+    Type /exit or Ctrl+C to end session
+
+  > Write a greeting in French
+  11:33:01  🤖 Bonjour! Que votre journée soit...
+  11:33:02  ✅ Done!
+
+  > Now save it to greeting-fr.txt
+  11:33:10  🔧 file_write → greeting-fr.txt
+  11:33:10  ✅ Saved!
+
+  > /exit
+
+  Session ended: 2 turns, 280 tokens (84 in / 196 out), 12.3s
+  Execution #2
+```
+
+## 6. Check the Output
 
 ```bash
 cat ~/agentmd/output/hello-output.txt
@@ -158,7 +187,7 @@ Greetings! Today is March 11, 2026, and I'm delighted to connect with you.
 May your day be filled with curiosity and purpose!
 ```
 
-## 6. View Execution History
+## 7. View Execution History
 
 ```bash
 agentmd logs hello
@@ -231,6 +260,7 @@ Copy and customize from our library:
 ### CLI Commands Reference
 - `agentmd new <name>` — Scaffold a new agent (AI-assisted or interactive)
 - `agentmd run [agent]` — Execute single agent (interactive picker if omitted)
+- `agentmd chat [agent]` — Interactive multi-turn chat session
 - `agentmd start` — Start runtime with scheduler (`-d` for daemon mode)
 - `agentmd list` — List all agents
 - `agentmd logs <agent>` — View execution history (`-f` to follow)

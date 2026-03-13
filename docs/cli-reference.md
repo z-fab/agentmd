@@ -9,6 +9,7 @@ Complete reference for all Agent.md CLI commands, options, and examples.
 | `agentmd new <name>` | Scaffold a new agent | Create agents via AI or interactive questionnaire |
 | `agentmd start` | Start runtime with scheduler + watcher | Long-running process for scheduled agents |
 | `agentmd run [agent]` | Execute single agent (one-shot) | Manual execution, testing, debugging |
+| `agentmd chat [agent]` | Interactive chat session | Multi-turn conversation with an agent |
 | `agentmd list` | List all agents in workspace | Discover agents, check status |
 | `agentmd logs <agent>` | View execution history | Debug failures, review outputs |
 | `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD |
@@ -194,6 +195,90 @@ agentmd run my-agent --quiet
 | 🔧 | Tool call | Tool invocation with arguments |
 | 📎 | Tool response | Tool execution result |
 | ✅ | Final answer | Agent's final output |
+
+---
+
+## agentmd chat [agent]
+
+Start an interactive multi-turn chat session with an agent.
+
+### Purpose
+
+Unlike `agentmd run` (one-shot), `agentmd chat` opens a REPL where you type messages and the agent responds in real-time. The agent retains full conversation context across turns — it remembers everything you've said during the session.
+
+One execution record is created for the entire chat session (trigger type `"chat"`), with token usage accumulated across all turns.
+
+### Usage
+
+```bash
+agentmd chat [AGENT] [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `[AGENT]` | String (optional) | Agent name. If omitted, shows an interactive picker |
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+
+### Examples
+
+```bash
+# Chat with an agent by name
+agentmd chat my-agent
+
+# Interactive picker (when no name given)
+agentmd chat
+
+# Custom workspace
+agentmd chat my-agent -w /data/agents
+```
+
+### Session Controls
+
+| Input | Action |
+|-------|--------|
+| `/exit` or `/quit` | End session gracefully |
+| `Ctrl+C` | End session gracefully |
+| `Ctrl+D` (EOF) | End session gracefully |
+| Empty input | Ignored (re-prompts) |
+
+### Example Session
+
+```
+  Chat with hello-world
+    google / gemini-2.5-flash
+    Type /exit or Ctrl+C to end session
+
+  > What files are in the output directory?
+  11:33:01  🔧 file_read → {'path': '.'}
+  11:33:01  📎 file_read ← greeting.txt, report.txt
+  11:33:02  ✅ The output directory contains: greeting.txt and report.txt
+
+  > Read greeting.txt and translate it to Spanish
+  11:33:10  🔧 file_read → {'path': 'greeting.txt'}
+  11:33:11  🤖 Here's the translation...
+  11:33:11  ✅ ¡Hola! Que tu día esté lleno de alegría...
+
+  > /exit
+
+  Session ended: 2 turns, 450 tokens (120 in / 330 out), 15.2s
+  Execution #42
+```
+
+### Viewing Chat History
+
+Chat sessions appear in `agentmd logs` like any other execution:
+
+```bash
+agentmd logs my-agent       # Shows chat sessions with trigger "chat"
+agentmd logs -e 42          # View full message history of a chat session
+```
 
 ---
 

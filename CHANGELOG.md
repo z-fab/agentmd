@@ -3,6 +3,14 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] - 2026-03-13
+
+### Added
+- **`agentmd chat [agent]`** — interactive multi-turn chat sessions with agents, supporting streaming output, tool use, and conversation memory within a session
+  - One execution record per session (trigger type `"chat"`)
+  - Token usage accumulated across all turns
+  - Graceful exit via `/exit`, Ctrl+C, or Ctrl+D with session summary
+
 ## [0.3.0] - 2026-03-13
 
 ### Added
@@ -76,6 +84,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Basic CLI with `agentmd start`, `agentmd run`, `agentmd list`
 - SQLite execution history
 
+[0.4.0]: https://github.com/z-fab/agentmd/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/z-fab/agentmd/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/z-fab/agentmd/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/z-fab/agentmd/compare/v0.2.0...v0.2.2

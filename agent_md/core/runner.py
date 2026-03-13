@@ -8,13 +8,18 @@ from agent_md.core.execution_logger import ExecutionLogger
 from agent_md.core.path_context import PathContext
 from agent_md.core.registry import AgentConfig
 from agent_md.db.database import Database
-from agent_md.graph.builder import create_react_graph, stream_agent_graph
+from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn
 from agent_md.mcp.manager import MCPManager
 from agent_md.providers.factory import create_chat_model
 from agent_md.tools.custom_loader import load_custom_tools
 from agent_md.tools.registry import resolve_builtin_tools
 
 logger = logging.getLogger(__name__)
+
+
+def _is_final_ai_message(msg) -> bool:
+    """Return True if *msg* is an AI message without tool calls (i.e. a text response)."""
+    return getattr(msg, "type", "") == "ai" and not (hasattr(msg, "tool_calls") and msg.tool_calls)
 
 
 class AgentRunner:
@@ -77,6 +82,30 @@ class AgentRunner:
 
         return "Execute your task."
 
+    async def _build_graph(self, config: AgentConfig):
+        """Create model, resolve tools, and compile the graph."""
+        chat_model = create_chat_model(
+            provider=config.model.provider,
+            model=config.model.name,
+            settings=config.settings.model_dump(),
+            base_url=config.model.base_url,
+        )
+
+        tools = resolve_builtin_tools(config, self.path_context)
+
+        if config.custom_tools:
+            tools.extend(load_custom_tools(config.custom_tools, self.path_context.tools_dir))
+
+        if config.mcp:
+            mcp_tools = await self.mcp_manager.get_tools(config.mcp)
+            tools.extend(mcp_tools)
+            logger.info(
+                f"Resolving tools: {len(tools) - len(mcp_tools)} built-in + "
+                f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
+            )
+
+        return create_react_graph(chat_model, tools)
+
     async def run(self, config: AgentConfig, trigger_type: str = "manual", trigger_context: str | None = None, on_event=None) -> dict:
         """Execute an agent and persist the result.
 
@@ -107,37 +136,13 @@ class AgentRunner:
         total_output_tokens = 0
 
         try:
-            # 2. Create ChatModel via provider factory
-            chat_model = create_chat_model(
-                provider=config.model.provider,
-                model=config.model.name,
-                settings=config.settings.model_dump(),
-                base_url=config.model.base_url,
-            )
+            # 2. Build model + tools + graph
+            graph = await self._build_graph(config)
 
-            # 3. Resolve built-in tools (always available)
-            tools = resolve_builtin_tools(config, self.path_context)
-
-            # 4. Load custom tools if declared
-            if config.custom_tools:
-                tools.extend(load_custom_tools(config.custom_tools, self.path_context.tools_dir))
-
-            # 5. Add MCP tools if the agent declares any
-            if config.mcp:
-                mcp_tools = await self.mcp_manager.get_tools(config.mcp)
-                tools.extend(mcp_tools)
-                logger.info(
-                    f"Resolving tools: {len(tools) - len(mcp_tools)} built-in + "
-                    f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
-                )
-
-            # 6. Build the graph
-            graph = create_react_graph(chat_model, tools)
-
-            # 7. Build user input with trigger context
+            # 3. Build user input with trigger context
             user_input = self._build_user_input(trigger_type, trigger_context, config)
 
-            # 8. Stream execution — log each message in real time
+            # 4. Stream execution -- log each message in real time
             last_ai_msg = None
 
             async def _stream():
@@ -151,14 +156,14 @@ class AgentRunner:
                         total_input_tokens += usage.get("input_tokens", 0)
                         total_output_tokens += usage.get("output_tokens", 0)
 
-                    if getattr(msg, "type", "") == "ai" and not (hasattr(msg, "tool_calls") and msg.tool_calls):
+                    if _is_final_ai_message(msg):
                         last_ai_msg = msg
 
             await asyncio.wait_for(_stream(), timeout=config.settings.timeout)
 
             duration_ms = int((time.monotonic() - start_time) * 1000)
 
-            # 9. Extract final output
+            # 5. Extract final output
             output = ""
             if last_ai_msg:
                 from agent_md.core.execution_logger import _extract_text
@@ -167,7 +172,7 @@ class AgentRunner:
                 output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
                 await ex_logger.mark_final_answer(last_ai_msg)
 
-            # 10. Persist success
+            # 6. Persist success
             result = await self._finish_execution(
                 execution_id, "success", duration_ms,
                 total_input_tokens, total_output_tokens,
@@ -199,3 +204,48 @@ class AgentRunner:
                 total_input_tokens, total_output_tokens,
                 error=error_msg,
             )
+
+    async def prepare_agent(self, config: AgentConfig):
+        """Create model, resolve tools, and build graph -- without executing.
+
+        Returns the compiled LangGraph graph, ready for streaming.
+        """
+        return await self._build_graph(config)
+
+    async def chat_turn(self, graph, messages, ex_logger, timeout):
+        """Stream one chat turn and return (new_messages, input_tokens, output_tokens).
+
+        Args:
+            graph: Compiled LangGraph graph from prepare_agent().
+            messages: Full conversation history including latest HumanMessage.
+            ex_logger: ExecutionLogger for persisting messages.
+            timeout: Timeout in seconds.
+
+        Returns:
+            Tuple of (new_messages, input_tokens, output_tokens).
+        """
+        new_messages = []
+        input_tokens = 0
+        output_tokens = 0
+        last_ai_msg = None
+
+        async def _stream():
+            nonlocal input_tokens, output_tokens, last_ai_msg
+            async for msg in stream_chat_turn(graph, messages):
+                new_messages.append(msg)
+                await ex_logger.log_message(msg)
+
+                usage = getattr(msg, "usage_metadata", None)
+                if usage:
+                    input_tokens += usage.get("input_tokens", 0)
+                    output_tokens += usage.get("output_tokens", 0)
+
+                if _is_final_ai_message(msg):
+                    last_ai_msg = msg
+
+        await asyncio.wait_for(_stream(), timeout=timeout)
+
+        if last_ai_msg:
+            await ex_logger.mark_final_answer(last_ai_msg)
+
+        return new_messages, input_tokens, output_tokens

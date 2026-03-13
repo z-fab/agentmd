@@ -176,6 +176,7 @@ Agents can run in three ways:
 | Trigger Type | Description | Example |
 |---|---|---|
 | **Manual** | Run on-demand via CLI | `agentmd run my-agent` |
+| **Chat** | Interactive multi-turn conversation | `agentmd chat my-agent` |
 | **Schedule** | Run on cron or intervals | Every 5 minutes, daily at 9am, weekdays only |
 | **Watch** | Run when files change | Monitor logs, process uploads automatically |
 

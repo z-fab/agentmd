@@ -45,6 +45,29 @@ def print_banner(version: str) -> None:
     console.print(f"  [bold]agentmd[/bold] v{version}")
 
 
+def print_chat_header(agent_name: str, model_info: str) -> None:
+    """Print the chat session header with model info and exit hint."""
+    console.print()
+    console.print(f"  [bold cyan]Chat with {agent_name}[/bold cyan]")
+    console.print(f"    [dim]{model_info}[/dim]")
+    console.print(f"    [dim]Type /exit or Ctrl+C to end session[/dim]")
+    console.print()
+
+
+def print_chat_summary(turns: int, input_tokens: int, output_tokens: int, duration_ms: int, execution_id: int) -> None:
+    """Print end-of-session summary stats."""
+    total = input_tokens + output_tokens
+    console.print()
+    console.print(
+        f"  [dim]Session ended: {turns} turn{'s' if turns != 1 else ''}, "
+        f"{format_tokens(total)} tokens "
+        f"({format_tokens(input_tokens)} in / {format_tokens(output_tokens)} out), "
+        f"{format_duration(duration_ms)}[/dim]"
+    )
+    console.print(f"  [dim]Execution #{execution_id}[/dim]")
+    console.print()
+
+
 # ---------------------------------------------------------------------------
 # Rich component factories
 # ---------------------------------------------------------------------------

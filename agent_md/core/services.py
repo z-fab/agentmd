@@ -250,3 +250,114 @@ class AgentNotFoundError(Exception):
     def __init__(self, name: str) -> None:
         self.name = name
         super().__init__(f"Agent '{name}' not found in workspace")
+
+
+# ---------------------------------------------------------------------------
+# Interactive chat session
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ChatSession:
+    """Holds state for a multi-turn interactive chat session."""
+
+    config: AgentConfig
+    execution_id: int
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    turns: int = 0
+
+    # Internal — set by chat_session() context manager
+    _messages: list = field(default_factory=list)
+    _graph: object = None
+    _runner: object = None
+    _ex_logger: object = None
+    _timeout: float = 300
+
+    async def send(self, user_input: str) -> str:
+        """Send a user message and return the agent's text response."""
+        from langchain_core.messages import HumanMessage
+
+        from agent_md.core.execution_logger import _extract_text
+        from agent_md.core.runner import _is_final_ai_message
+
+        human_msg = HumanMessage(content=user_input)
+        self._messages.append(human_msg)
+        await self._ex_logger.log_message(human_msg)
+
+        new_msgs, in_tok, out_tok = await self._runner.chat_turn(
+            self._graph, self._messages, self._ex_logger, self._timeout,
+        )
+
+        self._messages.extend(new_msgs)
+        self.total_input_tokens += in_tok
+        self.total_output_tokens += out_tok
+        self.turns += 1
+
+        # Extract text from the last AI message without tool calls
+        for msg in reversed(new_msgs):
+            if _is_final_ai_message(msg):
+                raw = getattr(msg, "content", None)
+                return _extract_text(raw) if raw is not None else ""
+        return ""
+
+
+@asynccontextmanager
+async def chat_session(
+    agent_name: str,
+    workspace: Path | None = None,
+    on_event=None,
+):
+    """Async context manager that bootstraps a multi-turn chat session.
+
+    Creates one execution record (trigger="chat") for the entire session.
+    Yields a ChatSession; on exit finalizes the execution with accumulated stats.
+    """
+    import time
+
+    from agent_md.core.execution_logger import ExecutionLogger
+    from agent_md.graph.builder import build_system_message
+
+    async with _runtime(workspace) as rt:
+        config = rt.registry.get(agent_name) or rt.registry.get(agent_name.replace(".md", ""))
+        if not config:
+            raise AgentNotFoundError(agent_name)
+
+        # One execution record for the whole chat session
+        execution_id = await rt.db.create_execution(
+            agent_id=config.name,
+            trigger="chat",
+            status="running",
+        )
+
+        ex_logger = ExecutionLogger(rt.db, execution_id, config.name, on_event=on_event)
+        graph = await rt.runner.prepare_agent(config)
+
+        # Build system message and seed conversation
+        system_msg = build_system_message(config.system_prompt, config, rt.path_context)
+        messages = [system_msg]
+        await ex_logger.log_message(system_msg)
+
+        session = ChatSession(
+            config=config,
+            execution_id=execution_id,
+            _messages=messages,
+            _graph=graph,
+            _runner=rt.runner,
+            _ex_logger=ex_logger,
+            _timeout=config.settings.timeout,
+        )
+
+        start_time = time.monotonic()
+        try:
+            yield session
+        finally:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            await rt.runner._finish_execution(
+                execution_id,
+                "success",
+                duration_ms,
+                session.total_input_tokens,
+                session.total_output_tokens,
+                output_data=f"Chat session: {session.turns} turns",
+            )
