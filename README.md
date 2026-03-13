@@ -59,7 +59,17 @@ agentmd setup
 
 ### Create Your First Agent
 
-After setup, create `agents/hello-world.md` in your workspace:
+```bash
+agentmd new hello-world
+```
+
+This uses AI to generate the agent from a description you provide. Or use `--template` for an interactive questionnaire:
+
+```bash
+agentmd new hello-world --template
+```
+
+You can also create agents manually — just add an `.md` file to `agents/`:
 
 ```markdown
 ---

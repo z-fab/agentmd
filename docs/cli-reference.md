@@ -6,6 +6,7 @@ Complete reference for all Agent.md CLI commands, options, and examples.
 
 | Command | Description | Use Case |
 |---------|-------------|----------|
+| `agentmd new <name>` | Scaffold a new agent | Create agents via AI or interactive questionnaire |
 | `agentmd start` | Start runtime with scheduler + watcher | Long-running process for scheduled agents |
 | `agentmd run [agent]` | Execute single agent (one-shot) | Manual execution, testing, debugging |
 | `agentmd list` | List all agents in workspace | Discover agents, check status |
@@ -31,6 +32,68 @@ These options are available for **all commands** via the app callback:
 agentmd -v list
 agentmd -q run hello-world
 ```
+
+---
+
+## agentmd new
+
+Scaffold a new agent definition file.
+
+### Purpose
+
+Creates a new agent `.md` file in the workspace. Two modes:
+
+1. **AI-assisted** (default, when a provider + API key are configured): asks what the agent should do, then uses the configured LLM to generate the complete agent file (frontmatter + system prompt)
+2. **Interactive questionnaire** (no provider configured, or `--template` flag): walks you through each field — description, provider, model, trigger, paths, and system prompt
+
+If AI generation fails, it automatically falls back to the interactive questionnaire.
+
+### Usage
+
+```bash
+agentmd new <AGENT_NAME> [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `AGENT_NAME` | String (required) | Name for the agent (alphanumeric, hyphens, underscores) |
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+| `--template` | `-t` | Flag | false | Skip AI, use interactive questionnaire |
+
+### Examples
+
+```bash
+# AI-assisted (prompts for description, generates via LLM)
+agentmd new daily-report
+
+# Interactive questionnaire (no AI)
+agentmd new daily-report --template
+
+# Custom workspace
+agentmd new my-agent -w /data/agents
+```
+
+### Interactive Questionnaire Fields
+
+When using `--template` or without an AI provider configured, the command asks:
+
+| Field | Example | Required |
+|-------|---------|----------|
+| Description | "Summarizes daily logs" | No |
+| Provider | google, openai, anthropic, ollama, local | No (uses default) |
+| Model name | gemini-2.5-flash, gpt-4o | No (uses default) |
+| Trigger | manual, schedule, watch | No (defaults to manual) |
+| Schedule/paths | 30m, `0 9 * * *`, data/uploads/ | Only for schedule/watch |
+| Read paths | logs/, data/input.csv | No |
+| Write paths | output/, reports/ | No |
+| System prompt | "Read all logs and summarize..." | Yes |
 
 ---
 

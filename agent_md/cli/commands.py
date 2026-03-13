@@ -115,6 +115,250 @@ def _pick_or_resolve_agent(agent: str | None, workspace: Path | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# agentmd new
+# ---------------------------------------------------------------------------
+
+
+def _validate_agent_name(name: str) -> str | None:
+    """Return error string if name is invalid, else None."""
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", name):
+        return "Agent name must contain only alphanumeric characters, hyphens, and underscores."
+    return None
+
+
+def _can_use_ai() -> tuple[bool, str, str]:
+    """Check if AI generation is available. Returns (available, provider, model)."""
+    import os
+
+    from agent_md.core.services import _PROVIDER_ENV_VARS
+    from agent_md.core.settings import settings
+
+    provider = settings.defaults_provider
+    model = settings.defaults_model
+
+    if not provider:
+        return False, "", ""
+
+    if provider in ("ollama", "local"):
+        return True, provider, model
+
+    env_var = _PROVIDER_ENV_VARS.get(provider)
+    if env_var and os.environ.get(env_var):
+        return True, provider, model
+
+    return False, provider, model
+
+
+def _generate_agent_with_ai(agent_name: str, description: str, provider: str, model: str) -> str:
+    """Use the configured LLM to generate the agent .md content."""
+    from agent_md.providers.factory import create_chat_model
+
+    llm = create_chat_model(provider, model, {"temperature": 0.7, "max_tokens": 4096})
+
+    prompt = f"""You are an expert at creating AI agent definitions for the Agent.md framework.
+
+Generate the content of a markdown agent file for an agent named "{agent_name}" that does the following:
+{description}
+
+The file format is YAML frontmatter (between --- delimiters) followed by the system prompt.
+
+Available frontmatter fields:
+- name (required): {agent_name}
+- description: one-line summary of what the agent does
+- model: (optional) object with provider and name fields. Only include if the user specified a model.
+- trigger: (optional) object — type: manual (default), schedule (with cron or every field), or watch (with paths list)
+- settings: (optional) temperature, max_tokens, timeout
+- read: (optional) list of file/dir paths the agent can read from the workspace
+- write: (optional) list of file/dir paths the agent can write to in the workspace
+
+Available built-in tools (always available, do NOT list in frontmatter):
+- file_read: read files from allowed paths
+- file_write: write/create files in allowed paths
+- http_request: make HTTP requests to external APIs
+
+Write ONLY the file content — no explanations, no code fences. Start with --- and end after the system prompt.
+
+The system prompt should be clear, specific, and actionable. Tell the agent exactly what to do, step by step.
+
+Example:
+---
+name: daily-summary
+description: Summarizes daily activity logs
+trigger:
+  type: schedule
+  every: 24h
+read:
+  - logs/
+write:
+  - output/
+---
+
+You are a summarization agent. Every day, read all files in the logs/ directory, ...
+"""
+
+    response = llm.invoke(prompt)
+    content = response.content.strip()
+
+    # Strip code fences if present
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+    if content.endswith("```"):
+        content = content[: content.rfind("```")]
+
+    return content.strip()
+
+
+def _ask_agent_details(agent_name: str) -> str:
+    """Interactively ask the user for agent details and build the .md content."""
+    from rich.prompt import Prompt
+
+    console.print()
+
+    description = Prompt.ask("  [cyan]Description[/cyan]", default="")
+
+    # Provider / model
+    provider = Prompt.ask(
+        "  [cyan]Provider[/cyan] [dim](google, openai, anthropic, ollama, local, or empty for default)[/dim]",
+        default="",
+    )
+    model_name = ""
+    if provider:
+        model_name = Prompt.ask("  [cyan]Model name[/cyan]", default="")
+
+    # Trigger
+    trigger_type = Prompt.ask(
+        "  [cyan]Trigger[/cyan] [dim](manual, schedule, watch)[/dim]",
+        default="manual",
+    )
+    trigger_extra = ""
+    if trigger_type == "schedule":
+        schedule_val = Prompt.ask("  [cyan]Schedule[/cyan] [dim](e.g. 30m, 2h, or cron: 0 9 * * *)[/dim]")
+        if schedule_val.strip():
+            if " " in schedule_val.strip():
+                trigger_extra = f"  cron: \"{schedule_val.strip()}\""
+            else:
+                trigger_extra = f"  every: {schedule_val.strip()}"
+    elif trigger_type == "watch":
+        watch_paths = Prompt.ask("  [cyan]Paths to watch[/cyan] [dim](comma-separated)[/dim]")
+        if watch_paths.strip():
+            paths = [p.strip() for p in watch_paths.split(",") if p.strip()]
+            trigger_extra = "\n".join(f"  - {p}" for p in paths)
+            trigger_extra = f"  paths:\n{trigger_extra}"
+
+    # Read / write paths
+    read_paths = Prompt.ask("  [cyan]Read paths[/cyan] [dim](comma-separated, or empty)[/dim]", default="")
+    write_paths = Prompt.ask("  [cyan]Write paths[/cyan] [dim](comma-separated, or empty)[/dim]", default="")
+
+    # System prompt
+    console.print()
+    system_prompt = Prompt.ask("  [cyan]System prompt[/cyan] [dim](what should this agent do?)[/dim]")
+
+    # Build frontmatter
+    lines = ["---", f"name: {agent_name}"]
+    if description:
+        lines.append(f"description: {description}")
+    if provider and model_name:
+        lines.append("model:")
+        lines.append(f"  provider: {provider}")
+        lines.append(f"  name: {model_name}")
+    if trigger_type != "manual":
+        lines.append("trigger:")
+        lines.append(f"  type: {trigger_type}")
+        if trigger_extra:
+            lines.append(trigger_extra)
+    if read_paths.strip():
+        lines.append("read:")
+        for p in read_paths.split(","):
+            if p.strip():
+                lines.append(f"  - {p.strip()}")
+    if write_paths.strip():
+        lines.append("write:")
+        for p in write_paths.split(","):
+            if p.strip():
+                lines.append(f"  - {p.strip()}")
+    lines.append("---")
+    lines.append("")
+    lines.append(system_prompt or "You are a helpful assistant. Describe your agent's task here.")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+@app.command()
+def new(
+    agent_name: str = typer.Argument(..., help="Name for the new agent"),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
+    template: bool = typer.Option(False, "--template", "-t", help="Skip AI, use interactive questionnaire"),
+):
+    """Scaffold a new agent definition file."""
+    import re
+
+    # 1. Validate name
+    error = _validate_agent_name(agent_name)
+    if error:
+        print_error(error)
+        raise typer.Exit(1)
+
+    # 2. Resolve workspace and agents dir
+    from agent_md.core.services import _resolve_ws_and_agents_dir
+
+    ws, agents_dir = _resolve_ws_and_agents_dir(workspace)
+    agent_file = agents_dir / f"{agent_name}.md"
+
+    # 3. Check if file already exists
+    if agent_file.exists():
+        print_error(f"Agent '{agent_name}' already exists.", f"File: {agent_file}")
+        raise typer.Exit(1)
+
+    # 4. Ensure agents dir exists
+    agents_dir.mkdir(parents=True, exist_ok=True)
+
+    # 5. Decide mode: AI or interactive
+    ai_available, provider, model = _can_use_ai()
+
+    if ai_available and not template:
+        from rich.prompt import Prompt
+
+        console.print()
+        description = Prompt.ask("  [cyan]What should this agent do?[/cyan]")
+        if not description.strip():
+            print_error("Description cannot be empty.")
+            raise typer.Exit(1)
+
+        try:
+            with console.status("  Generating agent..."):
+                content = _generate_agent_with_ai(agent_name, description, provider, model)
+
+            agent_file.write_text(content + "\n", encoding="utf-8")
+            console.print()
+            print_success(f"Agent '{agent_name}' created.")
+
+        except Exception as e:
+            print_warning(f"AI generation failed: {e}")
+            console.print("  [dim]Falling back to interactive mode...[/dim]")
+            content = _ask_agent_details(agent_name)
+            agent_file.write_text(content, encoding="utf-8")
+            console.print()
+            print_success(f"Agent '{agent_name}' created.")
+    else:
+        # Interactive questionnaire
+        if not ai_available and not template:
+            console.print()
+            console.print("  [dim]No AI provider configured. Tip: run 'agentmd setup'[/dim]")
+        content = _ask_agent_details(agent_name)
+        agent_file.write_text(content, encoding="utf-8")
+        console.print()
+        print_success(f"Agent '{agent_name}' created.")
+
+    console.print(f"  [dim]File: {agent_file}[/dim]")
+    console.print(f"  [dim]Run: agentmd run {agent_name}[/dim]")
+    console.print(f"  [dim]Validate: agentmd validate {agent_name}[/dim]")
+    console.print()
+
+
+# ---------------------------------------------------------------------------
 # agentmd start
 # ---------------------------------------------------------------------------
 

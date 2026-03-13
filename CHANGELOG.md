@@ -3,9 +3,10 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.3.0] - 2026-03-13
 
 ### Added
+- **`agentmd new <name>`** — scaffold new agents via AI generation or interactive questionnaire (`--template`)
 - **Daemon mode** — `agentmd start -d` runs the runtime as a background process
 - **New commands** — `agentmd status` and `agentmd stop` for daemon management
 - **Follow logs** — `agentmd logs -f` tails the daemon log in real-time
@@ -18,8 +19,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **`agentmd validate`** now accepts an agent name instead of a file path
 - **`agentmd list`** shows compact table with trigger, last run time, and status dot
 - **`agentmd config`** output streamlined (removed internal paths, log level)
-
-### Refactored
 - Extracted `_runtime()` async context manager in services.py (replaces manual bootstrap/aclose)
 - Extracted `_finish_execution()` in runner.py (eliminates 3x duplicated result dict + db update)
 - Removed duplicate methods in path_context.py (`_resolve_for_read`, `_is_write_allowed`)
@@ -77,7 +76,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Basic CLI with `agentmd start`, `agentmd run`, `agentmd list`
 - SQLite execution history
 
-[Unreleased]: https://github.com/z-fab/agentmd/compare/v0.2.3...HEAD
+[0.3.0]: https://github.com/z-fab/agentmd/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/z-fab/agentmd/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/z-fab/agentmd/compare/v0.2.0...v0.2.2
 [0.2.0]: https://github.com/z-fab/agentmd/compare/v0.1.0...v0.2.0

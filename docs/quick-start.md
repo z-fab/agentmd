@@ -86,7 +86,19 @@ GOOGLE_API_KEY=your-key-here
 
 ## 3. Create Your First Agent
 
-Create `agents/hello.md` in your workspace:
+The fastest way is with `agentmd new`:
+
+```bash
+agentmd new hello
+```
+
+If you have a provider configured, it will ask what the agent should do and generate the file using AI. Otherwise (or with `--template`), it walks you through an interactive questionnaire:
+
+```bash
+agentmd new hello --template
+```
+
+You can also create agents manually — just add an `.md` file to `agents/`:
 
 ```markdown
 ---
@@ -217,6 +229,7 @@ Copy and customize from our library:
 - [Tools reference](tools/built-in-tools.md)
 
 ### CLI Commands Reference
+- `agentmd new <name>` — Scaffold a new agent (AI-assisted or interactive)
 - `agentmd run [agent]` — Execute single agent (interactive picker if omitted)
 - `agentmd start` — Start runtime with scheduler (`-d` for daemon mode)
 - `agentmd list` — List all agents
