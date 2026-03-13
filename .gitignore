@@ -271,8 +271,8 @@ $RECYCLE.BIN/
 
 # Agent.md
 workspace/output/
+workspace/config.yaml
 workspace/agents/*
 !workspace/agents/hello-world.md
-!workspace/agents/mcp-servers.json
 CLAUDE.md
 .claude
