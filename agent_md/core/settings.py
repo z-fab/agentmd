@@ -92,10 +92,9 @@ class Settings(BaseSettings):
         # Flatten nested 'defaults' key
         defaults = raw.pop("defaults", {})
         if isinstance(defaults, dict):
-            if "provider" in defaults:
-                raw.setdefault("defaults_provider", defaults["provider"])
-            if "model" in defaults:
-                raw.setdefault("defaults_model", defaults["model"])
+            for key, flat_key in (("provider", "defaults_provider"), ("model", "defaults_model")):
+                if key in defaults:
+                    raw.setdefault(flat_key, defaults[key])
 
         # YAML values are low priority — only fill in what's missing
         for k, v in raw.items():

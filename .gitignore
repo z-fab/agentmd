@@ -275,3 +275,4 @@ workspace/agents/*
 !workspace/agents/hello-world.md
 !workspace/agents/mcp-servers.json
 CLAUDE.md
+.claude

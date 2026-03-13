@@ -81,13 +81,16 @@ agentmd run hello-world
 **Output:**
 
 ```
-▶ Running hello-world  google/gemini-2.5-flash
+  ▶ Running hello-world
+    google / gemini-2.5-flash
 
-11:32:04 hello-world 🤖 I'll create a friendly greeting...
-11:32:05 hello-world 🔧 file_write → greeting.txt
-11:32:05 hello-world ✅ Final answer: Done!
+  11:32:04  🤖 I'll create a friendly greeting...
+  11:32:05  🔧 file_write → greeting.txt
+  11:32:05  ✅ Done!
 
-✓ hello-world done in 1823ms  tokens: 42 in / 118 out / 160 total
+  ✓ hello-world completed in 1.8s
+    Tokens: 42 in / 118 out / 160 total
+    Execution #1
 ```
 
 That's it! 🎉

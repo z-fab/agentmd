@@ -12,14 +12,11 @@ from pathlib import Path
 
 import yaml
 import typer
-from rich.console import Console
-from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
 from agent_md.cli import app
-
-console = Console()
+from agent_md.cli.theme import console, make_panel, print_error, print_success
 
 PROVIDERS = {
     "google": {"env_var": "GOOGLE_API_KEY", "default_model": "gemini-2.5-flash"},
@@ -238,10 +235,14 @@ def _setup_autostart(workspace: Path) -> bool:
         try:
             subprocess.run(
                 [
-                    "schtasks", "/create",
-                    "/tn", "AgentMD",
-                    "/tr", f'"{agentmd_path}" start',
-                    "/sc", "onlogon",
+                    "schtasks",
+                    "/create",
+                    "/tn",
+                    "AgentMD",
+                    "/tr",
+                    f'"{agentmd_path}" start',
+                    "/sc",
+                    "onlogon",
                     "/f",
                 ],
                 check=True,
@@ -257,7 +258,7 @@ def _setup_autostart(workspace: Path) -> bool:
     return False
 
 
-def _build_config_panel() -> Panel:
+def _build_config_panel():
     """Build a Rich Panel showing the current effective configuration."""
     from agent_md.core.settings import Settings, _find_config_yaml, _find_env_file
 
@@ -269,10 +270,6 @@ def _build_config_panel() -> Panel:
 
     workspace = current.workspace or ("./workspace" if _is_dev_repo() else str(Path.home() / "agentmd"))
     ws_path = Path(workspace).expanduser().resolve()
-
-    def _resolve(val: str) -> str:
-        p = Path(val).expanduser()
-        return str(p.resolve() if p.is_absolute() else (ws_path / p).resolve())
 
     # Detect which providers have keys
     providers = []
@@ -290,23 +287,21 @@ def _build_config_panel() -> Panel:
     table.add_row("Config file", str(config_yaml) if config_yaml else "[yellow]not found[/]")
     table.add_row("Env file", str(Path(env_file).resolve()) if env_file else "[yellow]not found[/]")
     table.add_row("Workspace", str(ws_path))
-    table.add_row("Agents dir", _resolve(current.agents_dir))
-    table.add_row("Output dir", _resolve(current.output_dir))
-    table.add_row("DB path", _resolve(current.db_path))
-    table.add_row("MCP config", _resolve(current.mcp_config))
     table.add_row("Default model", f"{current.defaults_provider} / {current.defaults_model}")
     table.add_row("API keys", ", ".join(providers) if providers else "[yellow]none configured[/]")
-    table.add_row("Log level", current.log_level)
 
-    return Panel(table, title="⚙️  Agent.md Configuration", border_style="blue")
+    return make_panel(table, title="Agent.md Configuration")
 
 
 @app.command()
 def config():
     """Show current effective configuration."""
     from agent_md import __version__
+    from agent_md.cli.theme import print_banner
 
-    console.print(f"\n[bold]Agent.md[/bold] v{__version__}\n")
+    console.print()
+    print_banner(__version__)
+    console.print()
     console.print(_build_config_panel())
     console.print()
 
@@ -319,11 +314,11 @@ def setup(
     from agent_md import __version__
     from agent_md.core.settings import _find_config_yaml
 
+    console.print()
     console.print(
-        Panel(
+        make_panel(
             f"[bold]Agent.md[/bold] v{__version__}\nMarkdown-first agent runtime",
-            title="🤖 Setup Wizard",
-            border_style="green",
+            title="Setup Wizard",
         )
     )
 
@@ -337,19 +332,19 @@ def setup(
 
     # 1. Workspace
     default_ws = _default_workspace()
-    workspace_input = Prompt.ask("\n📂 Workspace directory", default=str(default_ws))
+    workspace_input = Prompt.ask("\nWorkspace directory", default=str(default_ws))
     workspace = Path(workspace_input).expanduser().resolve()
 
     # 2. Provider
     provider = Prompt.ask(
-        "\n🔌 LLM Provider",
+        "\nLLM Provider",
         choices=list(PROVIDERS.keys()),
         default="google",
     )
 
     # 3. Model
     default_model = PROVIDERS[provider]["default_model"]
-    model = Prompt.ask("\n🧠 Model", default=default_model)
+    model = Prompt.ask("\nModel", default=default_model)
 
     # 4. API Key
     api_key = None
@@ -358,34 +353,34 @@ def setup(
         existing_key = os.environ.get(env_var, "")
         if existing_key:
             masked = existing_key[:4] + "..." + existing_key[-4:] if len(existing_key) > 8 else "****"
-            console.print(f"\n🔑 Found existing {env_var}: {masked}")
+            console.print(f"\nFound existing {env_var}: {masked}")
             if not Confirm.ask("Use this key?", default=True):
-                api_key = Prompt.ask(f"\n🔑 {env_var}", password=True)
+                api_key = Prompt.ask(f"\n{env_var}", password=True)
             else:
                 api_key = existing_key
         else:
-            api_key = Prompt.ask(f"\n🔑 {env_var}", password=True)
+            api_key = Prompt.ask(f"\n{env_var}", password=True)
     else:
-        console.print("\n🔑 No API key needed for ollama")
+        console.print("\nNo API key needed for ollama")
 
     # 5. Auto-start
-    autostart = Confirm.ask("\n🚀 Enable auto-start on login?", default=False)
+    autostart = Confirm.ask("\nEnable auto-start on login?", default=False)
 
     # --- Apply configuration ---
     console.print("\n[bold]Applying configuration...[/]\n")
 
     # Create workspace structure
     _create_workspace(workspace, provider, model)
-    console.print(f"  📂 Workspace created at {workspace}")
+    console.print(f"  Workspace created at {workspace}")
 
     # Write config.yaml
     _write_config_yaml(workspace, provider, model)
-    console.print(f"  📝 Config written to {workspace / 'config.yaml'}")
+    console.print(f"  Config written to {workspace / 'config.yaml'}")
 
     # Write .env (secrets only)
     env_path = workspace / ".env"
     _write_env_file(env_path, api_key, env_var)
-    console.print(f"  🔑 Secrets written to {env_path}")
+    console.print(f"  Secrets written to {env_path}")
 
     # Set env var in current process
     os.environ["AGENTMD_WORKSPACE"] = str(workspace)
@@ -399,22 +394,23 @@ def setup(
 
     # Summary
     console.print(
-        Panel(
-            "\n".join([
-                f"[bold]Workspace:[/]     {workspace}",
-                f"[bold]Provider:[/]      {provider}",
-                f"[bold]Model:[/]         {model}",
-                f"[bold]Config:[/]        {workspace / 'config.yaml'}",
-                f"[bold]Secrets:[/]       {env_path}",
-                f"[bold]Auto-start:[/]    {'enabled' if autostart else 'disabled'}",
-                "",
-                "[bold]Next steps:[/]",
-                "  agentmd start           — Start the runtime",
-                "  agentmd run hello-world — Run the sample agent",
-                "  agentmd config          — Show current configuration",
-            ]),
-            title="✅ Setup Complete",
-            border_style="green",
+        make_panel(
+            "\n".join(
+                [
+                    f"[bold]Workspace:[/]     {workspace}",
+                    f"[bold]Provider:[/]      {provider}",
+                    f"[bold]Model:[/]         {model}",
+                    f"[bold]Config:[/]        {workspace / 'config.yaml'}",
+                    f"[bold]Secrets:[/]       {env_path}",
+                    f"[bold]Auto-start:[/]    {'enabled' if autostart else 'disabled'}",
+                    "",
+                    "[bold]Next steps:[/]",
+                    "  agentmd start           \u2014 Start the runtime",
+                    "  agentmd run hello-world \u2014 Run the sample agent",
+                    "  agentmd config          \u2014 Show current configuration",
+                ]
+            ),
+            title="Setup Complete",
         )
     )
 
@@ -434,9 +430,9 @@ def update():
             text=True,
         )
         if result.returncode == 0:
-            console.print(f"[green]{result.stdout.strip() or 'Update complete!'}[/]")
+            print_success(result.stdout.strip() or "Update complete!")
         else:
-            console.print(f"[red]Update failed:[/] {result.stderr.strip()}")
+            print_error(f"Update failed: {result.stderr.strip()}")
             raise typer.Exit(1)
     elif shutil.which("pip"):
         console.print("uv not found, trying pip...")
@@ -446,10 +442,10 @@ def update():
             text=True,
         )
         if result.returncode == 0:
-            console.print("[green]Update complete![/]")
+            print_success("Update complete!")
         else:
-            console.print(f"[red]Update failed:[/] {result.stderr.strip()}")
+            print_error(f"Update failed: {result.stderr.strip()}")
             raise typer.Exit(1)
     else:
-        console.print("[red]Neither uv nor pip found.[/] Please install uv: https://docs.astral.sh/uv/")
+        print_error("Neither uv nor pip found.", "Install uv: https://docs.astral.sh/uv/")
         raise typer.Exit(1)

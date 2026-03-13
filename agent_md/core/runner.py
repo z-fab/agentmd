@@ -25,6 +25,41 @@ class AgentRunner:
         self.mcp_manager = mcp_manager
         self.path_context = path_context
 
+    async def _finish_execution(
+        self,
+        execution_id: int,
+        status: str,
+        duration_ms: int,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        output_data: str | None = None,
+        error: str | None = None,
+    ) -> dict:
+        """Persist execution result and return a standard result dict."""
+        total_tokens = input_tokens + output_tokens
+        await self.db.update_execution(
+            execution_id=execution_id,
+            status=status,
+            duration_ms=duration_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            **({"output_data": output_data} if output_data else {}),
+            **({"error": error} if error else {}),
+        )
+        result = {
+            "status": status,
+            "duration_ms": duration_ms,
+            "execution_id": execution_id,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+        if error:
+            result["error"] = error
+        return result
+
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
         """Build user input message with trigger context."""
         if trigger_type == "manual":
@@ -122,88 +157,45 @@ class AgentRunner:
             await asyncio.wait_for(_stream(), timeout=config.settings.timeout)
 
             duration_ms = int((time.monotonic() - start_time) * 1000)
-            total_tokens = total_input_tokens + total_output_tokens
 
-            # 7. Extract final output
+            # 9. Extract final output
             output = ""
             if last_ai_msg:
                 from agent_md.core.execution_logger import _extract_text
 
                 raw_content = getattr(last_ai_msg, "content", None)
                 output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
-                # Re-tag the last AI message as final_answer
                 await ex_logger.mark_final_answer(last_ai_msg)
 
-            # 8. Persist success
-            await self.db.update_execution(
-                execution_id=execution_id,
-                status="success",
-                duration_ms=duration_ms,
+            # 10. Persist success
+            result = await self._finish_execution(
+                execution_id, "success", duration_ms,
+                total_input_tokens, total_output_tokens,
                 output_data=output[:10000],
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                total_tokens=total_tokens,
             )
-
+            result["output"] = output
             logger.info(
                 f"Execution complete: {config.name} — success in {duration_ms}ms "
-                f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {total_tokens} total)"
+                f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
             )
-
-            return {
-                "status": "success",
-                "output": output,
-                "duration_ms": duration_ms,
-                "execution_id": execution_id,
-                "input_tokens": total_input_tokens,
-                "output_tokens": total_output_tokens,
-                "total_tokens": total_tokens,
-            }
+            return result
 
         except asyncio.TimeoutError:
             duration_ms = int((time.monotonic() - start_time) * 1000)
-            total_tokens = total_input_tokens + total_output_tokens
             error_msg = f"Timeout after {config.settings.timeout}s"
-            await self.db.update_execution(
-                execution_id=execution_id,
-                status="timeout",
-                duration_ms=duration_ms,
-                error=error_msg,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                total_tokens=total_tokens,
-            )
             logger.warning(f"Execution timeout: {config.name} — {error_msg}")
-            return {
-                "status": "timeout",
-                "error": error_msg,
-                "duration_ms": duration_ms,
-                "execution_id": execution_id,
-                "input_tokens": total_input_tokens,
-                "output_tokens": total_output_tokens,
-                "total_tokens": total_tokens,
-            }
+            return await self._finish_execution(
+                execution_id, "timeout", duration_ms,
+                total_input_tokens, total_output_tokens,
+                error=error_msg,
+            )
 
         except Exception as e:
             duration_ms = int((time.monotonic() - start_time) * 1000)
-            total_tokens = total_input_tokens + total_output_tokens
             error_msg = f"{type(e).__name__}: {e}"
-            await self.db.update_execution(
-                execution_id=execution_id,
-                status="error",
-                duration_ms=duration_ms,
-                error=error_msg,
-                input_tokens=total_input_tokens,
-                output_tokens=total_output_tokens,
-                total_tokens=total_tokens,
-            )
             logger.error(f"Execution error: {config.name} — {error_msg}")
-            return {
-                "status": "error",
-                "error": error_msg,
-                "duration_ms": duration_ms,
-                "execution_id": execution_id,
-                "input_tokens": total_input_tokens,
-                "output_tokens": total_output_tokens,
-                "total_tokens": total_tokens,
-            }
+            return await self._finish_execution(
+                execution_id, "error", duration_ms,
+                total_input_tokens, total_output_tokens,
+                error=error_msg,
+            )

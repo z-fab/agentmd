@@ -66,7 +66,7 @@ class PathContext:
         Relative paths are resolved from workspace_root.
         Returns (resolved_path, None) on success or (None, error_message) on failure.
         """
-        resolved = self._resolve_for_read(path)
+        resolved = self._resolve_relative(path)
 
         # Security checks
         error = self._check_security_read(resolved)
@@ -95,7 +95,7 @@ class PathContext:
 
         # Check against allowed write paths
         write_paths = self.get_write_paths(config)
-        if not self._is_write_allowed(resolved, write_paths):
+        if not self._is_within_any(resolved, write_paths):
             return None, f"Access denied: '{path}' is outside allowed write paths"
 
         return resolved, None
@@ -104,13 +104,6 @@ class PathContext:
 
     def _resolve_relative(self, path: str) -> Path:
         """Resolve a path relative to workspace_root."""
-        p = Path(path).expanduser()
-        if not p.is_absolute():
-            p = self.workspace_root / p
-        return p.resolve()
-
-    def _resolve_for_read(self, path: str) -> Path:
-        """Resolve a read path (relative to workspace root)."""
         p = Path(path).expanduser()
         if not p.is_absolute():
             p = self.workspace_root / p
@@ -183,16 +176,3 @@ class PathContext:
                     return True
         return False
 
-    def _is_write_allowed(self, path: Path, write_paths: list[Path]) -> bool:
-        """Check if path is allowed for writing given the write paths."""
-        for wp in write_paths:
-            wp_resolved = wp.resolve()
-            if wp_resolved.suffix:
-                # Write path is a file — exact match only
-                if path == wp_resolved:
-                    return True
-            else:
-                # Write path is a directory — allow anything inside
-                if self._is_within(path, wp_resolved):
-                    return True
-        return False

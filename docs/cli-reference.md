@@ -6,14 +6,31 @@ Complete reference for all Agent.md CLI commands, options, and examples.
 
 | Command | Description | Use Case |
 |---------|-------------|----------|
-| `agentmd start` | Start runtime with scheduler + watcher | Long-running daemon for scheduled agents |
-| `agentmd run <agent>` | Execute single agent (one-shot) | Manual execution, testing, debugging |
-| `agentmd list` | List all agents in workspace | Discover agents, check configuration |
+| `agentmd start` | Start runtime with scheduler + watcher | Long-running process for scheduled agents |
+| `agentmd run [agent]` | Execute single agent (one-shot) | Manual execution, testing, debugging |
+| `agentmd list` | List all agents in workspace | Discover agents, check status |
 | `agentmd logs <agent>` | View execution history | Debug failures, review outputs |
-| `agentmd validate <file>` | Validate agent file syntax | Pre-deployment checks, CI/CD |
+| `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD |
+| `agentmd status` | Check if runtime is running | Monitor daemon state |
+| `agentmd stop` | Stop background runtime | Gracefully stop daemon |
 | `agentmd config` | Show effective configuration | Verify paths, API keys, defaults |
 | `agentmd setup` | Interactive setup wizard | First-time setup or reconfiguration |
 | `agentmd update` | Update to latest version | Self-update via uv or pip |
+
+## Global Options
+
+These options are available for **all commands** via the app callback:
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--quiet` | `-q` | Suppress output except errors |
+| `--verbose` | `-v` | Show debug output |
+
+```bash
+# Any command can use global options
+agentmd -v list
+agentmd -q run hello-world
+```
 
 ---
 
@@ -23,12 +40,12 @@ Start the Agent.md runtime with scheduler and file watcher.
 
 ### Purpose
 
-Launches a long-running daemon that:
+Launches a process that:
 1. Loads all agents from the workspace
 2. Starts the scheduler for agents with `schedule` triggers (cron, interval)
 3. Starts the file watcher for agents with `watch` triggers
-4. Displays a summary table of all loaded agents
-5. Runs until interrupted (Ctrl+C)
+4. Displays a summary of all loaded agents
+5. Runs until interrupted (Ctrl+C) or stopped via `agentmd stop`
 
 ### Usage
 
@@ -40,78 +57,69 @@ agentmd start [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--workspace PATH` | `-w` | Path | from config.yaml | Root workspace directory |
-| `--agents-dir PATH` | — | Path | `{workspace}/agents` | Directory containing .md agent files |
-| `--output-dir PATH` | — | Path | `{workspace}/output` | Default output directory for agent files |
-| `--db-path PATH` | — | Path | `{workspace}/data/agentmd.db` | SQLite database for execution history |
-| `--mcp-config PATH` | — | Path | `{agents}/mcp-servers.json` | MCP servers JSON configuration |
-| `--tui` | — | Flag | false | Launch Terminal UI (feature in development) |
-| `--quiet` | `-q` | Flag | false | Suppress all output except errors |
-| `--verbose` | `-v` | Count | 0 | Increase verbosity (-v, -vv, -vvv) |
-
-### Verbosity Levels
-
-| Flag | Level | Output |
-|------|-------|--------|
-| `--quiet` / `-q` | 0 | Suppress all output except errors |
-| (default) | 0 | Minimal output (summary and completion) |
-| `-v` | 1 | Event stream (AI, tool calls, responses) |
-| `-vv` | 2 | Event stream + INFO logs |
-| `-vvv` | 3 | Event stream + INFO + DEBUG logs |
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+| `--daemon` | `-d` | Flag | false | Run in background |
+| `--quiet` | `-q` | Flag | false | Suppress output except errors |
 
 ### Examples
 
 ```bash
-# Start with default workspace (from config.yaml)
+# Start in foreground (default)
 agentmd start
+
+# Start as background daemon
+agentmd start -d
 
 # Start with custom workspace
 agentmd start --workspace /data/agents
 
-# Start with verbose output (show event stream)
-agentmd start -v
+# Start daemon with custom workspace
+agentmd start -d -w /data/agents
 ```
+
+### Daemon Mode
+
+When started with `--daemon` / `-d`:
+- Runs as a detached background process
+- Logs output to `{workspace}/data/agentmd.log`
+- PID stored in `{workspace}/data/agentmd.pid`
+- Use `agentmd status` to check and `agentmd stop` to stop
 
 ---
 
-## agentmd run <agent>
+## agentmd run [agent]
 
 Execute a single agent manually (one-shot execution).
 
 ### Usage
 
 ```bash
-agentmd run <AGENT> [OPTIONS]
+agentmd run [AGENT] [OPTIONS]
 ```
 
 ### Arguments
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `<AGENT>` | String | Agent name or filename (with or without `.md` extension) |
+| `[AGENT]` | String (optional) | Agent name. If omitted, shows an interactive picker |
 
 ### Options
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--workspace PATH` | `-w` | Path | from config.yaml | Root workspace directory |
-| `--agents-dir PATH` | — | Path | `{workspace}/agents` | Directory containing .md agent files |
-| `--output-dir PATH` | — | Path | `{workspace}/output` | Default output directory for agent files |
-| `--db-path PATH` | — | Path | `{workspace}/data/agentmd.db` | SQLite database for execution history |
-| `--mcp-config PATH` | — | Path | — | MCP servers JSON configuration |
-| `--quiet` | `-q` | Flag | false | Suppress event output (errors only) |
-| `--verbose` | `-v` | Count | 1 | Increase verbosity (-v, -vv, -vvv) |
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+| `--quiet` | `-q` | Flag | false | Suppress output except result |
 
 ### Examples
 
 ```bash
-# Run agent (finds my-agent.md in workspace/agents/)
+# Run agent by name
 agentmd run my-agent
 
-# Run with custom workspace
-agentmd run my-agent --workspace /data/agents
+# Interactive picker (when no name given)
+agentmd run
 
-# Quiet mode (header + footer only)
+# Quiet mode (result only)
 agentmd run my-agent --quiet
 ```
 
@@ -128,7 +136,7 @@ agentmd run my-agent --quiet
 
 ## agentmd list
 
-List all agents in the workspace.
+List all agents in the workspace with their trigger, last run, and status.
 
 ### Usage
 
@@ -140,28 +148,20 @@ agentmd list [OPTIONS]
 
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
-| `--workspace PATH` | `-w` | Path | from config.yaml | Root workspace directory |
-| `--agents-dir PATH` | — | Path | `{workspace}/agents` | Directory containing .md agent files |
-| `--output-dir PATH` | — | Path | `{workspace}/output` | Default output directory |
-| `--db-path PATH` | — | Path | `{workspace}/data/agentmd.db` | SQLite database path |
-| `--mcp-config PATH` | — | Path | — | MCP servers JSON configuration |
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
 
 ### Table Columns
 
 | Column | Example |
 |--------|---------|
 | **Name** | `daily-report` |
-| **Description** | `Generate daily summary` |
-| **Provider** | `openai`, `google`, `anthropic` |
-| **Model** | `gpt-4o`, `gemini-2.5-flash` |
-| **Trigger** | `schedule (cron: 0 9 * * *)` or `manual` |
-| **Custom Tools** | `file_analyzer, report_gen` |
-| **MCP** | `filesystem, database` |
+| **Trigger** | `cron (0 9 * * *)`, `every 1h`, `manual` |
+| **Last Run** | `2h ago`, `never` |
 | **Status** | `●` (enabled) / `○` (disabled) |
 
 ---
 
-## agentmd logs <agent>
+## agentmd logs
 
 View execution history and detailed messages for an agent.
 
@@ -169,17 +169,19 @@ View execution history and detailed messages for an agent.
 
 ```bash
 agentmd logs <AGENT> [OPTIONS]
+agentmd logs -e <ID> [OPTIONS]
+agentmd logs -f [OPTIONS]
 ```
 
 ### Arguments & Options
 
 | Item | Type | Default | Description |
 |------|------|---------|-------------|
-| `<AGENT>` | String | — | Agent name |
-| `-n` / `--n NUM` | Integer | 10 | Number of recent executions |
+| `<AGENT>` | String | — | Agent name (required for execution list) |
+| `-n` / `--last NUM` | Integer | 10 | Number of recent executions |
 | `-e` / `--execution ID` | Integer | — | Show messages for specific execution ID |
-| `--workspace PATH` | Path | from config.yaml | Root workspace directory |
-| `--db-path PATH` | Path | `{workspace}/data/agentmd.db` | SQLite database path |
+| `-f` / `--follow` | Flag | false | Follow daemon log output in real-time |
+| `--workspace PATH` | Path | from config.yaml | Override workspace directory |
 
 ### Examples
 
@@ -191,39 +193,103 @@ agentmd logs my-agent
 agentmd logs my-agent -n 5
 
 # View detailed messages for execution #42
-agentmd logs my-agent -e 42
+agentmd logs -e 42
+
+# Follow daemon logs (like tail -f)
+agentmd logs -f
 ```
 
 ---
 
-## agentmd validate <file>
+## agentmd validate [agent]
 
-Validate an agent file without executing it.
+Validate an agent configuration without executing it.
 
 ### Usage
 
 ```bash
-agentmd validate <FILE> [OPTIONS]
+agentmd validate [AGENT] [OPTIONS]
 ```
 
 ### Arguments & Options
 
 | Item | Type | Description |
 |------|------|-------------|
-| `<FILE>` | Path | Path to agent `.md` file (absolute or relative) |
-| `--agents-dir PATH` | Path | Directory containing tools/ subdirectory |
+| `[AGENT]` | String (optional) | Agent name or path. Interactive picker if omitted |
+| `--workspace PATH` | Path | Override workspace directory |
+
+### What it checks
+
+- Model provider and API key availability
+- Trigger configuration (cron syntax, watch paths)
+- System prompt presence
+- Built-in and custom tool availability (including loadability)
+- MCP server configuration
+- Read/write path existence
 
 ### Examples
 
 ```bash
-# Validate agent
-agentmd validate agents/my-agent.md
+# Validate by name
+agentmd validate my-agent
+
+# Interactive picker
+agentmd validate
 
 # Validate all agents
-for agent in agents/*.md; do
-  agentmd validate "$agent" || echo "Invalid: $agent"
+for agent in $(agentmd list --quiet 2>/dev/null); do
+  agentmd validate "$agent"
 done
 ```
+
+---
+
+## agentmd status
+
+Check if the background runtime is running.
+
+### Usage
+
+```bash
+agentmd status [OPTIONS]
+```
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+
+### Example output
+
+```
+  agentmd is running (pid 12345)
+
+  Uptime         2h 30m
+  Workspace      /home/user/agentmd
+  Log file       /home/user/agentmd/data/agentmd.log
+  Started        2026-03-13 09:00:00
+```
+
+---
+
+## agentmd stop
+
+Stop the background runtime.
+
+### Usage
+
+```bash
+agentmd stop [OPTIONS]
+```
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+
+Sends SIGTERM for graceful shutdown. Falls back to SIGKILL after 5 seconds if needed.
 
 ---
 
@@ -241,27 +307,21 @@ Displays:
 - **Config file** — path to `config.yaml` being used
 - **Env file** — path to `.env` being used
 - **Workspace** — resolved workspace path
-- **Agents/Output/DB/MCP paths** — resolved from config.yaml
 - **Default model** — provider and model used when agents omit `model:`
 - **API keys** — which providers have keys configured
-- **Log level** — current logging level
 
 ### Example output
 
 ```
-Agent.md v0.2.2
+  agentmd v0.2.3
 
-⚙️  Agent.md Configuration
-  Config file    /home/user/agentmd/config.yaml
-  Env file       /home/user/agentmd/.env
-  Workspace      /home/user/agentmd
-  Agents dir     /home/user/agentmd/agents
-  Output dir     /home/user/agentmd/output
-  DB path        /home/user/agentmd/data/agentmd.db
-  MCP config     /home/user/agentmd/agents/mcp-servers.json
-  Default model  google / gemini-2.5-flash
-  API keys       google
-  Log level      INFO
+╭─────────────── Agent.md Configuration ───────────────╮
+│   Config file      /home/user/agentmd/config.yaml    │
+│   Env file         /home/user/agentmd/.env           │
+│   Workspace        /home/user/agentmd               │
+│   Default model    google / gemini-2.5-flash         │
+│   API keys         google                            │
+╰──────────────────────────────────────────────────────╯
 ```
 
 ---
@@ -327,7 +387,7 @@ Agent.md uses two configuration files:
 
 ### `config.yaml` — Application settings
 
-Located in your workspace directory. Controls paths, default model, and log level.
+Located in your workspace directory. Controls paths and default model.
 
 ```yaml
 workspace: ~/agentmd
@@ -339,8 +399,6 @@ mcp_config: agents/mcp-servers.json
 defaults:
   provider: google
   model: gemini-2.5-flash
-
-log_level: INFO
 ```
 
 ### `.env` — API keys
@@ -361,7 +419,7 @@ GOOGLE_API_KEY=AIza...
 
 ### Precedence (highest to lowest)
 
-1. CLI flags (`--workspace`, `--agents-dir`, etc.)
+1. CLI flags (`--workspace`)
 2. `config.yaml` values
 3. Built-in defaults
 
@@ -390,5 +448,7 @@ GOOGLE_API_KEY=AIza...
 │   └── tools/              # Custom tools (Python modules)
 ├── output/                 # Default output directory
 └── data/
-    └── agentmd.db          # Execution history (auto-created)
+    ├── agentmd.db          # Execution history (auto-created)
+    ├── agentmd.pid         # Daemon PID file (when running as daemon)
+    └── agentmd.log         # Daemon log file (when running as daemon)
 ```

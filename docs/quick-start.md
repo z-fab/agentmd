@@ -60,14 +60,10 @@ The setup wizard creates two files in your workspace:
 workspace: ~/agentmd
 agents_dir: agents
 output_dir: output
-db_path: data/agentmd.db
-mcp_config: agents/mcp-servers.json
 
 defaults:
   provider: google
   model: gemini-2.5-flash
-
-log_level: INFO
 ```
 
 ### `.env` — API keys (secrets only)
@@ -124,16 +120,18 @@ agentmd run hello
 
 You'll see live output:
 ```
-▶ Running hello  google/gemini-2.5-flash
+  ▶ Running hello
+    google / gemini-2.5-flash
 
-11:32:04 hello 🤖 I'll create a warm greeting for you...
-11:32:05 hello 🔧 file_write → {'file_path': 'hello-output.txt', ...}
-11:32:05 hello 📎 file_write ← File written successfully
+  11:32:04  🤖 I'll create a warm greeting for you...
+  11:32:05  🔧 file_write → {'file_path': 'hello-output.txt', ...}
+  11:32:05  📎 file_write ← File written successfully
 
-11:32:05 hello ✅ Final answer:
-  I've created a warm greeting and saved it to hello-output.txt!
+  11:32:05  ✅ I've created a warm greeting and saved it to hello-output.txt!
 
-✓ hello done in 523ms  tokens: 28 in / 87 out / 115 total  execution #1
+  ✓ hello completed in 523ms
+    Tokens: 28 in / 87 out / 115 total
+    Execution #1
 ```
 
 ## 5. Check the Output
@@ -219,11 +217,13 @@ Copy and customize from our library:
 - [Tools reference](tools/built-in-tools.md)
 
 ### CLI Commands Reference
-- `agentmd run <agent>` — Execute single agent
-- `agentmd start` — Start runtime with scheduler
+- `agentmd run [agent]` — Execute single agent (interactive picker if omitted)
+- `agentmd start` — Start runtime with scheduler (`-d` for daemon mode)
 - `agentmd list` — List all agents
-- `agentmd logs <agent>` — View execution history
-- `agentmd validate <file>` — Check agent syntax
+- `agentmd logs <agent>` — View execution history (`-f` to follow)
+- `agentmd validate [agent]` — Validate agent configuration
+- `agentmd status` — Check if runtime is running
+- `agentmd stop` — Stop background runtime
 - `agentmd config` — Show current configuration
 - `agentmd setup` — Interactive setup wizard
 - `agentmd update` — Update to latest version

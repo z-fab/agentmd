@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
     "typer>=0.24.1",
+    "questionary>=2.1.0",
     "watchdog>=6.0.0",
 ]
 
