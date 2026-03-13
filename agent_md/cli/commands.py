@@ -821,6 +821,14 @@ def validate(
         errors += 1
     print_kv("Model", f"{model_str}         {api_status}")
 
+    # History (session memory)
+    if result.history_level != "off":
+        from agent_md.core.models import HISTORY_LIMITS
+        limit = HISTORY_LIMITS[result.history_level]
+        print_kv("History", f"{result.history_level} (last {limit} messages)")
+    else:
+        print_kv("History", "off [dim](stateless)[/dim]")
+
     # Trigger
     trigger_str = format_trigger(config)
     trigger_valid = "[green]\u2713 Valid[/green]"

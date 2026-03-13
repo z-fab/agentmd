@@ -189,6 +189,7 @@ Every agent automatically gets:
 - **`file_read`** — Read files from workspace
 - **`file_write`** — Create and write files (with security restrictions)
 - **`http_request`** — Make HTTP calls (GET, POST, etc.)
+- **`memory_save` / `memory_append` / `memory_retrieve`** — Persistent long-term memory
 
 [Explore tools →](tools/built-in-tools.md)
 
@@ -271,7 +272,7 @@ custom_tools:
 - [x] **File access security** — Read/write path restrictions
 - [x] **Execution tracking** — Full history with token usage
 - [x] **Git-friendly** — Version control your prompts
-- [ ] **Memory & context persistence** — Coming soon
+- [x] **Memory & context persistence** — Session history + long-term memory tools
 - [ ] **Skills support** — Coming soon
 - [ ] **Agent pipelines** — Chain agents together
 - [ ] **Terminal UI (TUI)** — Real-time monitoring

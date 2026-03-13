@@ -25,10 +25,21 @@ def _is_final_ai_message(msg) -> bool:
 class AgentRunner:
     """Executes agents and persists results to the database."""
 
-    def __init__(self, db: Database, mcp_manager: MCPManager, path_context: PathContext):
+    def __init__(self, db: Database, mcp_manager: MCPManager, path_context: PathContext, db_path: str | None = None):
         self.db = db
         self.mcp_manager = mcp_manager
         self.path_context = path_context
+        self.db_path = db_path  # for creating AsyncSqliteSaver
+        self._checkpoint_conns: list = []  # track aiosqlite connections for cleanup
+
+    async def aclose(self):
+        """Close any open checkpoint database connections."""
+        for conn in self._checkpoint_conns:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+        self._checkpoint_conns.clear()
 
     async def _finish_execution(
         self,
@@ -84,6 +95,8 @@ class AgentRunner:
 
     async def _build_graph(self, config: AgentConfig):
         """Create model, resolve tools, and compile the graph."""
+        from agent_md.core.models import HISTORY_LIMITS
+
         chat_model = create_chat_model(
             provider=config.model.provider,
             model=config.model.name,
@@ -104,7 +117,22 @@ class AgentRunner:
                 f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
             )
 
-        return create_react_graph(chat_model, tools)
+        # Session memory: create checkpointer if memory level is set
+        checkpointer = None
+        memory_limit = None
+        if config.history != "off" and self.db_path:
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            checkpoint_db = str(self.db_path).replace(".db", "_checkpoints.db")
+            conn = await aiosqlite.connect(checkpoint_db)
+            checkpointer = AsyncSqliteSaver(conn)
+            await checkpointer.setup()
+            self._checkpoint_conns.append(conn)
+            memory_limit = HISTORY_LIMITS[config.history]
+            logger.info(f"Session history enabled: level={config.history}, limit={memory_limit}")
+
+        return create_react_graph(chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit)
 
     async def run(self, config: AgentConfig, trigger_type: str = "manual", trigger_context: str | None = None, on_event=None) -> dict:
         """Execute an agent and persist the result.
@@ -144,10 +172,11 @@ class AgentRunner:
 
             # 4. Stream execution -- log each message in real time
             last_ai_msg = None
+            graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
                 nonlocal last_ai_msg, total_input_tokens, total_output_tokens
-                async for msg in stream_agent_graph(graph, config.system_prompt, config, self.path_context, user_input=user_input):
+                async for msg in stream_agent_graph(graph, config.system_prompt, config, self.path_context, user_input=user_input, config=graph_config):
                     await ex_logger.log_message(msg)
 
                     # Accumulate token usage from every AI message
@@ -212,7 +241,7 @@ class AgentRunner:
         """
         return await self._build_graph(config)
 
-    async def chat_turn(self, graph, messages, ex_logger, timeout):
+    async def chat_turn(self, graph, messages, ex_logger, timeout, graph_config=None):
         """Stream one chat turn and return (new_messages, input_tokens, output_tokens).
 
         Args:
@@ -220,6 +249,7 @@ class AgentRunner:
             messages: Full conversation history including latest HumanMessage.
             ex_logger: ExecutionLogger for persisting messages.
             timeout: Timeout in seconds.
+            graph_config: Optional LangGraph config dict (e.g. thread_id for checkpointing).
 
         Returns:
             Tuple of (new_messages, input_tokens, output_tokens).
@@ -231,7 +261,7 @@ class AgentRunner:
 
         async def _stream():
             nonlocal input_tokens, output_tokens, last_ai_msg
-            async for msg in stream_chat_turn(graph, messages):
+            async for msg in stream_chat_turn(graph, messages, config=graph_config):
                 new_messages.append(msg)
                 await ex_logger.log_message(msg)
 

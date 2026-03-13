@@ -12,6 +12,7 @@ Agent.md is a markdown-first runtime for AI agents. Each agent is a single `.md`
 | **Config Validation** | Pydantic | Type-safe configuration parsing |
 | **CLI Interface** | Typer + Rich | User-friendly command-line interface |
 | **Persistence** | SQLite + aiosqlite | Async execution history storage |
+| **Session Memory** | langgraph-checkpoint-sqlite | Conversation history across runs |
 | **Scheduling** | APScheduler | Cron/interval-based triggers |
 | **Async I/O** | AsyncIO | Non-blocking execution throughout |
 
@@ -57,6 +58,7 @@ Three types of tools available:
 - `file_read` — Read files (with path validation)
 - `file_write` — Write/create files (with path validation)
 - `http_request` — Make HTTP GET/POST requests
+- `memory_save` / `memory_append` / `memory_retrieve` — Long-term memory
 
 **Custom Tools** — Loaded from `tools/` directory per agent
 **MCP Tools** — Connected via Model Context Protocol servers
@@ -127,7 +129,7 @@ SQLite-backed persistence recording:
 5. **Lazy Loading** — Provider packages are optional; only load what you use
 6. **Type Safety** — Pydantic validates all configuration before runtime
 7. **No Manual API Keys** — LangChain reads from env vars automatically
-8. **Stateless Tools** — Pure functions; no shared state across executions
+8. **Stateful When Needed** — Session history and long-term memory, with stateless as opt-out
 
 ## Directories
 

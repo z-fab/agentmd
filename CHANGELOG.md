@@ -3,6 +3,21 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] - 2026-03-13
+
+### Added
+- **Session history** — LangGraph checkpointing with SQLite persists conversation history between runs
+  - `history` frontmatter field: `low` (default, 10 msgs), `medium` (50), `high` (200), `off` (stateless)
+  - Works for both `agentmd run` and `agentmd chat` — agents accumulate context over time
+  - Thread ID = agent name — all executions of the same agent share the same conversation thread
+- **Long-term memory tools** — three new built-in tools for persistent, structured knowledge
+  - `memory_save(section, content)` — store/replace a named section
+  - `memory_append(section, content)` — append to a section (with digest hint at 50+ lines)
+  - `memory_retrieve(section)` — read a section
+  - Memory stored in `agents/{name}.memory.md` files
+  - Available sections listed in system prompt automatically
+- **`agentmd validate`** — now shows history level in output
+
 ## [0.4.0] - 2026-03-13
 
 ### Added
@@ -84,6 +99,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - Basic CLI with `agentmd start`, `agentmd run`, `agentmd list`
 - SQLite execution history
 
+[0.5.0]: https://github.com/z-fab/agentmd/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/z-fab/agentmd/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/z-fab/agentmd/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/z-fab/agentmd/compare/v0.2.2...v0.2.3

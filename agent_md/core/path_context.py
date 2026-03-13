@@ -47,6 +47,10 @@ class PathContext:
             return [self._resolve_relative(p) for p in config.write]
         return [self.output_dir]
 
+    def get_memory_file_path(self, config) -> Path:
+        """Return the path to the agent's .memory.md file."""
+        return self.agents_dir / f"{config.name}.memory.md"
+
     def get_default_write_dir(self, config) -> Path:
         """Return the default directory for relative write paths.
 

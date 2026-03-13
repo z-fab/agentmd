@@ -369,6 +369,7 @@ agentmd validate [AGENT] [OPTIONS]
 ### What it checks
 
 - Model provider and API key availability
+- History level (session memory configuration)
 - Trigger configuration (cron syntax, watch paths)
 - System prompt presence
 - Built-in and custom tool availability (including loadability)
@@ -592,11 +593,13 @@ GOOGLE_API_KEY=AIza...
 ├── .env                    # API keys (secrets)
 ├── agents/                 # Agent .md files
 │   ├── hello-world.md
+│   ├── hello-world.memory.md  # Long-term memory (auto-created)
 │   ├── mcp-servers.json    # MCP servers config (optional)
 │   └── tools/              # Custom tools (Python modules)
 ├── output/                 # Default output directory
 └── data/
     ├── agentmd.db          # Execution history (auto-created)
+    ├── agentmd_checkpoints.db  # Session history checkpoints (auto-created)
     ├── agentmd.pid         # Daemon PID file (when running as daemon)
     └── agentmd.log         # Daemon log file (when running as daemon)
 ```

@@ -20,6 +20,7 @@ dependencies = [
     "typer>=0.24.1",
     "questionary>=2.1.0",
     "watchdog>=6.0.0",
+    "langgraph-checkpoint-sqlite>=2.0.0",
 ]
 
 [project.optional-dependencies]

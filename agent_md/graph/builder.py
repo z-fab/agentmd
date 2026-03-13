@@ -9,7 +9,7 @@ from agent_md.graph.agent import ReactAgent
 from agent_md.graph.state import AgentState
 
 
-def create_react_graph(chat_model, tools):
+def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
     """Create a compiled ReAct graph for a single agent.
 
     Convenience wrapper around ReactAgent.compile().
@@ -17,12 +17,14 @@ def create_react_graph(chat_model, tools):
     Args:
         chat_model: A LangChain ChatModel instance (already configured).
         tools: List of LangChain tool objects available to this agent.
+        checkpointer: Optional LangGraph checkpointer for session memory.
+        memory_limit: Optional max number of non-system messages to send to the LLM.
 
     Returns:
         A compiled LangGraph StateGraph ready for ainvoke().
     """
-    agent = ReactAgent(chat_model, tools)
-    return agent.compile()
+    agent = ReactAgent(chat_model, tools, memory_limit=memory_limit)
+    return agent.compile(checkpointer=checkpointer)
 
 
 def _build_file_access_prompt(agent_config, path_context) -> str:
@@ -65,9 +67,50 @@ def build_system_message(
 
     if agent_config and path_context:
         extra_info += "\n" + _build_file_access_prompt(agent_config, path_context)
+        memory_prompt = _build_memory_prompt(agent_config, path_context)
+        if memory_prompt:
+            extra_info += "\n\n" + memory_prompt
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
     return SystemMessage(content=full_prompt)
+
+
+def _build_memory_prompt(agent_config, path_context) -> str:
+    """Build the long-term memory section of the system prompt.
+
+    Lists available memory sections so the agent knows what it can retrieve.
+    """
+    memory_path = path_context.get_memory_file_path(agent_config)
+
+    if not memory_path.exists():
+        return (
+            "## Long-term Memory\n\n"
+            "You have access to long-term memory tools (memory_save, memory_append, memory_retrieve). "
+            "No memory file exists yet. Use memory_save to start persisting information across sessions."
+        )
+
+    try:
+        content = memory_path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+    # Extract section names from headers
+    sections = [line[2:].strip() for line in content.split("\n") if line.startswith("# ")]
+
+    if not sections:
+        return (
+            "## Long-term Memory\n\n"
+            "You have a memory file but it has no sections yet. "
+            "Use memory_save to start persisting information."
+        )
+
+    section_list = "\n".join(f"- {s}" for s in sections)
+    return (
+        "## Long-term Memory\n\n"
+        "You have the following memory sections available. "
+        "Use memory_retrieve to read their contents, memory_save to replace, and memory_append to add.\n\n"
+        f"Available sections:\n{section_list}"
+    )
 
 
 def _build_initial_state(
@@ -109,9 +152,9 @@ async def run_agent_graph(
     return await graph.ainvoke(initial_state)
 
 
-async def _stream_state(graph, state: dict) -> AsyncGenerator[BaseMessage, None]:
+async def _stream_state(graph, state: dict, config: dict | None = None) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution from a state dict, yielding each message."""
-    async for step in graph.astream(state):
+    async for step in graph.astream(state, config=config or {}):
         for _node_name, node_output in step.items():
             for msg in node_output.get("messages", []):
                 yield msg
@@ -123,6 +166,7 @@ async def stream_agent_graph(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
+    config: dict | None = None,
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution, yielding each message as it is produced.
 
@@ -132,18 +176,20 @@ async def stream_agent_graph(
         agent_config: AgentConfig for path context injection.
         path_context: PathContext for path resolution.
         user_input: The user/trigger message.
+        config: Optional LangGraph config dict (e.g. thread_id for checkpointing).
 
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
     initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input)
-    async for msg in _stream_state(graph, initial_state):
+    async for msg in _stream_state(graph, initial_state, config=config):
         yield msg
 
 
 async def stream_chat_turn(
     graph,
     messages: list[BaseMessage],
+    config: dict | None = None,
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream one chat turn from a pre-built messages list.
 
@@ -154,9 +200,10 @@ async def stream_chat_turn(
     Args:
         graph: A compiled LangGraph graph.
         messages: Full conversation history including the latest HumanMessage.
+        config: Optional LangGraph config dict (e.g. thread_id for checkpointing).
 
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
-    async for msg in _stream_state(graph, {"messages": messages}):
+    async for msg in _stream_state(graph, {"messages": messages}, config=config):
         yield msg

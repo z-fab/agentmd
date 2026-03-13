@@ -1,6 +1,6 @@
 # Built-in Tools
 
-Agent.md provides three always-available tools for file I/O and HTTP operations with built-in security controls.
+Agent.md provides six always-available tools for file I/O, HTTP operations, and long-term memory — all with built-in security controls.
 
 ## file_read
 
@@ -233,6 +233,111 @@ http_request(
 
 ---
 
+## memory_save
+
+Save or replace a named section in the agent's long-term memory file.
+
+### Signature
+
+```python
+def memory_save(section: str, content: str) -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `section` | `str` | Yes | Section name (e.g., `"user_preferences"`) |
+| `content` | `str` | Yes | Content to store (replaces existing) |
+
+### Behavior
+
+- Creates the `.memory.md` file if it doesn't exist
+- If the section exists, **replaces** its content entirely
+- If the section doesn't exist, creates it
+- Ideal for rewriting or summarizing a section
+
+### Example
+
+```yaml
+---
+name: assistant
+---
+
+When the user shares preferences, save them to the "preferences" memory section.
+```
+
+---
+
+## memory_append
+
+Append content to a named section in the agent's long-term memory file.
+
+### Signature
+
+```python
+def memory_append(section: str, content: str) -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `section` | `str` | Yes | Section name |
+| `content` | `str` | Yes | Content to append |
+
+### Behavior
+
+- Creates the section if it doesn't exist
+- Appends content to the end of the section
+- **Digest hint**: When a section exceeds 50 lines, the response suggests summarizing with `memory_save`
+
+### Example
+
+```yaml
+---
+name: logger
+trigger:
+  type: schedule
+  every: 1h
+---
+
+Check system status and append a timestamped entry to the "status_log" memory section.
+```
+
+---
+
+## memory_retrieve
+
+Read the content of a named section from the agent's long-term memory file.
+
+### Signature
+
+```python
+def memory_retrieve(section: str) -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `section` | `str` | Yes | Section name to retrieve |
+
+### Behavior
+
+- Returns the section content as a string
+- If the section doesn't exist, returns available section names
+- If no memory file exists, returns a helpful message
+
+### Example
+
+```yaml
+---
+name: researcher
+---
+
+Before starting research, retrieve the "known_topics" memory section
+to avoid duplicating previous work.
+```
+
+For detailed usage, examples, and best practices, see [Memory](../memory.md).
+
+---
+
 ## Security Best Practices
 
 ### File Access
@@ -265,6 +370,7 @@ http_request(
 
 ## Next Steps
 
+- [Memory system →](../memory.md)
 - [Create custom tools →](custom-tools.md)
 - [MCP integration →](mcp-integration.md)
 - [Path configuration →](../paths-and-security.md)

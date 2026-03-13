@@ -61,6 +61,7 @@ class ValidationResult:
     mcp_servers_missing: list[str] = field(default_factory=list)
     custom_tools_loadable: list[str] = field(default_factory=list)
     custom_tools_load_errors: dict[str, str] = field(default_factory=dict)
+    history_level: str = "low"
     api_key_set: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -211,6 +212,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
         mcp_servers_missing=mcp_missing,
         custom_tools_loadable=loadable,
         custom_tools_load_errors=load_errors,
+        history_level=config.history,
         api_key_set=api_key_set,
         warnings=warnings,
     )
@@ -273,6 +275,7 @@ class ChatSession:
     _runner: object = None
     _ex_logger: object = None
     _timeout: float = 300
+    _graph_config: dict | None = None
 
     async def send(self, user_input: str) -> str:
         """Send a user message and return the agent's text response."""
@@ -287,6 +290,7 @@ class ChatSession:
 
         new_msgs, in_tok, out_tok = await self._runner.chat_turn(
             self._graph, self._messages, self._ex_logger, self._timeout,
+            graph_config=self._graph_config,
         )
 
         self._messages.extend(new_msgs)
@@ -338,6 +342,9 @@ async def chat_session(
         messages = [system_msg]
         await ex_logger.log_message(system_msg)
 
+        # Session memory: configure thread_id for checkpointing
+        graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
+
         session = ChatSession(
             config=config,
             execution_id=execution_id,
@@ -346,6 +353,7 @@ async def chat_session(
             _runner=rt.runner,
             _ex_logger=ex_logger,
             _timeout=config.settings.timeout,
+            _graph_config=graph_config,
         )
 
         start_time = time.monotonic()

@@ -3,6 +3,8 @@ from typing import Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+HISTORY_LIMITS = {"low": 10, "medium": 50, "high": 200}
+
 
 class TriggerConfig(BaseModel):
     """Configuration for agent triggers."""
@@ -91,8 +93,17 @@ class AgentConfig(BaseModel):
     mcp: list[str] = []
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
+    history: str = "low"  # 'low', 'medium', 'high', 'off'
     read: list[str] = []
     write: list[str] = []
+
+    @field_validator("history")
+    @classmethod
+    def validate_history(cls, v: str) -> str:
+        allowed = ("low", "medium", "high", "off")
+        if v not in allowed:
+            raise ValueError(f"History level must be one of {allowed}, got '{v}'")
+        return v
 
     # Computed fields (not from YAML)
     system_prompt: str = ""

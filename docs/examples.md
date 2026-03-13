@@ -439,6 +439,107 @@ cat workspace/output/report-summary.txt
 
 ---
 
+## 9. Chat Assistant with Memory
+
+**Use case:** Interactive assistant that remembers context across sessions using both session history and long-term memory.
+
+**Agent file:** `workspace/agents/smart-assistant.md`
+
+```markdown
+---
+name: smart-assistant
+description: Personal assistant with persistent memory
+history: medium
+write:
+  - output/
+---
+
+You are a personal assistant with long-term memory capabilities.
+
+## On first interaction:
+- Introduce yourself and ask the user how you can help
+- Save any user details they share to the "user_profile" memory section
+
+## On returning sessions:
+- Retrieve the "user_profile" and "projects" memory sections
+- Greet the user by name if you know it
+- Proactively mention any pending action items
+
+## Memory management:
+- Save user preferences and facts to "user_profile"
+- Save project details and deadlines to "projects"
+- Append tasks to "action_items"
+- When a section gets long, summarize it
+
+## General behavior:
+- Be concise and helpful
+- Always confirm when saving to memory
+- Use file_write for any reports or documents the user requests
+```
+
+**How to run:**
+```bash
+# Session 1 — get to know the user
+agentmd chat smart-assistant
+> Hi, I'm Alice. I'm a data scientist working on a churn prediction model.
+> The deadline is March 30th.
+> /exit
+
+# Session 2 — agent remembers everything
+agentmd chat smart-assistant
+> What do you remember about my project?
+# Agent retrieves memory and responds with full context
+```
+
+---
+
+## 10. Learning Monitor — Scheduled Agent with Memory
+
+**Use case:** A scheduled agent that learns patterns over time by accumulating observations in long-term memory.
+
+**Agent file:** `workspace/agents/uptime-monitor.md`
+
+```markdown
+---
+name: uptime-monitor
+description: Monitors API uptime and learns failure patterns
+history: low
+trigger:
+  type: schedule
+  every: 30m
+write:
+  - output/
+---
+
+You are an uptime monitor that learns from past observations.
+
+## Each run:
+1. Retrieve the "failure_patterns" memory section (if it exists)
+2. Check https://api.example.com/health using http_request
+3. If the check fails:
+   - Append the failure details (timestamp, error, status code) to the "incident_log" memory section
+   - Check if this matches any known failure patterns
+   - If a new pattern emerges, save it to "failure_patterns"
+4. If the check succeeds:
+   - If there was a recent failure, note the recovery time
+5. Every 10 runs, summarize the "incident_log" section to keep it concise
+
+## Output:
+- Save status to `uptime/status-{timestamp}.txt`
+- Include trend analysis based on your memory of past checks
+```
+
+**How to run:**
+```bash
+agentmd start  # Scheduler runs every 30 minutes
+agentmd logs uptime-monitor  # View history
+
+# Check what the agent has learned:
+cat workspace/agents/uptime-monitor.memory.md
+```
+
+---
+
 ## Quick Reference
 
 ### File Locations
@@ -481,6 +582,9 @@ trigger:
 | `file_read` | Read files: `Read file at 'name.txt'` |
 | `file_write` | Write files: `Save to 'output.txt'` |
 | `http_request` | Call APIs: `Use http_request to fetch...` |
+| `memory_save` | Store/replace: `Save to "notes" memory section` |
+| `memory_append` | Append: `Append to "log" memory section` |
+| `memory_retrieve` | Read: `Retrieve the "context" memory section` |
 
 ### Temperature Settings
 
@@ -528,5 +632,6 @@ agentmd --help
 
 For more details, see:
 - [Agent Configuration](agent-configuration.md)
+- [Memory System](memory.md)
 - [Tool Reference](tools/built-in-tools.md)
 - [Paths & Security](paths-and-security.md)

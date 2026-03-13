@@ -12,10 +12,11 @@
 - [x] Schedule triggers (cron + intervals)
 - [x] File watching with debouncing
 - [x] Hot-reload (auto-reload agent changes)
+- [x] Memory & context persistence (session history + long-term memory tools)
+- [x] Interactive chat sessions (`agentmd chat`)
 
 ## In Progress 🚧
 
-- [ ] **Memory & Context Persistence** — Save agent state between runs
 - [ ] **Skills Support** — Reusable skill modules
 - [ ] **Terminal UI (TUI)** — Real-time monitoring dashboard
 
@@ -53,9 +54,8 @@ Have an idea? [Open an issue](https://github.com/z-fab/agentmd/issues) or start 
 
 1. Agent pipelines / chaining
 2. Webhook triggers
-3. Memory persistence
-4. Web dashboard
-5. Cost tracking
+3. Web dashboard
+4. Cost tracking
 
 ## How to Contribute
 

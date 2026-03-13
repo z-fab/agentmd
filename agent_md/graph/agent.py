@@ -13,13 +13,20 @@ class ReactAgent:
         result = await graph.ainvoke(initial_state)
     """
 
-    def __init__(self, chat_model: BaseChatModel, tools: list):
+    def __init__(self, chat_model: BaseChatModel, tools: list, memory_limit: int | None = None):
         self.model = chat_model.bind_tools(tools) if tools else chat_model
         self.tools = tools
+        self.memory_limit = memory_limit
 
     async def agent(self, state: AgentState) -> dict:
         """LLM node: reasons about the task and decides next action."""
-        response = await self.model.ainvoke(state["messages"])
+        messages = state["messages"]
+        if self.memory_limit is not None:
+            # Keep system messages + last N non-system messages
+            system_msgs = [m for m in messages if getattr(m, "type", "") == "system"]
+            other_msgs = [m for m in messages if getattr(m, "type", "") != "system"]
+            messages = system_msgs + other_msgs[-self.memory_limit:]
+        response = await self.model.ainvoke(messages)
         return {"messages": [response]}
 
     @staticmethod
@@ -30,8 +37,11 @@ class ReactAgent:
             return "tools"
         return END
 
-    def compile(self) -> object:
+    def compile(self, checkpointer=None) -> object:
         """Assemble and compile the ReAct graph.
+
+        Args:
+            checkpointer: Optional LangGraph checkpointer for session memory.
 
         Returns:
             A compiled LangGraph StateGraph ready for ainvoke().
@@ -58,4 +68,4 @@ class ReactAgent:
         else:
             graph.add_edge("agent", END)
 
-        return graph.compile()
+        return graph.compile(checkpointer=checkpointer)

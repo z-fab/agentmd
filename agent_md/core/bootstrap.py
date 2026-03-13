@@ -37,6 +37,7 @@ class Runtime:
     async def aclose(self):
         """Async cleanup — call instead of stop() + db.close()."""
         self.stop()
+        await self.runner.aclose()
         await self.db.close()
 
 
@@ -124,11 +125,11 @@ async def bootstrap(
 
     # Create core components
     registry = AgentRegistry()
-    runner = AgentRunner(db, mcp_manager, path_context)
+    runner = AgentRunner(db, mcp_manager, path_context, db_path=str(db_path))
     scheduler = None
 
     # Scan agents directory for .md files
-    md_files = sorted(agents_dir.glob("*.md"))
+    md_files = sorted(f for f in agents_dir.glob("*.md") if not f.name.endswith(".memory.md"))
     loaded = 0
     errors = 0
 

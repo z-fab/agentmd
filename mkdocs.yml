@@ -106,6 +106,7 @@ nav:
   - Paths & Security: paths-and-security.md
   - Providers: providers.md
   - Triggers: triggers.md
+  - Memory: memory.md
   - Tools:
       - tools/index.md
       - Built-in Tools: tools/built-in-tools.md

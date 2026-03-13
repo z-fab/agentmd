@@ -388,6 +388,32 @@ write:
 - Cannot write to `.db` files (databases)
 - Cannot write `.env*` files (credentials)
 
+### `history`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string |
+| **Required** | No |
+| **Allowed values** | `low`, `medium`, `high`, `off` |
+| **Default** | `low` |
+
+Controls session history persistence via LangGraph checkpointing. Determines how many past messages are sent to the LLM on each execution.
+
+- `low` (default): Last 10 messages — lightweight context
+- `medium`: Last 50 messages — good for chat and multi-session workflows
+- `high`: Last 200 messages — deep context for research and long projects
+- `off`: Stateless — no history between runs
+
+All messages are always saved to the checkpoint database; this setting only controls how many are sent to the LLM. See [Memory](memory.md) for details.
+
+```yaml
+# Chat agent with extended history
+history: medium
+
+# Stateless one-shot agent
+history: off
+```
+
 ### `enabled`
 
 | Property | Value |
@@ -647,6 +673,7 @@ name: minimal-agent
 # - model: from config.yaml defaults (e.g., google/gemini-2.5-flash)
 # - trigger: { type: manual }
 # - settings: { temperature: 0.7, max_tokens: 4096, timeout: 300 }
+# - history: low (last 10 messages)
 # - custom_tools: []
 # - mcp: []
 # - read: [workspace_root]
@@ -656,6 +683,7 @@ name: minimal-agent
 
 ## Related Documentation
 
+- [Memory](memory.md) - Session history and long-term memory
 - [Triggers](triggers.md) - Detailed schedule and watch options
 - [Paths & Security](paths-and-security.md) - File access permissions and global path configuration
 - [Custom Tools](tools/custom-tools.md) - Building custom tools
