@@ -99,6 +99,7 @@ async def bootstrap(
     mcp_config = mcp_config.resolve()
 
     tools_dir = (agents_dir / "tools").resolve()
+    skills_dir = (agents_dir / "skills").resolve()
 
     path_context = PathContext(
         workspace_root=workspace,
@@ -107,10 +108,11 @@ async def bootstrap(
         db_path=db_path,
         mcp_config=mcp_config,
         tools_dir=tools_dir,
+        skills_dir=skills_dir,
     )
 
     # Ensure directories exist
-    for d in (workspace, agents_dir, output_dir, db_path.parent):
+    for d in (workspace, agents_dir, output_dir, db_path.parent, skills_dir):
         if not d.exists():
             d.mkdir(parents=True)
             logger.info(f"Created directory: {d}")
@@ -143,6 +145,28 @@ async def bootstrap(
             errors += 1
 
     logger.info(f"Loaded {loaded} agents ({errors} errors) from {agents_dir}")
+
+    # Scan skills directory for SKILL.md files
+    if skills_dir.exists():
+        from agent_md.skills.parser import parse_skill_metadata
+
+        skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir())
+        skills_loaded = 0
+        skills_errors = 0
+
+        for skill_dir in skill_dirs:
+            skill_file = skill_dir / "SKILL.md"
+            if not skill_file.exists():
+                continue
+            try:
+                parse_skill_metadata(skill_file)
+                skills_loaded += 1
+            except Exception as e:
+                logger.error(f"Failed to load skill {skill_dir.name}: {e}")
+                skills_errors += 1
+
+        if skills_loaded or skills_errors:
+            logger.info(f"Discovered {skills_loaded} skills ({skills_errors} errors) from {skills_dir}")
 
     # Schedule enabled agents (only when explicitly requested)
     if start_scheduler:

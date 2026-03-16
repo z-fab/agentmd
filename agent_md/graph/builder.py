@@ -70,6 +70,9 @@ def build_system_message(
         memory_prompt = _build_memory_prompt(agent_config, path_context)
         if memory_prompt:
             extra_info += "\n\n" + memory_prompt
+        skills_prompt = _build_skills_prompt(agent_config, path_context)
+        if skills_prompt:
+            extra_info += "\n\n" + skills_prompt
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
     return SystemMessage(content=full_prompt)
@@ -110,6 +113,45 @@ def _build_memory_prompt(agent_config, path_context) -> str:
         "You have the following memory sections available. "
         "Use memory_retrieve to read their contents, memory_save to replace, and memory_append to add.\n\n"
         f"Available sections:\n{section_list}"
+    )
+
+
+def _build_skills_prompt(agent_config, path_context) -> str:
+    """Build the skills section of the system prompt (tier 1 — descriptions only).
+
+    Lists available skills so the agent knows what it can load via skill_use.
+    """
+    if not agent_config.skills:
+        return ""
+
+    skills_dir = path_context.skills_dir
+    if not skills_dir.exists():
+        return ""
+
+    from agent_md.skills.parser import parse_skill_metadata
+
+    skill_entries = []
+    for skill_name in agent_config.skills:
+        skill_file = skills_dir / skill_name / "SKILL.md"
+        if not skill_file.exists():
+            continue
+        try:
+            config = parse_skill_metadata(skill_file)
+            hint = f" {config.argument_hint}" if config.argument_hint else ""
+            desc = config.description or "No description"
+            skill_entries.append(f"- **{config.name}**{hint}: {desc}")
+        except Exception:
+            skill_entries.append(f"- **{skill_name}**: [error loading skill]")
+
+    if not skill_entries:
+        return ""
+
+    skill_list = "\n".join(skill_entries)
+    return (
+        "## Available Skills\n\n"
+        "You have access to the following skills. "
+        "Use the `skill_use` tool to load a skill's full instructions when needed.\n\n"
+        f"{skill_list}"
     )
 
 

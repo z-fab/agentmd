@@ -11,8 +11,8 @@ _STATIC_TOOLS = [http_request]
 def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     """Return all built-in tools, ready to use.
 
-    Context-aware tools (file_read, file_write, memory_*) are created dynamically
-    with the agent's path context. Static tools are included as-is.
+    Context-aware tools (file_read, file_write, memory_*, skill_*) are created
+    dynamically with the agent's path context. Static tools are included as-is.
 
     Args:
         agent_config: AgentConfig for context-aware tools.
@@ -38,6 +38,18 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
         tools.append(create_memory_append_tool(agent_config, path_context))
         tools.append(create_memory_retrieve_tool(agent_config, path_context))
 
+        # Skill tools — only when the agent has skills configured
+        if agent_config.skills and path_context.skills_dir.exists():
+            from agent_md.skills.tools import (
+                create_skill_read_file_tool,
+                create_skill_run_script_tool,
+                create_skill_use_tool,
+            )
+
+            tools.append(create_skill_use_tool(agent_config, path_context.skills_dir))
+            tools.append(create_skill_read_file_tool(agent_config, path_context.skills_dir))
+            tools.append(create_skill_run_script_tool(agent_config, path_context.skills_dir))
+
     return tools
 
 
@@ -45,5 +57,9 @@ def list_builtin_tools() -> list[str]:
     """Return names of all built-in tools."""
     return sorted(
         [t.name for t in _STATIC_TOOLS]
-        + ["file_read", "file_write", "memory_save", "memory_append", "memory_retrieve"]
+        + [
+            "file_read", "file_write",
+            "memory_save", "memory_append", "memory_retrieve",
+            "skill_use", "skill_read_file", "skill_run_script",
+        ]
     )

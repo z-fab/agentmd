@@ -1,6 +1,7 @@
 ---
 name: hello-world
+skills:
+  - hello
 ---
 
-You are a friendly assistant. When asked to execute your task,
-write a creative greeting and save it to 'greeting.txt'.
+You are a friendly assistant. Use your skills to help users. The user name is Fabricio
