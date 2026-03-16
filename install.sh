@@ -33,6 +33,6 @@ if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
     warn "Added ~/.local/bin to PATH in $PROFILE"
 fi
 
-# Run setup wizard
+# Run setup wizard (redirect stdin from /dev/tty so prompts work under curl|bash)
 header "Running setup wizard..."
-agentmd setup
+agentmd setup < /dev/tty

@@ -422,10 +422,12 @@ def update():
 
     console.print(f"\n[bold]Current version:[/] {__version__}\n")
 
+    REPO = "https://github.com/z-fab/agentmd.git"
+
     if shutil.which("uv"):
         console.print("Updating via uv...")
         result = subprocess.run(
-            ["uv", "tool", "upgrade", "agentmd[all]"],
+            ["uv", "tool", "install", f"agentmd[all] @ git+{REPO}", "--force", "--python", "3.13"],
             capture_output=True,
             text=True,
         )
