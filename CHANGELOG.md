@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 - **Chat history trimming** — `_trim_messages` could leave an AIMessage (with tool_calls) as the first non-system message after trimming, causing Gemini to reject with INVALID_ARGUMENT; now walks backward to always start on a HumanMessage boundary
 
+### Changed
+- **CLI refactor** — consolidated presentation logic into `theme.py`, extracted lifecycle hooks (`on_start`/`on_complete`) from runner into CLI layer, simplified `commands.py`
+
 ### Added
 - **Skills system** — reusable instruction packages for agents, compatible with the [Agent Skills](https://agentskills.io) standard
   - Skills are directories with a `SKILL.md` file (YAML frontmatter + markdown instructions)
