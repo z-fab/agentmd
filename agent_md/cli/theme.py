@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from rich import box
 from rich.console import Console
+from rich.markdown import Markdown
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 
@@ -108,6 +110,22 @@ EVENT_DISPLAY: dict[str, tuple[str, str]] = {
     "tool_response": ("\U0001f4ce", "green"),
     "final_answer": ("\u2705", "bold green"),
 }
+
+
+# ---------------------------------------------------------------------------
+# Content helpers
+# ---------------------------------------------------------------------------
+
+
+def sanitize_event_content(text: str) -> str:
+    """Replace newlines and collapse whitespace for single-line event display."""
+    return " ".join(text.replace("\n", " ").split())
+
+
+def print_markdown(text: str, indent: int = 4) -> None:
+    """Render text as Rich Markdown with left padding."""
+    md = Markdown(text)
+    console.print(Padding(md, (1, 0, 1, indent)))
 
 
 # ---------------------------------------------------------------------------

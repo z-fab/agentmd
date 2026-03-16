@@ -23,8 +23,10 @@ from agent_md.cli.theme import (
     print_chat_summary,
     print_error,
     print_kv,
+    print_markdown,
     print_success,
     print_warning,
+    sanitize_event_content,
     select_agent,
 )
 from agent_md.core.models import AgentConfig
@@ -48,24 +50,62 @@ def _resolve_workspace(workspace: Path | None) -> Path:
 
 
 def _make_console_callback():
-    """Return an on_event callback that prints Rich-formatted output."""
+    """Return an on_event callback that prints Rich-formatted output.
+
+    Used by ``run`` and ``start`` commands.  All content is sanitised to a
+    single line (newlines replaced) and displayed with hierarchical
+    indentation under the run header.
+    """
     from datetime import datetime
 
     def _on_event(event_type: str, data: dict) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
         emoji, style = EVENT_DISPLAY.get(event_type, ("\u2753", "white"))
+        indent = "    "  # 4-space indent for hierarchy under header
 
         if event_type in ("ai", "tool_response"):
-            content = data.get("content", "")[:200 if event_type == "ai" else 100]
+            limit = 200 if event_type == "ai" else 100
+            content = sanitize_event_content(data.get("content", ""))[:limit]
             label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_response" else ""
-            line = f"  [dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
+            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
             console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
         elif event_type == "tool_call":
-            line = f"  [dim]{ts}[/dim]  [{style}]{emoji} {data['tool_name']}[/{style}] \u2192 {data['tool_args'][:80]}"
+            args = sanitize_event_content(data.get("tool_args", ""))[:80]
+            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {data['tool_name']}[/{style}] [dim]\u2192 {args}[/dim]"
             console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
         elif event_type == "final_answer":
-            console.print()
-            console.print(f"  [dim]{ts}[/dim]  [{style}]{emoji} {data['content']}[/{style}]")
+            content = sanitize_event_content(data.get("content", ""))[:200]
+            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]"
+            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+
+    return _on_event
+
+
+def _make_chat_callback():
+    """Return an on_event callback for ``chat`` command.
+
+    Shows intermediate steps (tool calls, AI reasoning) with the same
+    layout as ``_make_console_callback`` but ignores ``final_answer`` —
+    the response is rendered separately as Markdown.
+    """
+    from datetime import datetime
+
+    def _on_event(event_type: str, data: dict) -> None:
+        ts = datetime.now().strftime("%H:%M:%S")
+        emoji, style = EVENT_DISPLAY.get(event_type, ("\u2753", "white"))
+        indent = "    "
+
+        if event_type in ("ai", "tool_response"):
+            limit = 200 if event_type == "ai" else 100
+            content = sanitize_event_content(data.get("content", ""))[:limit]
+            label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_response" else ""
+            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
+            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+        elif event_type == "tool_call":
+            args = sanitize_event_content(data.get("tool_args", ""))[:80]
+            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {data['tool_name']}[/{style}] [dim]\u2192 {args}[/dim]"
+            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+        # final_answer is intentionally ignored — rendered as Markdown by _chat_loop
 
     return _on_event
 
@@ -479,10 +519,9 @@ def run(
     config = parse_agent_file(agent_file)
 
     if not quiet:
+        model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
         console.print()
-        console.print(f"  [cyan]\u25b6 Running {config.name}[/cyan]")
-        if config.model:
-            console.print(f"    [dim]{config.model.provider} / {config.model.name}[/dim]")
+        console.print(f"  [bold cyan]\u25b6 {config.name}[/bold cyan]  [dim]{model_info}[/dim]")
         console.print()
 
     on_event = _make_console_callback() if not quiet else None
@@ -496,26 +535,19 @@ def run(
     console.print()
     if result["status"] == "success":
         duration = format_duration(result.get("duration_ms"))
-        tokens_info = ""
-        if result.get("total_tokens"):
-            tokens_info = (
-                f"\n    Tokens: {format_tokens(result['input_tokens'])} in / "
-                f"{format_tokens(result['output_tokens'])} out / "
-                f"{format_tokens(result['total_tokens'])} total"
-            )
+        tokens = format_tokens(result.get("total_tokens"))
         console.print(
-            f"  [green]\u2713 {config.name} completed in {duration}[/green]"
-            f"{tokens_info}"
-            f"\n    [dim]Execution #{result['execution_id']}[/dim]"
+            f"  [green]\u2713 {config.name}[/green] [dim]\u2014 {duration}  {tokens} tokens  #{result['execution_id']}[/dim]"
         )
     elif result["status"] == "timeout":
         console.print(
-            f"  [yellow]\u2717 {config.name} timeout[/yellow] after {format_duration(result.get('duration_ms'))}"
+            f"  [yellow]\u2717 {config.name}[/yellow] [dim]\u2014 timeout after {format_duration(result.get('duration_ms'))}[/dim]"
         )
     else:
         console.print(
-            f"  [red]\u2717 {config.name} error[/red] after {format_duration(result.get('duration_ms'))} \u2014 {result.get('error', 'unknown')}"
+            f"  [red]\u2717 {config.name}[/red] [dim]\u2014 {format_duration(result.get('duration_ms'))}  {result.get('error', 'unknown')}[/dim]"
         )
+    console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -530,18 +562,19 @@ def chat(
 ):
     """Start an interactive chat session with an agent."""
     agent_name = _pick_or_resolve_agent(agent, workspace)
-    on_event = _make_console_callback()
 
     try:
-        asyncio.run(_chat_loop(agent_name, workspace, on_event))
+        asyncio.run(_chat_loop(agent_name, workspace))
     except KeyboardInterrupt:
         pass
 
 
-async def _chat_loop(agent_name: str, workspace: Path | None, on_event) -> None:
+async def _chat_loop(agent_name: str, workspace: Path | None) -> None:
     import time
 
     from agent_md.core.services import AgentNotFoundError, chat_session
+
+    on_event = _make_chat_callback()
 
     try:
         async with chat_session(agent_name, workspace, on_event=on_event) as session:
@@ -566,14 +599,16 @@ async def _chat_loop(agent_name: str, workspace: Path | None, on_event) -> None:
                 if stripped.lower() in ("/exit", "/quit"):
                     break
 
+                console.print()
+
                 try:
-                    await session.send(stripped)
+                    response = await session.send(stripped)
+                    if response:
+                        print_markdown(response)
                 except asyncio.TimeoutError:
                     print_error(f"Timeout after {config.settings.timeout}s")
                 except Exception as e:
                     print_error(f"{type(e).__name__}: {e}")
-
-                console.print()
 
             duration_ms = int((time.monotonic() - start_time) * 1000)
             print_chat_summary(
