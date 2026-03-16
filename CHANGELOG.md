@@ -3,6 +3,19 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] - 2026-03-16
+
+### Added
+- **Skills system** — reusable instruction packages for agents, compatible with the [Agent Skills](https://agentskills.io) standard
+  - Skills are directories with a `SKILL.md` file (YAML frontmatter + markdown instructions)
+  - Two-tier loading: descriptions in system prompt, full content loaded on-demand via tools
+  - Three new built-in tools: `skill_use`, `skill_read_file`, `skill_run_script`
+  - Variable substitution: `$ARGUMENTS`, `${SKILL_DIR}`, `!`command`` (dynamic context injection)
+  - Compatible with Claude Code skill format — copy a skill from `.claude/skills/` and use it directly
+  - Path traversal protection on file reads and script execution
+  - `skills` frontmatter field on agents: list of skill names to enable
+  - Skills directory: `workspace/agents/skills/<name>/SKILL.md`
+
 ## [0.5.1] - 2026-03-16
 
 ### Improved

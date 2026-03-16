@@ -1,6 +1,6 @@
 # Built-in Tools
 
-Agent.md provides six always-available tools for file I/O, HTTP operations, and long-term memory — all with built-in security controls.
+Agent.md provides built-in tools for file I/O, HTTP, long-term memory, and skills — all with built-in security controls.
 
 ## file_read
 
@@ -335,6 +335,93 @@ to avoid duplicating previous work.
 ```
 
 For detailed usage, examples, and best practices, see [Memory](../memory.md).
+
+---
+
+## skill_use
+
+Load a skill's instructions with variable substitutions applied. Only available when the agent has `skills` configured.
+
+### Signature
+
+```python
+def skill_use(skill_name: str, arguments: str = "") -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `skill_name` | `str` | Yes | Name of the skill to load |
+| `arguments` | `str` | No | Arguments for variable substitution (`$ARGUMENTS`) |
+
+### Behavior
+
+- Validates the skill is enabled for this agent
+- Parses the full `SKILL.md` (tier 2 loading)
+- Applies substitutions: `$ARGUMENTS`, `${SKILL_DIR}`, `` !`command` ``
+- Returns processed instructions with available scripts and references listed
+
+### Example
+
+```yaml
+---
+name: assistant
+skills:
+  - review-code
+---
+
+Use skills to help with code tasks.
+```
+
+Agent calls: `skill_use("review-code", "main.py")` → returns full review instructions with `main.py` substituted.
+
+---
+
+## skill_read_file
+
+Read a supporting file from a skill's directory. Only available when the agent has `skills` configured.
+
+### Signature
+
+```python
+def skill_read_file(skill_name: str, file_path: str) -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `skill_name` | `str` | Yes | Name of the skill |
+| `file_path` | `str` | Yes | Relative path within skill directory |
+
+### Behavior
+
+- Validates skill access and path security (no directory traversal)
+- Returns file contents as UTF-8 string
+- Works with any file in the skill directory (`references/`, `scripts/`, etc.)
+
+---
+
+## skill_run_script
+
+Execute a script from a skill's `scripts/` directory. Only available when the agent has `skills` configured.
+
+### Signature
+
+```python
+def skill_run_script(skill_name: str, script_name: str, script_args: str = "") -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `skill_name` | `str` | Yes | Name of the skill |
+| `script_name` | `str` | Yes | Script filename in `scripts/` |
+| `script_args` | `str` | No | Arguments passed to the script |
+
+### Behavior
+
+- Auto-detects interpreter: `.py` → Python, `.sh` → Bash, `.js` → Node
+- Runs with 30-second timeout and skill directory as cwd
+- Returns stdout + stderr
+
+For full documentation, see [Skills](../skills.md).
 
 ---
 

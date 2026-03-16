@@ -274,6 +274,5 @@ workspace/output/
 workspace/config.yaml
 workspace/agents/*
 !workspace/agents/hello-world.md
-!workspace/agents/skills/
 CLAUDE.md
 .claude

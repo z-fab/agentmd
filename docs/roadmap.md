@@ -14,10 +14,10 @@
 - [x] Hot-reload (auto-reload agent changes)
 - [x] Memory & context persistence (session history + long-term memory tools)
 - [x] Interactive chat sessions (`agentmd chat`)
+- [x] Skills system (reusable instruction packages, Claude Code compatible)
 
 ## In Progress 🚧
 
-- [ ] **Skills Support** — Reusable skill modules
 - [ ] **Terminal UI (TUI)** — Real-time monitoring dashboard
 
 ## Planned Features 🎯

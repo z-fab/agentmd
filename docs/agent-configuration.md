@@ -318,6 +318,27 @@ mcp:
   - web-search
 ```
 
+### `skills`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string \| string[] |
+| **Required** | No |
+| **Default** | `[]` |
+
+List of skill names to enable for this agent. Skills are loaded from `workspace/agents/skills/<name>/SKILL.md`. See [Skills](skills.md) for full documentation.
+
+```yaml
+skills:
+  - analyze-pr
+  - generate-report
+
+# Or single skill:
+skills: review-code
+```
+
+When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, and `skill_run_script`.
+
 ### `read`
 
 | Property | Value |
@@ -676,6 +697,7 @@ name: minimal-agent
 # - history: low (last 10 messages)
 # - custom_tools: []
 # - mcp: []
+# - skills: []
 # - read: [workspace_root]
 # - write: [output_dir]
 # - enabled: true
@@ -683,6 +705,7 @@ name: minimal-agent
 
 ## Related Documentation
 
+- [Skills](skills.md) - Reusable instruction packages
 - [Memory](memory.md) - Session history and long-term memory
 - [Triggers](triggers.md) - Detailed schedule and watch options
 - [Paths & Security](paths-and-security.md) - File access permissions and global path configuration

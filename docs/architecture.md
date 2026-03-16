@@ -25,7 +25,7 @@ Parser → AgentConfig (Pydantic validated)
     ↓
 LLM Factory (OpenAI, Anthropic, Google, Ollama, Local)
     ↓
-Tool Resolver (Built-in + Custom + MCP)
+Tool Resolver (Built-in + Custom + MCP + Skills)
     ↓
 ReAct Graph (LangGraph)
     ├─ Call LLM (system prompt + user input)
@@ -59,6 +59,7 @@ Three types of tools available:
 - `file_write` — Write/create files (with path validation)
 - `http_request` — Make HTTP GET/POST requests
 - `memory_save` / `memory_append` / `memory_retrieve` — Long-term memory
+- `skill_use` / `skill_read_file` / `skill_run_script` — Skills (when enabled)
 
 **Custom Tools** — Loaded from `tools/` directory per agent
 **MCP Tools** — Connected via Model Context Protocol servers
@@ -139,6 +140,7 @@ agent_md/
   providers/  → LLM provider factory
   graph/      → LangGraph ReAct agent
   tools/      → Built-in tools (file I/O, HTTP)
+  skills/     → Skills system (parser, loader, tools)
   mcp/        → MCP server integration
   cli/        → Typer CLI commands
 
@@ -164,6 +166,8 @@ output/      → Default output directory for agent artifacts
 | `agent_md/core/parser.py` | Parse `.md` files (frontmatter + body) |
 | `agent_md/core/settings.py` | Environment variable loading |
 | `agent_md/graph/create_react_graph.py` | Build LangGraph ReAct agent |
+| `agent_md/skills/tools.py` | Skill tools (use, read, run) |
+| `agent_md/skills/parser.py` | Parse SKILL.md files (two-tier loading) |
 
 ## For Contributors
 
@@ -171,4 +175,5 @@ output/      → Default output directory for agent artifacts
 - **Adding a new built-in tool?** → Register in `agent_md/tools/registry.py`
 - **Modifying config?** → Update Pydantic models in `agent_md/core/models.py`
 - **Changing execution flow?** → Edit `agent_md/core/runner.py` or `agent_md/graph/`
+- **Adding a new skill?** → Create a directory in `workspace/agents/skills/` with a `SKILL.md` file
 - **Debugging?** → Enable debug logs and check `agentmd logs <agent>`

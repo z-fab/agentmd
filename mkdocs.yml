@@ -107,6 +107,7 @@ nav:
   - Providers: providers.md
   - Triggers: triggers.md
   - Memory: memory.md
+  - Skills: skills.md
   - Tools:
       - tools/index.md
       - Built-in Tools: tools/built-in-tools.md
