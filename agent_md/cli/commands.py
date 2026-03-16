@@ -18,15 +18,18 @@ from agent_md.cli.theme import (
     format_trigger,
     make_panel,
     make_table,
+    print_agent_complete,
+    print_agent_event,
+    print_agent_start,
     print_banner,
     print_chat_header,
+    print_check,
     print_chat_summary,
     print_error,
     print_kv,
     print_markdown,
     print_success,
     print_warning,
-    sanitize_event_content,
     select_agent,
 )
 from agent_md.core.models import AgentConfig
@@ -48,88 +51,6 @@ def _resolve_workspace(workspace: Path | None) -> Path:
         return Path(ws).expanduser().resolve()
     return Path("./workspace").resolve()
 
-
-def _make_console_callback():
-    """Return an on_event callback that prints Rich-formatted output.
-
-    Used by ``run`` and ``start`` commands.  All content is sanitised to a
-    single line (newlines replaced) and displayed with hierarchical
-    indentation under the run header.
-    """
-    from datetime import datetime
-
-    def _on_event(event_type: str, data: dict) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
-        emoji, style = EVENT_DISPLAY.get(event_type, ("\u2753", "white"))
-        indent = "    "  # 4-space indent for hierarchy under header
-
-        if event_type in ("ai", "tool_response"):
-            limit = 200 if event_type == "ai" else 100
-            content = sanitize_event_content(data.get("content", ""))[:limit]
-            label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_response" else ""
-            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
-            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
-        elif event_type == "tool_call":
-            args = sanitize_event_content(data.get("tool_args", ""))[:80]
-            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {data['tool_name']}[/{style}] [dim]\u2192 {args}[/dim]"
-            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
-        elif event_type == "final_answer":
-            content = sanitize_event_content(data.get("content", ""))[:200]
-            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]"
-            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
-
-    return _on_event
-
-
-def _make_chat_callback():
-    """Return an on_event callback for ``chat`` command.
-
-    Shows intermediate steps (tool calls, AI reasoning) with the same
-    layout as ``_make_console_callback`` but ignores ``final_answer`` —
-    the response is rendered separately as Markdown.
-    """
-    from datetime import datetime
-
-    def _on_event(event_type: str, data: dict) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
-        emoji, style = EVENT_DISPLAY.get(event_type, ("\u2753", "white"))
-        indent = "    "
-
-        if event_type in ("ai", "tool_response"):
-            limit = 200 if event_type == "ai" else 100
-            content = sanitize_event_content(data.get("content", ""))[:limit]
-            label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_response" else ""
-            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
-            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
-        elif event_type == "tool_call":
-            args = sanitize_event_content(data.get("tool_args", ""))[:80]
-            line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {data['tool_name']}[/{style}] [dim]\u2192 {args}[/dim]"
-            console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
-        # final_answer is intentionally ignored — rendered as Markdown by _chat_loop
-
-    return _on_event
-
-
-def _make_complete_callback():
-    """Return an on_complete callback for scheduled runs."""
-    from datetime import datetime
-
-    def _on_complete(agent_name: str, result: dict) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
-        status = result.get("status", "unknown")
-        duration = format_duration(result.get("duration_ms"))
-        if status == "success":
-            tokens = format_tokens(result.get("total_tokens"))
-            console.print(
-                f"  [dim]{ts}[/dim] [green]\u2713 {agent_name}[/green] \u2014 done in {duration} ({tokens} tokens)"
-            )
-        elif status == "timeout":
-            console.print(f"  [dim]{ts}[/dim] [yellow]\u23f1 {agent_name}[/yellow] \u2014 timeout after {duration}")
-        else:
-            error = result.get("error", "unknown error")
-            console.print(f"  [dim]{ts}[/dim] [red]\u2717 {agent_name}[/red] \u2014 error after {duration}: {error}")
-
-    return _on_complete
 
 
 def _get_agents_for_picker(workspace: Path | None) -> list[AgentConfig]:
@@ -429,7 +350,7 @@ def start(
         return
 
     # Foreground mode
-    on_event = _make_console_callback() if not quiet else None
+    on_event = print_agent_event if not quiet else None
     asyncio.run(_start_foreground(ws, on_event=on_event, quiet=quiet))
 
 
@@ -437,8 +358,9 @@ async def _start_foreground(workspace: Path, on_event=None, quiet: bool = False)
     from agent_md import __version__
     from agent_md.core.bootstrap import bootstrap
 
-    on_complete = _make_complete_callback()
-    runtime = await bootstrap(workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete)
+    on_start = print_agent_start if on_event else None
+    on_complete = print_agent_complete if on_event else None
+    runtime = await bootstrap(workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete, on_start=on_start)
 
     agents = runtime.registry.all()
     enabled = [a for a in agents if a.enabled]
@@ -505,49 +427,18 @@ def run(
 
     agent_name = _pick_or_resolve_agent(agent, workspace)
 
-    # Parse config for display
-    from agent_md.core.parser import parse_agent_file
-    from agent_md.core.services import _resolve_ws_and_agents_dir
-
-    ws, agents_dir = _resolve_ws_and_agents_dir(workspace)
-
-    agent_file = agents_dir / f"{agent_name.replace('.md', '')}.md"
-    if not agent_file.exists():
-        print_error(f"Agent '{agent_name}' not found in {agents_dir}", "Run 'agentmd list' to see available agents.")
-        raise typer.Exit(1)
-
-    config = parse_agent_file(agent_file)
-
-    if not quiet:
-        model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
-        console.print()
-        console.print(f"  [bold cyan]\u25b6 {config.name}[/bold cyan]  [dim]{model_info}[/dim]")
-        console.print()
-
-    on_event = _make_console_callback() if not quiet else None
+    on_event = print_agent_event if not quiet else None
+    on_start = print_agent_start if not quiet else None
+    on_complete = print_agent_complete if not quiet else None
 
     try:
-        _, result = asyncio.run(run_agent(agent_name, workspace, on_event=on_event))
+        _, result = asyncio.run(run_agent(
+            agent_name, workspace,
+            on_event=on_event, on_start=on_start, on_complete=on_complete,
+        ))
     except AgentNotFoundError:
         print_error(f"Agent '{agent_name}' not found in workspace.", "Run 'agentmd list' to see available agents.")
         raise typer.Exit(1)
-
-    console.print()
-    if result["status"] == "success":
-        duration = format_duration(result.get("duration_ms"))
-        tokens = format_tokens(result.get("total_tokens"))
-        console.print(
-            f"  [green]\u2713 {config.name}[/green] [dim]\u2014 {duration}  {tokens} tokens  #{result['execution_id']}[/dim]"
-        )
-    elif result["status"] == "timeout":
-        console.print(
-            f"  [yellow]\u2717 {config.name}[/yellow] [dim]\u2014 timeout after {format_duration(result.get('duration_ms'))}[/dim]"
-        )
-    else:
-        console.print(
-            f"  [red]\u2717 {config.name}[/red] [dim]\u2014 {format_duration(result.get('duration_ms'))}  {result.get('error', 'unknown')}[/dim]"
-        )
-    console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -574,7 +465,9 @@ async def _chat_loop(agent_name: str, workspace: Path | None) -> None:
 
     from agent_md.core.services import AgentNotFoundError, chat_session
 
-    on_event = _make_chat_callback()
+    from functools import partial
+
+    on_event = partial(print_agent_event, include_final_answer=False)
 
     try:
         async with chat_session(agent_name, workspace, on_event=on_event) as session:
@@ -881,40 +774,40 @@ def validate(
     if result.builtin_tools or config.custom_tools:
         console.print("\n  [bold]Tools[/bold]")
         for t in result.builtin_tools:
-            console.print(f"    [green]\u2713[/green] {t} [dim](built-in)[/dim]")
+            print_check(t, detail="built-in")
         for t in result.custom_tools_found:
             if t in result.custom_tools_loadable:
-                console.print(f"    [green]\u2713[/green] {t} [dim](custom)[/dim]")
+                print_check(t, detail="custom")
             elif t in result.custom_tools_load_errors:
-                console.print(f"    [red]\u2717[/red] {t} \u2014 load error: {result.custom_tools_load_errors[t]}")
+                print_check(t, "error", f"load error: {result.custom_tools_load_errors[t]}")
                 errors += 1
             else:
-                console.print(f"    [green]\u2713[/green] {t} [dim](custom)[/dim]")
+                print_check(t, detail="custom")
         for t in result.custom_tools_missing:
-            console.print(f"    [red]\u2717[/red] {t} \u2014 not found")
+            print_check(t, "error", "not found")
             errors += 1
 
     # MCP Servers
     if config.mcp:
         console.print("\n  [bold]MCP Servers[/bold]")
         for s in result.mcp_servers_configured:
-            console.print(f"    [green]\u2713[/green] {s}")
+            print_check(s)
         for s in result.mcp_servers_missing:
-            console.print(f"    [red]\u2717[/red] {s} \u2014 not in mcp-servers.json")
+            print_check(s, "error", "not in mcp-servers.json")
             errors += 1
 
     # Paths
     if config.read or config.write:
         console.print("\n  [bold]Paths[/bold]")
         for p in result.read_paths_valid:
-            console.print(f"    [green]\u2713[/green] read: {p} [dim](exists)[/dim]")
+            print_check(f"read: {p}", detail="exists")
         for p in result.read_paths_missing:
-            console.print(f"    [red]\u2717[/red] read: {p} [dim](not found)[/dim]")
+            print_check(f"read: {p}", "error", "not found")
             errors += 1
         for p in result.write_paths_valid:
-            console.print(f"    [green]\u2713[/green] write: {p} [dim](exists)[/dim]")
+            print_check(f"write: {p}", detail="exists")
         for p in result.write_paths_missing:
-            console.print(f"    [yellow]\u26a0[/yellow] write: {p} [dim](will be created)[/dim]")
+            print_check(f"write: {p}", "warn", "will be created")
 
     # Summary
     warn_count = len(result.warnings)

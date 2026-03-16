@@ -58,6 +58,7 @@ async def bootstrap(
     start_scheduler: bool = False,
     on_event=None,
     on_complete=None,
+    on_start=None,
 ) -> Runtime:
     """Initialize all components and load agents from workspace.
 
@@ -170,7 +171,7 @@ async def bootstrap(
 
     # Schedule enabled agents (only when explicitly requested)
     if start_scheduler:
-        scheduler = AgentScheduler(registry, runner, path_context, on_event=on_event, on_complete=on_complete)
+        scheduler = AgentScheduler(registry, runner, path_context, on_event=on_event, on_complete=on_complete, on_start=on_start)
         for config in registry.enabled():
             scheduler.schedule_agent(config)
 

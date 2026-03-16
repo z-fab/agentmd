@@ -42,6 +42,24 @@ def print_warning(msg: str) -> None:
     console.print(f"  [yellow]warning:[/yellow] {msg}")
 
 
+def print_check(label: str, status: str = "ok", detail: str = "") -> None:
+    """Print a check-list item with ✓/✗/⚠ indicator.
+
+    Args:
+        label: Item text.
+        status: ``"ok"``, ``"error"``, or ``"warn"``.
+        detail: Optional suffix shown dimmed (for ok/warn) or after a dash (for error).
+    """
+    suffix = f" [dim]({detail})[/dim]" if detail else ""
+    if status == "error":
+        suffix = f" \u2014 {detail}" if detail else ""
+        console.print(f"    [red]\u2717[/red] {label}{suffix}")
+    elif status == "warn":
+        console.print(f"    [yellow]\u26a0[/yellow] {label}{suffix}")
+    else:
+        console.print(f"    [green]\u2713[/green] {label}{suffix}")
+
+
 def print_banner(version: str) -> None:
     """Print a one-line brand banner."""
     console.print(f"  [bold]agentmd[/bold] v{version}")
@@ -120,6 +138,75 @@ EVENT_DISPLAY: dict[str, tuple[str, str]] = {
 def sanitize_event_content(text: str) -> str:
     """Replace newlines and collapse whitespace for single-line event display."""
     return " ".join(text.replace("\n", " ").split())
+
+
+# ---------------------------------------------------------------------------
+# Agent lifecycle callbacks (on_start / on_event / on_complete)
+# ---------------------------------------------------------------------------
+
+
+def _print_agent_line(emoji: str, agent_name: str, style: str, detail: str) -> None:
+    """Print a formatted agent lifecycle line (start / complete / error).
+
+    Centralises the layout so every lifecycle message looks identical::
+
+        \\n  HH:MM:SS  {emoji} {agent_name}  {detail}\\n
+    """
+    from datetime import datetime
+
+    ts = datetime.now().strftime("%H:%M:%S")
+    console.print(f"\n  [dim]{ts}[/dim] [{style}]{emoji} [bold]{agent_name}[/bold][/{style}]  [dim]{detail}[/dim]\n")
+
+
+def print_agent_start(agent_name: str, model_info: str) -> None:
+    """Print agent execution start line. Used as ``on_start`` hook."""
+    _print_agent_line("\u25b6", agent_name, "cyan", model_info)
+
+
+def print_agent_complete(agent_name: str, result: dict) -> None:
+    """Print agent execution result line. Used as ``on_complete`` hook."""
+    status = result.get("status", "unknown")
+    duration = format_duration(result.get("duration_ms"))
+    if status == "success":
+        tokens = format_tokens(result.get("total_tokens"))
+        _print_agent_line("\u2713", agent_name, "green", f"{duration}  {tokens} tokens")
+    elif status == "timeout":
+        _print_agent_line("\u23f1", agent_name, "red", f"timeout after {duration}")
+    else:
+        error = result.get("error", "unknown error")
+        _print_agent_line("\u2717", agent_name, "red", f"{duration}  {error}")
+
+
+def print_agent_event(event_type: str, data: dict, *, include_final_answer: bool = True) -> None:
+    """Print a streaming agent event line. Used as ``on_event`` hook.
+
+    Args:
+        event_type: Event type string (ai, tool_call, tool_response, final_answer).
+        data: Event data dict with content/tool info.
+        include_final_answer: When *False* the ``final_answer`` event is
+            silently ignored (used by ``chat`` where the response is rendered
+            separately as Markdown).
+    """
+    from datetime import datetime
+
+    ts = datetime.now().strftime("%H:%M:%S")
+    emoji, style = EVENT_DISPLAY.get(event_type, ("\u2753", "white"))
+    indent = "    "  # 4-space indent for hierarchy under header
+
+    if event_type in ("ai", "tool_response"):
+        limit = 200 if event_type == "ai" else 100
+        content = sanitize_event_content(data.get("content", ""))[:limit]
+        label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_response" else ""
+        line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
+        console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+    elif event_type == "tool_call":
+        args = sanitize_event_content(data.get("tool_args", ""))[:80]
+        line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {data['tool_name']}[/{style}] [dim]\u2192 {args}[/dim]"
+        console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
+    elif event_type == "final_answer" and include_final_answer:
+        content = sanitize_event_content(data.get("content", ""))[:200]
+        line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]"
+        console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
 
 
 def print_markdown(text: str, indent: int = 4) -> None:

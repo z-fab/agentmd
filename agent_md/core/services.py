@@ -33,6 +33,8 @@ async def run_agent(
     agent_name: str,
     workspace: Path | None = None,
     on_event=None,
+    on_start=None,
+    on_complete=None,
 ) -> tuple[AgentConfig, dict]:
     """Execute a single agent by name and return ``(config, result)``."""
     async with _runtime(workspace) as rt:
@@ -40,7 +42,10 @@ async def run_agent(
         if not config:
             raise AgentNotFoundError(agent_name)
 
-        result = await rt.runner.run(config, trigger_type="manual", on_event=on_event)
+        result = await rt.runner.run(
+            config, trigger_type="manual",
+            on_event=on_event, on_start=on_start, on_complete=on_complete,
+        )
         return config, result
 
 

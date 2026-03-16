@@ -126,6 +126,8 @@ def get_daemon_start_time(workspace: Path) -> str | None:
 
 def get_daemon_uptime(workspace: Path) -> str | None:
     """Return a human-readable uptime string."""
+    from agent_md.cli.theme import format_duration
+
     start = get_daemon_start_time(workspace)
     if not start:
         return None
@@ -134,13 +136,7 @@ def get_daemon_uptime(workspace: Path) -> str | None:
     try:
         dt = datetime.fromisoformat(start)
         delta = datetime.now(timezone.utc) - dt
-        secs = int(delta.total_seconds())
-        if secs < 60:
-            return f"{secs}s"
-        if secs < 3600:
-            return f"{secs // 60}m {secs % 60}s"
-        hours = secs // 3600
-        mins = (secs % 3600) // 60
-        return f"{hours}h {mins}m"
+        ms = int(delta.total_seconds() * 1000)
+        return format_duration(ms)
     except (ValueError, TypeError):
         return None

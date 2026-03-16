@@ -134,7 +134,7 @@ class AgentRunner:
 
         return create_react_graph(chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit)
 
-    async def run(self, config: AgentConfig, trigger_type: str = "manual", trigger_context: str | None = None, on_event=None) -> dict:
+    async def run(self, config: AgentConfig, trigger_type: str = "manual", trigger_context: str | None = None, on_event=None, on_start=None, on_complete=None) -> dict:
         """Execute an agent and persist the result.
 
         Args:
@@ -143,11 +143,19 @@ class AgentRunner:
             trigger_context: Optional context about what triggered the execution (e.g., file path for watch).
             on_event: Optional callback ``(event_type, data_dict) -> None`` for
                 real-time UI updates (Rich console output).
+            on_start: Optional callback ``(agent_name, model_info) -> None``
+                called before execution begins.
+            on_complete: Optional callback ``(agent_name, result_dict) -> None``
+                called after execution finishes (success, error, or timeout).
 
         Returns:
             Dict with 'status', 'output' or 'error', 'duration_ms', and token counts.
         """
         logger.info(f"Starting execution: {config.name} (trigger={trigger_type})")
+
+        if on_start is not None:
+            model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
+            on_start(config.name, model_info)
 
         # 1. Record execution start
         execution_id = await self.db.create_execution(
@@ -212,27 +220,35 @@ class AgentRunner:
                 f"Execution complete: {config.name} — success in {duration_ms}ms "
                 f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
             )
+            if on_complete is not None:
+                on_complete(config.name, result)
             return result
 
         except asyncio.TimeoutError:
             duration_ms = int((time.monotonic() - start_time) * 1000)
             error_msg = f"Timeout after {config.settings.timeout}s"
             logger.warning(f"Execution timeout: {config.name} — {error_msg}")
-            return await self._finish_execution(
+            result = await self._finish_execution(
                 execution_id, "timeout", duration_ms,
                 total_input_tokens, total_output_tokens,
                 error=error_msg,
             )
+            if on_complete is not None:
+                on_complete(config.name, result)
+            return result
 
         except Exception as e:
             duration_ms = int((time.monotonic() - start_time) * 1000)
             error_msg = f"{type(e).__name__}: {e}"
             logger.error(f"Execution error: {config.name} — {error_msg}")
-            return await self._finish_execution(
+            result = await self._finish_execution(
                 execution_id, "error", duration_ms,
                 total_input_tokens, total_output_tokens,
                 error=error_msg,
             )
+            if on_complete is not None:
+                on_complete(config.name, result)
+            return result
 
     async def prepare_agent(self, config: AgentConfig):
         """Create model, resolve tools, and build graph -- without executing.
