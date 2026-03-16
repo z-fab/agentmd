@@ -3,6 +3,16 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1] - 2026-03-16
+
+### Improved
+- **CLI output layout** — sanitize event content (no broken line wraps), hierarchical indentation for events, compact run header/footer
+- **Chat responses** — render agent responses as formatted Markdown (bold, lists, code blocks)
+- **Chat callback** — separate callback that shows intermediate steps but renders final answer via Markdown
+
+### Fixed
+- **Chat history trimming** — memory_limit could cut in the middle of a tool-call sequence, leaving orphaned ToolMessages that broke Gemini's strict message ordering
+
 ## [0.5.0] - 2026-03-13
 
 ### Added
