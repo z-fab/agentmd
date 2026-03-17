@@ -58,8 +58,9 @@ trigger:
 settings:
   temperature: 0.3
   timeout: 60
-read: ./uploads
-write: ./output
+paths:
+  - ./uploads
+  - ./output
 ---
 
 Analyze the uploaded file and provide:
@@ -233,10 +234,10 @@ settings:
   temperature: 0.5
   max_tokens: 8192
   timeout: 180
-read:
+paths:
   - ./logs
   - ./data
-write: ./reports
+  - ./reports
 ---
 
 Generate a daily summary report including:
@@ -322,8 +323,9 @@ trigger:
 settings:
   temperature: 0.3
   timeout: 60
-read: ./uploads
-write: ./output
+paths:
+  - ./uploads
+  - ./output
 ---
 
 When a file is uploaded:
@@ -355,11 +357,11 @@ trigger:
 settings:
   temperature: 0.2
   timeout: 120
-read:
+paths:
   - ./inbox
   - ./staging
   - /tmp/uploads
-write: ./processed
+  - ./processed
 ---
 
 Process incoming data files:
@@ -401,8 +403,9 @@ settings:
   temperature: 0.4
   max_tokens: 2048
   timeout: 60
-read: ./uploads
-write: ./output
+paths:
+  - ./uploads
+  - ./output
 ---
 
 Summarize the provided text file:
@@ -436,7 +439,8 @@ trigger:
 settings:
   temperature: 0.2
   timeout: 45
-write: ./reports
+paths:
+  - ./reports
 ---
 
 Create a system health report:
@@ -467,8 +471,9 @@ settings:
   temperature: 0.5
   max_tokens: 4096
   timeout: 120
-read: ./logs
-write: ./reports
+paths:
+  - ./logs
+  - ./reports
 ---
 
 Generate a comprehensive weekly summary:
@@ -500,8 +505,9 @@ trigger:
 settings:
   temperature: 0.3
   timeout: 90
-read: ./inbox
-write: ./processed
+paths:
+  - ./inbox
+  - ./processed
 ---
 
 When new files arrive in inbox:

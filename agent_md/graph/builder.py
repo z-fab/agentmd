@@ -29,18 +29,15 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
 
 def _build_file_access_prompt(agent_config, path_context) -> str:
     """Build the file access section of the system prompt."""
-    read_paths = path_context.get_read_paths(agent_config)
-    write_paths = path_context.get_write_paths(agent_config)
+    allowed_paths = path_context.get_allowed_paths(agent_config)
     default_write = path_context.get_default_write_dir(agent_config)
 
-    read_list = "\n".join(f"- {p}" for p in read_paths)
-    write_list = "\n".join(f"- {p}" for p in write_paths)
+    path_list = "\n".join(f"- {p}" for p in allowed_paths)
 
     return (
         f"## File Access\n\n"
-        f"You have access to file tools with the following permissions:\n\n"
-        f"READ (you can read files from):\n{read_list}\n\n"
-        f"WRITE (you can create and save files to):\n{write_list}\n\n"
+        f"You have access to file tools (file_read, file_write, file_list) for the following paths:\n\n"
+        f"{path_list}\n\n"
         f"When saving files, use just the filename or a relative sub-path (e.g., 'report.txt', 'data/file.json'). "
         f"Do NOT prefix paths with '{default_write.name}/' — files are automatically saved to: {default_write}\n"
         f"Do not attempt to access files outside these directories."

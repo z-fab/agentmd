@@ -73,7 +73,7 @@ Chat sessions benefit the most from session history — the agent remembers prev
 name: project-assistant
 description: Helps with project planning and tracking
 history: high
-write:
+paths:
   - output/
 ---
 
@@ -197,7 +197,7 @@ The agent can then use `memory_retrieve` to load any section on demand, keeping 
 name: assistant
 description: Personal assistant that remembers preferences and context
 history: medium
-write:
+paths:
   - output/
 ---
 
@@ -248,7 +248,7 @@ history: low
 trigger:
   type: schedule
   every: 6h
-write:
+paths:
   - output/
 ---
 
@@ -271,7 +271,7 @@ default interests to memory.
 name: researcher
 description: Researches topics and builds a knowledge base
 history: medium
-write:
+paths:
   - output/
 ---
 

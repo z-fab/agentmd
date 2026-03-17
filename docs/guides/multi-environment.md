@@ -218,8 +218,8 @@ settings:
   timeout: 600        # 10 minute timeout
   log_level: DEBUG    # Verbose logging
 paths:
-  read: ["/workspace/dev/data/"]
-  write: ["/output/dev/"]
+  - /workspace/dev/data/
+  - /output/dev/
 triggers:
   - type: manual  # Only run manually in dev
 ---
@@ -246,8 +246,8 @@ settings:
   timeout: 300
   log_level: INFO
 paths:
-  read: ["/workspace/staging/data/"]
-  write: ["/output/staging/reports/"]
+  - /workspace/staging/data/
+  - /output/staging/reports/
 triggers:
   - type: schedule
     cron: "0 10 * * *"  # Run once daily in staging (different time than prod)
@@ -273,8 +273,8 @@ settings:
   timeout: 180
   log_level: WARNING  # Only log warnings/errors
 paths:
-  read: ["/workspace/production/data/"]
-  write: ["/output/production/reports/"]
+  - /workspace/production/data/
+  - /output/production/reports/
 triggers:
   - type: schedule
     cron: "0 8 * * *"  # 8 AM daily in production

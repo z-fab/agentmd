@@ -327,7 +327,7 @@ Analyze this data:
 ---
 name: analyzer
 paths:
-  read: ["/workspace/data/large.csv"]
+  - /workspace/data/large.csv
 ---
 
 Read /workspace/data/large.csv and analyze the data.
@@ -652,8 +652,8 @@ triggers:
   - type: schedule
     cron: "0 8 * * *"  # Once daily at 8 AM
 paths:
-  read: ["/var/log/app/*.log"]
-  write: ["/output/summaries/"]
+  - /var/log/app/*.log
+  - /output/summaries/
 ---
 
 Analyze logs in /var/log/app/ from last 24h. Output:

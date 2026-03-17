@@ -247,7 +247,8 @@ def parse_csv(csv_content: str) -> str:
 Usage in agent:
 ```yaml
 custom_tools: [csv_parser]
-read: data/
+paths:
+  - data/
 ```
 
 ### Example 3: Text Transformation
@@ -278,8 +279,9 @@ def markdown_to_html(markdown: str) -> str:
 Usage in agent:
 ```yaml
 custom_tools: [markdown_converter]
-read: content/
-write: html/
+paths:
+  - content/
+  - html/
 ```
 
 ---
@@ -326,7 +328,7 @@ custom_tools:
   - csv_parser
 ```
 
-Built-in tools (`file_read`, `file_write`, `http_request`) are always available. Custom tools are added on top.
+Built-in tools (`file_read`, `file_write`, `file_list`, `http_request`) are always available. Custom tools are added on top.
 
 ---
 

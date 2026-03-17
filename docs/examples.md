@@ -450,7 +450,7 @@ cat workspace/output/report-summary.txt
 name: smart-assistant
 description: Personal assistant with persistent memory
 history: medium
-write:
+paths:
   - output/
 ---
 
@@ -507,7 +507,7 @@ history: low
 trigger:
   type: schedule
   every: 30m
-write:
+paths:
   - output/
 ---
 
@@ -581,6 +581,7 @@ trigger:
 |------|-------|
 | `file_read` | Read files: `Read file at 'name.txt'` |
 | `file_write` | Write files: `Save to 'output.txt'` |
+| `file_list` | List directory: `List files in 'data/'` |
 | `http_request` | Call APIs: `Use http_request to fetch...` |
 | `memory_save` | Store/replace: `Save to "notes" memory section` |
 | `memory_append` | Append: `Append to "log" memory section` |

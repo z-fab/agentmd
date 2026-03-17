@@ -140,8 +140,7 @@ Optional:
 - trigger: execution trigger (see Trigger types below)
 - settings: object with temperature (float), max_tokens (int), timeout (int, seconds)
 - history: conversation memory across runs — "low" (10 msgs), "medium" (50), "high" (200), "off" (default)
-- read: list of file/dir paths the agent can read (relative to workspace root)
-- write: list of file/dir paths the agent can write (relative to workspace root)
+- paths: list of file/dir paths the agent can access — read, write, and list (relative to workspace root or absolute)
 
 ### Trigger types
 - manual (default): agent runs only when invoked via `agentmd run`
@@ -154,8 +153,9 @@ These tools are always available to the agent. Do NOT list them in frontmatter.
 Choose the right tool for each use case — especially prefer memory tools over file_write for persistent knowledge.
 
 ### Filesystem
-- file_read(path): Read a file. Only works for paths listed in `read`.
-- file_write(path, content): Write/create a file. Only works for paths listed in `write`. Creates parent dirs automatically.
+- file_read(path): Read a file. Only works within `paths`.
+- file_write(path, content): Write/create a file. Only works within `paths`. Creates parent dirs automatically.
+- file_list(path): List files and directories at the given path. Only works within `paths`.
 
 ### HTTP
 - http_request(url, method="GET", headers=None, body=None): Make HTTP requests. Returns status code and response body.
@@ -185,18 +185,18 @@ trigger:
   type: schedule
   every: 24h
 history: medium
-read:
+paths:
   - logs/
-write:
   - output/
 ---
 
 You are a summarization agent. Every day:
 
-1. Read all files in the `logs/` directory using `file_read`.
-2. Generate a concise summary of the day's activity.
-3. Write the summary to `output/daily-summary-YYYY-MM-DD.md` using `file_write`.
-4. Use `memory_save` to store the latest summary date in the "last_run" section so you can avoid reprocessing.
+1. Use `file_list` to discover files in the `logs/` directory.
+2. Read each file using `file_read`.
+3. Generate a concise summary of the day's activity.
+4. Write the summary to `output/daily-summary-YYYY-MM-DD.md` using `file_write`.
+5. Use `memory_save` to store the latest summary date in the "last_run" section so you can avoid reprocessing.
 """
 
     response = llm.invoke(prompt)
@@ -251,9 +251,8 @@ def _ask_agent_details(agent_name: str) -> str:
             trigger_extra = "\n".join(f"  - {p}" for p in paths)
             trigger_extra = f"  paths:\n{trigger_extra}"
 
-    # Read / write paths
-    read_paths = Prompt.ask("  [cyan]Read paths[/cyan] [dim](comma-separated, or empty)[/dim]", default="")
-    write_paths = Prompt.ask("  [cyan]Write paths[/cyan] [dim](comma-separated, or empty)[/dim]", default="")
+    # Paths (unified read/write)
+    agent_paths = Prompt.ask("  [cyan]Paths[/cyan] [dim](comma-separated dirs the agent can access, or empty)[/dim]", default="")
 
     # System prompt
     console.print()
@@ -272,14 +271,9 @@ def _ask_agent_details(agent_name: str) -> str:
         lines.append(f"  type: {trigger_type}")
         if trigger_extra:
             lines.append(trigger_extra)
-    if read_paths.strip():
-        lines.append("read:")
-        for p in read_paths.split(","):
-            if p.strip():
-                lines.append(f"  - {p.strip()}")
-    if write_paths.strip():
-        lines.append("write:")
-        for p in write_paths.split(","):
+    if agent_paths.strip():
+        lines.append("paths:")
+        for p in agent_paths.split(","):
             if p.strip():
                 lines.append(f"  - {p.strip()}")
     lines.append("---")
@@ -297,8 +291,6 @@ def new(
     template: bool = typer.Option(False, "--template", "-t", help="Skip AI, use interactive questionnaire"),
 ):
     """Scaffold a new agent definition file."""
-    import re
-
     # 1. Validate name
     error = _validate_agent_name(agent_name)
     if error:
@@ -334,27 +326,20 @@ def new(
         try:
             with console.status("  Generating agent..."):
                 content = _generate_agent_with_ai(agent_name, description, provider, model)
-
-            agent_file.write_text(content + "\n", encoding="utf-8")
-            console.print()
-            print_success(f"Agent '{agent_name}' created.")
-
         except Exception as e:
             print_warning(f"AI generation failed: {e}")
             console.print("  [dim]Falling back to interactive mode...[/dim]")
             content = _ask_agent_details(agent_name)
-            agent_file.write_text(content, encoding="utf-8")
-            console.print()
-            print_success(f"Agent '{agent_name}' created.")
     else:
         # Interactive questionnaire
         if not ai_available and not template:
             console.print()
             console.print("  [dim]No AI provider configured. Tip: run 'agentmd setup'[/dim]")
         content = _ask_agent_details(agent_name)
-        agent_file.write_text(content, encoding="utf-8")
-        console.print()
-        print_success(f"Agent '{agent_name}' created.")
+
+    agent_file.write_text(content + "\n", encoding="utf-8")
+    console.print()
+    print_success(f"Agent '{agent_name}' created.")
 
     console.print(f"  [dim]File: {agent_file}[/dim]")
     console.print(f"  [dim]Run: agentmd run {agent_name}[/dim]")
@@ -838,17 +823,12 @@ def validate(
             errors += 1
 
     # Paths
-    if config.read or config.write:
+    if config.paths:
         console.print("\n  [bold]Paths[/bold]")
-        for p in result.read_paths_valid:
-            print_check(f"read: {p}", detail="exists")
-        for p in result.read_paths_missing:
-            print_check(f"read: {p}", "error", "not found")
-            errors += 1
-        for p in result.write_paths_valid:
-            print_check(f"write: {p}", detail="exists")
-        for p in result.write_paths_missing:
-            print_check(f"write: {p}", "warn", "will be created")
+        for p in result.paths_valid:
+            print_check(p, detail="exists")
+        for p in result.paths_missing:
+            print_check(p, "warn", "does not exist yet")
 
     # Summary
     warn_count = len(result.warnings)

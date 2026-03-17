@@ -203,7 +203,8 @@ Fetch web content and summarize.
 name: web-summarizer
 mcp:
   - fetch
-write: summaries/
+paths:
+  - summaries/
 ---
 
 Use the `fetch` tool to retrieve https://example.com/blog/post-1.
@@ -238,7 +239,8 @@ Interact with GitHub repositories.
 name: github-reporter
 mcp:
   - github
-write: reports/
+paths:
+  - reports/
 ---
 
 Use GitHub tools to:
@@ -318,7 +320,8 @@ name: release-notes-generator
 mcp:
   - fetch
   - github
-write: releases/
+paths:
+  - releases/
 ---
 
 1. Use the `fetch` tool to get the latest release notes from https://example.com/changelog

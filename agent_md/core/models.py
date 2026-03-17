@@ -95,8 +95,7 @@ class AgentConfig(BaseModel):
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
     history: str = "low"  # 'low', 'medium', 'high', 'off'
-    read: list[str] = []
-    write: list[str] = []
+    paths: list[str] = []
 
     @field_validator("history")
     @classmethod
@@ -119,7 +118,7 @@ class AgentConfig(BaseModel):
             data["custom_tools"] = data.pop("tools")
         return data
 
-    @field_validator("read", "write", "skills", mode="before")
+    @field_validator("paths", "skills", mode="before")
     @classmethod
     def normalize_to_list(cls, v):
         """Accept a single string or a list of strings."""

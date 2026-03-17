@@ -12,9 +12,7 @@ Only grant the minimum permissions needed for an agent to function.
 ```yaml
 ---
 name: daily-quote
-paths:
-  read: ["/"]  # Can read everything!
-  write: ["/"]  # Can write anywhere!
+paths: ["/"]  # Can access everything!
 ---
 ```
 
@@ -23,8 +21,8 @@ paths:
 ---
 name: daily-quote
 paths:
-  read: ["/workspace/data/quotes.txt"]
-  write: ["/output/daily-quote.txt"]
+  - /workspace/data/quotes.txt
+  - /output/daily-quote.txt
 ---
 ```
 
@@ -33,11 +31,10 @@ paths:
 ---
 name: log-analyzer
 paths:
-  read:
-    - "/var/log/app/*.log"
-    - "/workspace/config/patterns.yml"
-  write: ["/output/reports/"]
-# Can't read config files, can't write to workspace
+  - /var/log/app/*.log
+  - /workspace/config/patterns.yml
+  - /output/reports/
+# Can only access these specific paths
 ---
 ```
 
@@ -208,8 +205,8 @@ Validate inputs before expensive LLM calls.
 ---
 name: email-processor
 paths:
-  read: ["/workspace/data/emails/*.json"]
-  write: ["/output/processed/"]
+  - /workspace/data/emails/*.json
+  - /output/processed/
 ---
 
 Before processing emails:
@@ -294,11 +291,10 @@ Keep agents isolated to their designated directories.
 ---
 name: report-generator
 paths:
-  read:
-    - "/workspace/data/reports/"
-    - "/workspace/config/templates/"
-  write: ["/output/reports/"]
-# Cannot read from /etc/, /home/, other sensitive paths
+  - /workspace/data/reports/
+  - /workspace/config/templates/
+  - /output/reports/
+# Cannot access /etc/, /home/, other sensitive paths
 ---
 ```
 
@@ -308,17 +304,17 @@ paths:
 ---
 name: customer-processor
 paths:
-  read: ["/workspace/data/customers/"]
-  write: ["/output/customers/"]
+  - /workspace/data/customers/
+  - /output/customers/
 ---
 
 # Agent 2: Analytics reporter
 ---
 name: analytics-reporter
 paths:
-  read: ["/output/customers/aggregated.json"]  # Only reads aggregated data
-  write: ["/output/reports/"]
-# Cannot read raw customer data from /workspace/data/customers/
+  - /output/customers/aggregated.json  # Only accesses aggregated data
+  - /output/reports/
+# Cannot access raw customer data from /workspace/data/customers/
 ---
 ```
 
@@ -329,13 +325,12 @@ Never grant access to these paths:
 ```yaml
 # DANGEROUS - Never do this:
 paths:
-  read:
-    - "/etc/**"              # System config
-    - "/home/**"             # User directories
-    - "~/.ssh/**"            # SSH keys
-    - "~/.aws/**"            # AWS credentials
-    - "**/.env"              # Environment files
-    - "**/secrets.yml"       # Secret files
+  - "/etc/**"              # System config
+  - "/home/**"             # User directories
+  - "~/.ssh/**"            # SSH keys
+  - "~/.aws/**"            # AWS credentials
+  - "**/.env"              # Environment files
+  - "**/secrets.yml"       # Secret files
 ```
 
 ## Schedule Security
@@ -416,8 +411,8 @@ Prevent overwriting important files.
 ---
 name: log-processor
 paths:
-  write: ["/output/processed/"]
-  # Explicitly NOT allowed to write to:
+  - /output/processed/
+  # Explicitly NOT allowed to access:
   # - /workspace/ (source data)
   # - /etc/ (system files)
   # - ~ (home directory)
@@ -455,7 +450,7 @@ Before deploying an agent to production:
 - [ ] No secrets in frontmatter
 - [ ] All secrets in `.env` file
 - [ ] `.env` file is in `.gitignore`
-- [ ] `paths.read` and `paths.write` follow least privilege
+- [ ] `paths` follows least privilege
 - [ ] `max_tokens` set appropriately
 - [ ] `max_iterations` set to prevent loops
 - [ ] `timeout` set to prevent hangs

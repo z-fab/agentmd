@@ -9,7 +9,7 @@ def create_file_read_tool(agent_config, path_context):
     """Create a file_read tool bound to an agent's path context.
 
     Relative paths are resolved from the workspace root.
-    Access is restricted to the agent's configured read paths.
+    Access is restricted to the agent's configured paths.
     """
 
     @tool
@@ -22,7 +22,7 @@ def create_file_read_tool(agent_config, path_context):
         Returns:
             The file contents as a string, or an error message.
         """
-        resolved, error = path_context.validate_read(path, agent_config)
+        resolved, error = path_context.validate_path(path, agent_config, resolve_from="workspace")
         if error:
             return f"ERROR: {error}"
 

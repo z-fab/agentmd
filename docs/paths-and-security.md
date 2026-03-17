@@ -7,7 +7,7 @@ Complete guide to path configuration and file access control in Agent.md.
 Agent.md uses a two-level path system:
 
 1. **Global paths (runtime)** — Configure where agents, outputs, and databases live
-2. **Agent paths (frontmatter)** — Declare what each agent can read/write
+2. **Agent paths (frontmatter)** — Declare what each agent can access
 
 **Resolution order:** CLI → ENV → Defaults
 
@@ -121,16 +121,14 @@ db_path    → /var/lib/agentmd.db          (CLI - highest)
 
 ## Agent Paths (Frontmatter Level)
 
-Each agent declares allowed read/write paths in frontmatter.
+Each agent declares allowed paths in frontmatter. The `paths` field controls which directories and files the agent can access for reading, writing, and listing.
 
-### Read Paths
-
-**Configuration:**
+### Configuration
 
 ```yaml
-read:
+paths:
   - ./data
-  - ./logs
+  - ./output
 ```
 
 **Defaults:** `[workspace_root]` (entire workspace)
@@ -141,111 +139,65 @@ read:
 - Relative paths resolve from `workspace_root`
 - Absolute paths used as-is
 - `~` expanded to home directory
+- First directory in array is the default write location
+- Falls back to global `output_dir` if no `paths` field
 
 **Examples:**
 
 ```yaml
-# Read entire workspace (default, omit field)
+# Access entire workspace (default, omit field)
 
-# Read specific directory
-read: ./data
+# Single directory
+paths: ./data
 
-# Read multiple locations
-read:
+# Multiple locations
+paths:
   - ./data
   - ./logs
   - /var/log/app
+  - ./output
 
-# Read specific files
-read:
+# Specific files
+paths:
   - ./config/settings.json
   - ./data/input.csv
-```
-
-### Write Paths
-
-**Configuration:**
-
-```yaml
-write:
-  - ./output
-  - /tmp/cache
-```
-
-**Defaults:** `[output_dir]` (default output directory)
-
-**Behavior:**
-- Directory: write any file within (recursive)
-- File: write specific file only
-- Relative paths resolve from **first write directory** (default write dir)
-- Absolute paths used as-is
-- Falls back to global `output_dir` if no write field
-
-**Examples:**
-
-```yaml
-# Write to default output (default, omit field)
-
-# Write to specific directory
-write: ./output
-
-# Write to multiple locations
-write:
-  - ./reports
-  - ./output
-
-# Write specific files
-write:
-  - ./output/summary.txt
-  - /var/log/custom.log
+  - ./output/result.txt
 ```
 
 **Path resolution example:**
 
 ```yaml
-write:
+paths:
   - ./reports
-  - ./output
+  - ./data
 ```
 
 When agent writes `summary.txt`:
-- Resolves to: `./reports/summary.txt` (first write dir)
+- Resolves to: `./reports/summary.txt` (first path is default write location)
 
 ## Security Restrictions
 
 File access is validated before every operation.
 
-### Forbidden Read Paths
+### Forbidden Paths
 
-**Cannot read:**
+**Cannot access:**
 
 1. **Agents directory** (`workspace/agents`)
-   - Prevents reading other agents' code
-   - Error: `"Access denied: cannot read from agents directory"`
+   - Prevents reading or modifying agent code
+   - Error: `"Access denied: cannot access agents directory"`
 
 2. **`.env` files** (any `.*env*`)
-   - Prevents credential leakage
-   - Error: `"Access denied: cannot read .env files"`
+   - Prevents credential leakage or modification
+   - Error: `"Access denied: cannot access .env files"`
 
-### Forbidden Write Paths
-
-**Cannot write:**
-
-1. **Agents directory** (`workspace/agents`)
-   - Prevents modifying agent code
-   - Error: `"Access denied: cannot write to agents directory"`
-
-2. **`.db` files**
+3. **`.db` files** (write only)
    - Prevents database corruption
    - Error: `"Access denied: cannot write to .db files"`
 
-3. **`.env` files** (any `.*env*`)
-   - Prevents credential modification
-   - Error: `"Access denied: cannot write .env files"`
-
 ### Watch Triggers
 
-Agents with `watch` triggers automatically gain read access:
+Agents with `watch` triggers automatically gain access to watched paths:
 
 ```yaml
 trigger:
@@ -253,66 +205,55 @@ trigger:
   paths:
     - ./data/input.txt
 
-# Implicit read permission for ./data/input.txt
+# Implicit access to ./data/input.txt
 ```
 
-Explicit `read` is combined with watch paths:
+Explicit `paths` is combined with watch paths:
 
 ```yaml
 trigger:
   type: watch
   paths:
     - ./data/input.txt
-read:
+paths:
   - ./config
-# Can read both ./data/input.txt AND ./config
+  - ./output
+# Can access ./data/input.txt, ./config, AND ./output
 ```
 
 ## Common Patterns
 
-### Read-Only Access
+### Minimal Access
 
 ```yaml
-read:
-  - ./data
-# No write field = default output only
-```
-
-### Write-Only Access
-
-```yaml
-write:
-  - ./output
-# No read field = can read entire workspace
+paths: ./data
+# Can only access ./data; writes default to output_dir
 ```
 
 ### Isolated Agent
 
 ```yaml
-read:
+paths:
   - ./data/input
-write:
   - ./output/agent1
 ```
 
-### Multi-Source Reader
+### Multi-Source Agent
 
 ```yaml
-read:
+paths:
   - ./data
   - ./logs
   - /var/log/app
-write:
   - ./reports
 ```
 
 ### Specific File Access
 
 ```yaml
-read:
+paths:
   - ./config/settings.json
   - ./data/input.csv
-write:
   - ./output/result.txt
 ```
 
@@ -380,12 +321,12 @@ Grant minimum necessary access:
 
 ```yaml
 # ✅ Good: specific paths
-read: ./data/input
-write: ./output/results
+paths:
+  - ./data/input
+  - ./output/results
 
 # ❌ Avoid: overly broad
-read: /
-write: /
+paths: /
 ```
 
 ### Separate Concerns
@@ -394,10 +335,14 @@ Use different directories per agent:
 
 ```yaml
 # Agent 1
-write: ./output/agent1
+paths:
+  - ./data/agent1
+  - ./output/agent1
 
 # Agent 2
-write: ./output/agent2
+paths:
+  - ./data/agent2
+  - ./output/agent2
 ```
 
 ### Use Relative Paths
@@ -406,11 +351,12 @@ Prefer relative for portability:
 
 ```yaml
 # ✅ Portable
-read: ./data
-write: ./output
+paths:
+  - ./data
+  - ./output
 
 # ⚠️ Machine-specific
-read: /Users/alice/data
+paths: /Users/alice/data
 ```
 
 ### Keep Workspace Self-Contained
@@ -434,24 +380,15 @@ ls -la workspace/agents
 agentmd start --agents-dir /correct/path
 ```
 
-### "Access denied: outside allowed read paths"
+### "Access denied: outside allowed paths"
 
-**Cause:** Agent tried to read unlisted path
+**Cause:** Agent tried to access an unlisted path
 
-**Fix:** Add to `read`:
+**Fix:** Add to `paths`:
 ```yaml
-read:
+paths:
   - ./data
-  - ./logs  # Add missing
-```
-
-### "Access denied: outside allowed write paths"
-
-**Cause:** Agent tried to write unlisted path
-
-**Fix:** Add to `write`:
-```yaml
-write:
+  - ./logs    # Add missing
   - ./output
   - /tmp/cache  # Add missing
 ```

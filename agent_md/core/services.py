@@ -58,10 +58,8 @@ class ValidationResult:
     custom_tools_found: list[str] = field(default_factory=list)
     custom_tools_missing: list[str] = field(default_factory=list)
     # Deep validation fields
-    read_paths_valid: list[str] = field(default_factory=list)
-    read_paths_missing: list[str] = field(default_factory=list)
-    write_paths_valid: list[str] = field(default_factory=list)
-    write_paths_missing: list[str] = field(default_factory=list)
+    paths_valid: list[str] = field(default_factory=list)
+    paths_missing: list[str] = field(default_factory=list)
     mcp_servers_configured: list[str] = field(default_factory=list)
     mcp_servers_missing: list[str] = field(default_factory=list)
     custom_tools_loadable: list[str] = field(default_factory=list)
@@ -142,27 +140,17 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
             else:
                 missing.append(name)
 
-    # Check read paths
-    read_valid = []
-    read_missing = []
-    for rp in config.read:
-        p = _resolve_relative(rp, ws)
-        if p.exists():
-            read_valid.append(rp)
-        else:
-            read_missing.append(rp)
-
-    # Check write paths
-    write_valid = []
-    write_missing = []
+    # Check paths
+    paths_valid = []
+    paths_missing = []
     warnings = []
-    for wp in config.write:
-        p = _resolve_relative(wp, ws)
+    for pp in config.paths:
+        p = _resolve_relative(pp, ws)
         if p.exists():
-            write_valid.append(wp)
+            paths_valid.append(pp)
         else:
-            write_missing.append(wp)
-            warnings.append(f"write: {wp} (will be created)")
+            paths_missing.append(pp)
+            warnings.append(f"path: {pp} (does not exist yet)")
 
     # Check MCP servers
     mcp_configured = []
@@ -209,10 +197,8 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
         builtin_tools=builtins,
         custom_tools_found=found,
         custom_tools_missing=missing,
-        read_paths_valid=read_valid,
-        read_paths_missing=read_missing,
-        write_paths_valid=write_valid,
-        write_paths_missing=write_missing,
+        paths_valid=paths_valid,
+        paths_missing=paths_missing,
         mcp_servers_configured=mcp_configured,
         mcp_servers_missing=mcp_missing,
         custom_tools_loadable=loadable,

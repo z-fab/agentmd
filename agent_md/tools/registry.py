@@ -11,8 +11,8 @@ _STATIC_TOOLS = [http_request]
 def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     """Return all built-in tools, ready to use.
 
-    Context-aware tools (file_read, file_write, memory_*, skill_*) are created
-    dynamically with the agent's path context. Static tools are included as-is.
+    Context-aware tools (file_read, file_write, file_list, memory_*, skill_*)
+    are created dynamically with the agent's path context. Static tools are included as-is.
 
     Args:
         agent_config: AgentConfig for context-aware tools.
@@ -21,6 +21,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     Returns:
         List of all built-in LangChain tool objects.
     """
+    from agent_md.tools.file_list import create_file_list_tool
     from agent_md.tools.file_read import create_file_read_tool
     from agent_md.tools.file_write import create_file_write_tool
     from agent_md.tools.memory import (
@@ -34,6 +35,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     if agent_config is not None and path_context is not None:
         tools.append(create_file_read_tool(agent_config, path_context))
         tools.append(create_file_write_tool(agent_config, path_context))
+        tools.append(create_file_list_tool(agent_config, path_context))
         tools.append(create_memory_save_tool(agent_config, path_context))
         tools.append(create_memory_append_tool(agent_config, path_context))
         tools.append(create_memory_retrieve_tool(agent_config, path_context))
@@ -58,7 +60,7 @@ def list_builtin_tools() -> list[str]:
     return sorted(
         [t.name for t in _STATIC_TOOLS]
         + [
-            "file_read", "file_write",
+            "file_read", "file_write", "file_list",
             "memory_save", "memory_append", "memory_retrieve",
             "skill_use", "skill_read_file", "skill_run_script",
         ]

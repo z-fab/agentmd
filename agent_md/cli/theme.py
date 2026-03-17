@@ -70,7 +70,7 @@ def print_chat_header(agent_name: str, model_info: str) -> None:
     console.print()
     console.print(f"  [bold cyan]Chat with {agent_name}[/bold cyan]")
     console.print(f"    [dim]{model_info}[/dim]")
-    console.print(f"    [dim]Type /exit or Ctrl+C to end session[/dim]")
+    console.print("    [dim]Type /exit or Ctrl+C to end session[/dim]")
     console.print()
 
 

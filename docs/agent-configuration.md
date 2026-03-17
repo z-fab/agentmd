@@ -288,7 +288,7 @@ settings:
 | **Alias** | `custom_tools`, `tools` |
 | **Default** | `[]` |
 
-Custom tool modules to load from `workspace/tools/`. Built-in tools (`file_read`, `file_write`, `http_request`) are always available.
+Custom tool modules to load from `workspace/tools/`. Built-in tools (`file_read`, `file_write`, `file_list`, `http_request`) are always available.
 
 ```yaml
 custom_tools:
@@ -339,7 +339,7 @@ skills: review-code
 
 When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, and `skill_run_script`.
 
-### `read`
+### `paths`
 
 | Property | Value |
 |----------|-------|
@@ -347,67 +347,34 @@ When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, 
 | **Required** | No |
 | **Default** | `[workspace_root]` |
 
-Allowed paths for reading files. See [Security & Paths](paths-and-security.md) for detailed options.
+Allowed paths for file operations (reading, writing, and listing). See [Security & Paths](paths-and-security.md) for detailed options.
 
 - Can be single path (string) or multiple paths (array)
+- First directory in array is default write location
 - Relative paths resolve from workspace root
 - Absolute paths used as-is
 - Supports home directory expansion (`~`)
 
 ```yaml
 # Single directory
-read: ./data
+paths: ./data
 
 # Multiple paths
-read:
+paths:
   - ./data
   - ./logs
   - /var/log/app
 
 # Specific files
-read:
+paths:
   - ./config/settings.json
   - ./data/input.csv
 ```
 
 **Security restrictions:**
-- Cannot read `workspace/agents` directory
-- Cannot read `.env*` files (credentials)
-
-### `write`
-
-| Property | Value |
-|----------|-------|
-| **Type** | string \| string[] |
-| **Required** | No |
-| **Default** | `[output_dir]` (workspace/output) |
-
-Allowed paths for writing files. See [Security & Paths](paths-and-security.md) for detailed options.
-
-- Can be single path (string) or multiple paths (array)
-- First directory in array is default write location
-- Relative paths resolve from default write directory
-- Absolute paths used as-is
-
-```yaml
-# Single directory (default)
-write: ./output
-
-# Multiple directories
-write:
-  - ./reports
-  - ./archive
-  - /tmp/cache
-
-# Specific files
-write:
-  - ./output/result.txt
-```
-
-**Security restrictions:**
-- Cannot write to `workspace/agents` directory
+- Cannot access `workspace/agents` directory
+- Cannot access `.env*` files (credentials)
 - Cannot write to `.db` files (databases)
-- Cannot write `.env*` files (credentials)
 
 ### `history`
 
@@ -539,8 +506,9 @@ settings:
   temperature: 0.5
   max_tokens: 4096
   timeout: 60
-read: ./data
-write: ./output
+paths:
+  - ./data
+  - ./output
 ---
 
 Analyze the provided CSV file and generate a summary report including:
@@ -568,10 +536,9 @@ settings:
   timeout: 180
 custom_tools:
   - log_parser
-read:
+paths:
   - /var/log/app
   - ./data/config.json
-write:
   - ./reports
   - ./archive
 enabled: true
@@ -605,7 +572,7 @@ settings:
 tools:
   - file_validator
   - data_transformer
-write: ./processed
+paths: ./processed
 ---
 
 When files appear in the inbox:
@@ -634,9 +601,8 @@ trigger:
 mcp:
   - fetch
   - web-search
-read:
+paths:
   - ./research-queries
-write:
   - ./research-results
 ---
 
@@ -672,7 +638,7 @@ The system validates agent configuration during startup and before execution:
 - `timeout`: Positive integer (seconds)
 
 ### Path Configuration
-- `read`/`write` can be string or string[]
+- `paths` can be string or string[]
 - Cannot include forbidden directories (agents, .env files, .db files)
 - Paths support relative (`./`), absolute (`/`), and home (`~`) expansion
 
@@ -698,8 +664,7 @@ name: minimal-agent
 # - custom_tools: []
 # - mcp: []
 # - skills: []
-# - read: [workspace_root]
-# - write: [output_dir]
+# - paths: [workspace_root]
 # - enabled: true
 ```
 

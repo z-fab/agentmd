@@ -67,7 +67,7 @@ triggers:
 **Error:**
 ```
 ValidationError: 1 validation error for AgentConfig
-paths.read
+paths
   Path '/workspace/../etc/passwd' is outside allowed workspace
 ```
 
@@ -77,11 +77,11 @@ paths.read
 ```yaml
 # Wrong
 paths:
-  read: ["/etc/passwd"]  # ❌ Outside workspace
+  - /etc/passwd  # ❌ Outside workspace
 
 # Correct
 paths:
-  read: ["/workspace/data/"]  # ✓ Inside workspace
+  - /workspace/data/  # ✓ Inside workspace
 ```
 
 ### 2. Provider Not Installed
@@ -170,6 +170,7 @@ tools:
 **Available built-in tools:**
 - `file_read` - Read files from allowed paths
 - `file_write` - Write files to allowed paths
+- `file_list` - List files and directories at allowed paths
 - `http_request` - Make HTTP requests
 
 ---
@@ -271,14 +272,13 @@ MCP_DEBUG=1 npx -y @modelcontextprotocol/server-filesystem /workspace/data
 PermissionError: Access denied to path '/workspace/data/secrets.txt'
 ```
 
-**Cause:** File not in allowed `paths.read` or `paths.write`.
+**Cause:** File not in allowed `paths`.
 
 **Fix:**
 ```yaml
 # Add path to allowed list
 paths:
-  read:
-    - "/workspace/data/secrets.txt"
+  - /workspace/data/secrets.txt
 ```
 
 **Or check file actually exists:**
@@ -296,28 +296,27 @@ chmod 644 /workspace/data/secrets.txt
 PathSecurityError: Write path '/workspace/input.json' not allowed
 ```
 
-**Cause:** Agent trying to write to directory not in `paths.write`.
+**Cause:** Agent trying to write to directory not in `paths`.
 
 **Fix:**
 ```yaml
 # Wrong
 paths:
-  write: ["/output/"]  # Can only write to /output/
+  - /output/  # Can only access /output/
 
 # Agent tries to write to /workspace/ → Error
 
 # Correct
 paths:
-  write:
-    - "/output/"
-    - "/workspace/results/"  # Add if needed
+  - /output/
+  - /workspace/results/  # Add if needed
 ```
 
-**Best practice:** Keep read and write paths separate.
+**Best practice:** Only include the paths the agent actually needs.
 ```yaml
 paths:
-  read: ["/workspace/data/"]  # Source data
-  write: ["/output/"]         # Generated files
+  - /workspace/data/  # Source data
+  - /output/          # Generated files
 ```
 
 ### 6. Timeouts
@@ -594,7 +593,7 @@ Use for: Debugging validation errors, provider issues, graph execution
 | API key error | Check `.env` file, `echo $OPENAI_API_KEY` |
 | Tool not found | Check tool name in `tools:` list |
 | MCP error | Test server manually: `npx -y <mcp-package> <args>` |
-| Path permission | Add path to `paths.read` or `paths.write` |
+| Path permission | Add path to `paths` |
 | Timeout | Increase `settings.timeout` |
 | Rate limit | Reduce schedule frequency |
 | Context too long | Use model with larger context or shorten prompt |

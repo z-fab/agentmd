@@ -127,7 +127,7 @@ def create_memory_retrieve_tool(agent_config, path_context):
         memory_path = path_context.get_memory_file_path(agent_config)
 
         if not memory_path.exists():
-            return f"No memory file found. Use memory_save to create one."
+            return "No memory file found. Use memory_save to create one."
 
         sections = _parse_memory_file(memory_path.read_text(encoding="utf-8"))
 

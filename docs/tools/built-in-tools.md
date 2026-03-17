@@ -25,7 +25,7 @@ def file_read(path: str) -> str
 
 ### Security Rules
 
-1. **Allowed read paths**: Only paths in agent's `read` config (defaults to workspace root)
+1. **Allowed paths**: Only paths in agent's `paths` config (defaults to workspace root)
 2. **Blocked paths**: Cannot read `agents/`, `.env`, or `.env.*` files
 3. **Watch paths**: Automatically added to allowed paths if agent uses `watch` trigger
 
@@ -34,7 +34,7 @@ def file_read(path: str) -> str
 ```yaml
 ---
 name: data-processor
-read:
+paths:
   - data/           # Allow directory
   - config.json     # Allow specific file
 ---
@@ -46,7 +46,7 @@ read:
 ```yaml
 ---
 name: config-reader
-read: config/
+paths: config/
 ---
 
 Read `config/app.json` and summarize the settings.
@@ -87,7 +87,7 @@ def file_write(path: str, content: str) -> str
 
 ### Behavior
 
-- **Relative paths** resolve from first directory in `write` config, or `output/` if not specified
+- **Relative paths** resolve from first directory in `paths` config, or `output/` if not specified
 - **Absolute paths** checked against security restrictions
 - Creates parent directories automatically
 - Overwrites existing files without warning
@@ -95,7 +95,7 @@ def file_write(path: str, content: str) -> str
 
 ### Security Rules
 
-1. **Allowed write paths**: Only paths in agent's `write` config (defaults to `output/`)
+1. **Allowed paths**: Only paths in agent's `paths` config (defaults to `output/`)
 2. **Blocked paths**: Cannot write to `agents/`, `.db`, `.env`, or `.env.*` files
 
 ### Configuration
@@ -103,7 +103,7 @@ def file_write(path: str, content: str) -> str
 ```yaml
 ---
 name: report-generator
-write:
+paths:
   - reports/          # Default write directory
   - archive/
 ---
@@ -125,7 +125,7 @@ The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `{o
 ```yaml
 ---
 name: daily-report
-write: reports/
+paths: reports/
 ---
 
 Generate a daily summary and save to `reports/YYYY-MM-DD.md`.
@@ -136,7 +136,7 @@ The agent will call `file_write("2026-03-11.md", "# Daily Report\n\n...")` → c
 ```yaml
 ---
 name: project-generator
-write: projects/my-app/
+paths: projects/my-app/
 ---
 
 Create project structure:
@@ -149,10 +149,74 @@ The agent calls `file_write` multiple times; parent directories are created auto
 **Append pattern:**
 `file_write` always overwrites. To append, read → modify → write back:
 ```yaml
-read: logs/
-write: logs/
+paths: logs/
 ```
 Read `logs/events.log`, append new entry, write back.
+
+---
+
+## file_list
+
+List files and directories at a given path (non-recursive) with path security restrictions.
+
+### Signature
+
+```python
+def file_list(path: str) -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `path` | `str` | Yes | Absolute or relative path to directory |
+
+### Behavior
+
+- **Relative paths** resolve from workspace root
+- **Absolute paths** checked against security restrictions
+- Lists immediate contents only (non-recursive)
+- Returns a list of file and directory names
+- Returns error message if access denied or directory not found
+
+### Security Rules
+
+1. **Allowed paths**: Only paths in agent's `paths` config (defaults to workspace root)
+2. **Blocked paths**: Cannot list `agents/`, `.env`, or `.env.*` files
+
+### Configuration
+
+```yaml
+---
+name: directory-browser
+paths:
+  - data/
+  - output/
+---
+```
+
+### Examples
+
+**List directory contents:**
+```yaml
+---
+name: file-scanner
+paths: ./data
+---
+
+List all files in `data/` and summarize what's available.
+```
+
+**Use with file_read for discovery:**
+```yaml
+---
+name: data-explorer
+paths:
+  - ./data
+  - ./output
+---
+
+List the files in `data/`, then read and summarize each one.
+```
+The agent calls `file_list("data/")` to discover files, then `file_read` on each.
 
 ---
 
@@ -448,7 +512,7 @@ For full documentation, see [Skills](../skills.md).
 
 | Problem | Solution |
 |---|---|
-| `Access denied: 'data/file.txt' is outside allowed read paths` | Add path to `read` config: `read: [data/]` |
+| `Access denied: 'data/file.txt' is outside allowed paths` | Add path to `paths` config: `paths: [data/]` |
 | `File not found: output/data.txt` | Verify file exists, check spelling (case-sensitive), verify path resolution |
 | `Request timed out after 30s` | Use faster APIs or split large requests into smaller chunks |
 | File created but empty | Verify `content` parameter isn't empty and agent generated content successfully |
