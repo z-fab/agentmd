@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 def create_file_write_tool(agent_config, path_context):
     """Create a file_write tool bound to an agent's path context.
 
-    Relative paths are resolved from the agent's default write directory.
+    Relative paths are resolved from the agent's default output directory.
     Access is restricted to the agent's configured paths.
     """
 
@@ -17,14 +17,14 @@ def create_file_write_tool(agent_config, path_context):
         """Write content to a file. Creates parent directories if needed.
 
         Args:
-            path: Path where the file will be written.
-                  Relative paths resolve from the default output directory.
+            path: Absolute path or filename. Absolute paths are used as-is.
+                  Relative paths (just a filename) resolve from the default output directory.
             content: Text content to write.
 
         Returns:
             Confirmation message or error.
         """
-        resolved, error = path_context.validate_path(path, agent_config, resolve_from="write_dir")
+        resolved, error = path_context.validate_path(path, agent_config, resolve_from="output")
         if error:
             return f"ERROR: {error}"
 

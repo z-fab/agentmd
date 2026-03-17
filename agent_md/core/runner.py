@@ -89,7 +89,17 @@ class AgentRunner:
             return "Execute your task."
 
         if trigger_type == "watch" and trigger_context:
-            return f"Execute your task.\n\nFile change detected:\n- {trigger_context}"
+            # Parse the context string to extract event type and path
+            parts = trigger_context.split(": ", 1)
+            if len(parts) == 2:
+                event_type, file_path = parts
+                return (
+                    f"A file change was detected. Process it now.\n\n"
+                    f"- Event: `{event_type}`\n"
+                    f"- File: `{file_path}`\n\n"
+                    f"Start by calling `file_read(\"{file_path}\")` with the exact absolute path above."
+                )
+            return f"A file change was detected. Process it now.\n\n- {trigger_context}"
 
         return "Execute your task."
 

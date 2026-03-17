@@ -12,6 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Improved
 - **Agent generation prompt (`agentmd new`)** — richer prompt now documents all built-in tools (including memory and skills), the `history` field, trigger types with examples, and explicit guidance to prefer memory tools over file_write for persistent state
+- **System prompt for agents** — clearer file access instructions with explicit path rules (prefer absolute paths), structured watch trigger context with exact `file_read` call, and `file_list` guidance; renamed internal `write_dir` nomenclature to `output` for consistency with unified `paths` field
 
 ## [0.6.0] - 2026-03-16
 

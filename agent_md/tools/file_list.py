@@ -17,7 +17,8 @@ def create_file_list_tool(agent_config, path_context):
         """List files and directories at the given path.
 
         Args:
-            path: Path to the directory. Relative paths resolve from the workspace root.
+            path: Absolute path to the directory (preferred), or a relative path
+                  which resolves from the workspace root.
 
         Returns:
             A formatted listing of directory contents, or an error message.

@@ -17,7 +17,8 @@ def create_file_read_tool(agent_config, path_context):
         """Read the contents of a file.
 
         Args:
-            path: Path to the file. Relative paths resolve from the workspace root.
+            path: Absolute path to the file (preferred), or a relative path
+                  which resolves from the workspace root.
 
         Returns:
             The file contents as a string, or an error message.
