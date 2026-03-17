@@ -30,7 +30,8 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
 def _build_file_access_prompt(agent_config, path_context) -> str:
     """Build the file access section of the system prompt."""
     allowed_paths = path_context.get_allowed_paths(agent_config)
-    default_output = path_context.get_default_output_dir(agent_config)
+    write_target = path_context.get_default_write_dir(agent_config)
+    workspace = path_context.workspace_root
 
     path_list = "\n".join(f"- `{p}`" for p in allowed_paths)
 
@@ -41,19 +42,21 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
         "You can ONLY access files within these paths:\n",
         f"{path_list}\n",
         "Any path outside these boundaries will be denied.\n",
-        "### Path rules\n",
-        "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
-        "- `file_read` and `file_list`: relative paths resolve from the workspace root.\n"
-        f"- `file_write`: relative paths (just a filename) resolve from the default output directory: `{default_output}`\n"
-        f"  - Do NOT prefix with `{default_output.name}/` — it is added automatically.\n"
-        "- Use `file_list` to discover files before reading. Never guess filenames.",
+        "### Path Resolution Rules\n",
+        f"- **Workspace root**: `{workspace}` — all relative paths are resolved from here.\n",
+        "- **Absolute paths** (e.g., `/data/file.txt`): Used as-is, but must be within allowed paths above.\n",
+        f"- **Relative paths** (e.g., `file.txt`, `data/file.txt`): Always resolve from workspace root: `{workspace}`\n",
+        f"- **Write target for `file_write`**: Relative paths default to: `{write_target}`\n",
+        "  - This is the first directory in your allowed paths (or workspace if no paths defined).\n",
+        f"  - Do NOT prefix with `{write_target.name}/` unless you want a subdirectory — it is added automatically.\n",
+        "- **Best practice**: Use `file_list` first to discover the correct paths. Never guess filenames.\n",
     ]
 
     if agent_config.trigger.type == "watch":
         sections.append(
-            "\n### Watch trigger\n"
-            "This agent is activated by file changes. The user message contains the event type "
-            "and the **absolute path** of the changed file.\n"
+            "\n### Watch Trigger\n"
+            "This agent is activated by file changes. The user message contains "
+            "the **absolute path** of the changed file.\n"
             "**You MUST use that exact absolute path** with `file_read` to read the file. "
             "Do not extract just the filename — always use the full path provided."
         )

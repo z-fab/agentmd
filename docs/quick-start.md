@@ -52,25 +52,28 @@ agentmd config    # Show current configuration
 
 ## 2. Configuration
 
-The setup wizard creates two files in your workspace:
+The setup wizard creates configuration files in standard locations:
 
-### `config.yaml` — Application settings
+### `~/.config/agentmd/config.yaml` — Application settings
 
 ```yaml
-workspace: ~/agentmd
-agents_dir: agents
-output_dir: output
+workspace: ~/agentmd           # Where agents and data are stored
+agents_dir: agents             # Relative to workspace
+db_path: data/agentmd.db      # SQLite database for execution history
+mcp_config: agents/mcp-servers.json
 
 defaults:
   provider: google
   model: gemini-2.5-flash
 ```
 
-### `.env` — API keys (secrets only)
+### `~/agentmd/.env` — API keys (secrets only)
 
 ```bash
 GOOGLE_API_KEY=your-key-here
 ```
+
+The configuration file is always in `~/.config/agentmd/config.yaml` (following XDG standards), while your workspace (agents, data, etc.) is in `~/agentmd` by default.
 
 **Get a free API key:**
 - [Google Gemini](https://makersuite.google.com/app/apikey) (free tier available)

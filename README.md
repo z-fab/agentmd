@@ -145,7 +145,7 @@ Agent.md uses two configuration files in your workspace:
 # config.yaml
 workspace: ~/agentmd
 agents_dir: agents
-output_dir: output
+db_path: data/agentmd.db
 
 defaults:
   provider: google

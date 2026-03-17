@@ -3,6 +3,49 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.2] - 2026-03-17
+
+### Changed
+- **Configuration architecture** — simplified and standardized configuration management
+  - Config file now **always** in `~/.config/agentmd/config.yaml` (follows XDG Base Directory standard)
+  - Workspace default is `~/agentmd` for both dev and production environments
+  - Removed `AGENTMD_WORKSPACE` environment variable (no longer needed)
+  - Removed `output_dir` concept entirely — agents define their own writable paths via `paths` field
+  - Auto-creates config with sensible defaults on first run (zero-configuration setup)
+
+- **Path resolution** — unified and simplified path handling logic
+  - All relative paths resolve from workspace root (consistent behavior)
+  - `file_write` uses first directory in agent's `paths` as default write target
+  - Agents without `paths` defined can access entire workspace (explicit security model)
+  - Removed complex duplicate prefix stripping logic (simpler, more predictable)
+  - System prompt now shows actual workspace path dynamically (not hardcoded `~/agentmd`)
+
+### Improved
+- **Code quality** — reduced duplication and improved maintainability
+  - Created shared validation helper for file tools (eliminates ~30 lines of duplicate code)
+  - Removed redundant `.resolve()` calls in path validation (better performance)
+  - Added security logging for path access violations (better observability)
+  - Removed dead code (`_find_config_yaml` function)
+  - Standardized error messages across file tools
+
+- **Documentation** — updated all docs to reflect new configuration structure
+  - Quick start guide, CLI reference, paths & security guide
+  - Built-in tools documentation with corrected examples
+  - Removed references to `output_dir` throughout
+
+### Removed
+- **Breaking**: `output_dir` field removed from `config.yaml`
+- **Breaking**: `AGENTMD_WORKSPACE` environment variable no longer used
+- **Breaking**: Development environment no longer uses special `./workspace` directory
+- Auto-start services no longer set `AGENTMD_WORKSPACE` environment variable
+
+### Migration Guide
+For existing installations:
+1. Config will auto-migrate on first run (no action needed)
+2. If you relied on `output_dir`, add explicit `paths` to your agents
+3. Remove `AGENTMD_WORKSPACE` from shell profiles if manually added
+4. Dev users: move agents from `./workspace/` to `~/agentmd/`
+
 ## [0.6.1] - 2026-03-16
 
 ### Fixed

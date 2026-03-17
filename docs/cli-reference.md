@@ -498,11 +498,10 @@ agentmd setup [OPTIONS]
 3. Asks for default model name
 4. Asks for API key (masked input; skipped for ollama)
 5. Asks about auto-start on login
-6. Creates workspace structure (`agents/`, `output/`, `agents/tools/`)
-7. Writes `config.yaml` (paths and defaults)
-8. Writes `.env` (API key only)
+6. Creates workspace structure (`~/agentmd/agents/`, `~/agentmd/data/`)
+7. Writes `~/.config/agentmd/config.yaml` (paths and defaults)
+8. Writes `~/agentmd/.env` (API key only)
 9. Creates sample `hello-world` agent
-10. Exports `AGENTMD_WORKSPACE` to shell profile
 
 ### Examples
 
@@ -534,23 +533,24 @@ Tries `uv tool upgrade` first, falls back to `pip install --upgrade`. Shows curr
 
 Agent.md uses two configuration files:
 
-### `config.yaml` — Application settings
+### `~/.config/agentmd/config.yaml` — Application settings
 
-Located in your workspace directory. Controls paths and default model.
+Located in `~/.config/agentmd/` (following XDG Base Directory standard). Controls paths and default model.
 
 ```yaml
-workspace: ~/agentmd
+workspace: ~/agentmd        # Where agents and data are stored
 agents_dir: agents          # relative to workspace
-output_dir: output          # relative to workspace
 db_path: data/agentmd.db   # relative to workspace
 mcp_config: agents/mcp-servers.json
 
 defaults:
   provider: google
   model: gemini-2.5-flash
+
+log_level: INFO
 ```
 
-### `.env` — API keys
+### `~/agentmd/.env` — API keys
 
 Located in your workspace directory. Contains **only** API keys (secrets).
 
@@ -562,15 +562,15 @@ GOOGLE_API_KEY=AIza...
 
 ### How config is found
 
-**config.yaml:** `AGENTMD_WORKSPACE` env var → `~/agentmd/config.yaml` → CWD `config.yaml`
+**config.yaml:** Always `~/.config/agentmd/config.yaml` (created automatically with defaults if missing)
 
-**.env:** CWD `.env` → workspace `.env` → `~/agentmd/.env`
+**.env:** Always `~/agentmd/.env` (or `{workspace}/.env` if custom workspace is configured)
 
 ### Precedence (highest to lowest)
 
 1. CLI flags (`--workspace`)
-2. `config.yaml` values
-3. Built-in defaults
+2. `~/.config/agentmd/config.yaml` values
+3. Built-in defaults (auto-created on first run)
 
 ---
 
@@ -578,7 +578,6 @@ GOOGLE_API_KEY=AIza...
 
 | Variable | Purpose |
 |----------|---------|
-| `AGENTMD_WORKSPACE` | Points to workspace directory (used to locate `config.yaml` and `.env`) |
 | `GOOGLE_API_KEY` | Google AI (Gemini) API key |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic (Claude) API key |
@@ -588,15 +587,16 @@ GOOGLE_API_KEY=AIza...
 ## Workspace Structure
 
 ```
-~/agentmd/
-├── config.yaml             # Application settings
+~/.config/agentmd/
+└── config.yaml             # Application settings (always here)
+
+~/agentmd/                  # Default workspace
 ├── .env                    # API keys (secrets)
 ├── agents/                 # Agent .md files
 │   ├── hello-world.md
 │   ├── hello-world.memory.md  # Long-term memory (auto-created)
 │   ├── mcp-servers.json    # MCP servers config (optional)
 │   └── tools/              # Custom tools (Python modules)
-├── output/                 # Default output directory
 └── data/
     ├── agentmd.db          # Execution history (auto-created)
     ├── agentmd_checkpoints.db  # Session history checkpoints (auto-created)

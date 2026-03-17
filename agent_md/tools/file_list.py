@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.tools._shared import validate_and_handle_errors
+
 
 def create_file_list_tool(agent_config, path_context):
     """Create a file_list tool bound to an agent's path context.
@@ -23,9 +25,9 @@ def create_file_list_tool(agent_config, path_context):
         Returns:
             A formatted listing of directory contents, or an error message.
         """
-        resolved, error = path_context.validate_path(path, agent_config, resolve_from="workspace")
+        resolved, error = validate_and_handle_errors(path, agent_config, path_context, resolve_from="workspace")
         if error:
-            return f"ERROR: {error}"
+            return error
 
         if not resolved.exists():
             return f"ERROR: Directory not found: {path}"
@@ -53,6 +55,7 @@ def create_file_list_tool(agent_config, path_context):
 
             return "\n".join(lines)
         except Exception as e:
-            return f"ERROR listing directory: {e}"
+            return f"ERROR: {e}"
 
     return file_list
+

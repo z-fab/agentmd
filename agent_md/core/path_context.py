@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -10,7 +13,6 @@ class PathContext:
 
     workspace_root: Path
     agents_dir: Path
-    output_dir: Path
     db_path: Path
     mcp_config: Path
     tools_dir: Path
@@ -35,18 +37,17 @@ class PathContext:
         """Return the path to the agent's .memory.md file."""
         return self.agents_dir / f"{config.name}.memory.md"
 
-    def get_default_output_dir(self, config) -> Path:
-        """Return the default directory for resolving relative output paths.
+    def get_default_write_dir(self, config) -> Path:
+        """Return the default directory for resolving relative write paths.
 
-        Uses the first directory in the agent's paths config,
-        or falls back to the global output_dir.
+        Uses the first directory in the agent's allowed paths.
         """
         allowed = self.get_allowed_paths(config)
         for p in allowed:
             if p.is_dir() or not p.suffix:
                 return p
         # All paths are files — use parent of the first one
-        return allowed[0].parent if allowed else self.output_dir
+        return allowed[0].parent if allowed else self.workspace_root
 
     def validate_path(self, path: str, config, *, resolve_from: str = "workspace") -> tuple[Path | None, str | None]:
         """Resolve and validate a path for access.
@@ -55,26 +56,29 @@ class PathContext:
             path: The path to validate (absolute or relative).
             config: AgentConfig with paths and trigger info.
             resolve_from: How to resolve relative paths:
-                - "workspace": relative to workspace_root (for reads/listing).
-                - "output": relative to default output dir (for file_write).
+                - "workspace": relative to workspace_root (default for reads/listing).
+                - "write": relative to first allowed path (for file_write).
 
         Returns:
             (resolved_path, None) on success or (None, error_message) on failure.
         """
-        if resolve_from == "output":
-            resolved = self._resolve_for_output(path, config)
+        if resolve_from == "write":
+            resolved = self._resolve_for_write(path, config)
         else:
             resolved = self._resolve_relative(path)
 
         # Security checks
         error = self._check_security(resolved)
         if error:
+            logger.warning(f"Security violation for agent '{config.name}': {error}")
             return None, error
 
         # Check against allowed paths
         allowed = self.get_allowed_paths(config)
         if not self._is_within_any(resolved, allowed):
-            return None, f"Access denied: '{path}' is outside allowed paths"
+            error_msg = f"Access denied: '{path}' is outside allowed paths"
+            logger.warning(f"Path access denied for agent '{config.name}': {path} -> {resolved} (allowed: {allowed})")
+            return None, error_msg
 
         return resolved, None
 
@@ -87,21 +91,15 @@ class PathContext:
             p = self.workspace_root / p
         return p.resolve()
 
-    def _resolve_for_output(self, path: str, config) -> Path:
-        """Resolve an output path (relative to default output dir).
+    def _resolve_for_write(self, path: str, config) -> Path:
+        """Resolve a write path (relative to first allowed path).
 
-        Detects and strips duplicated directory prefixes — e.g., if the default
-        output dir ends with 'tasks' and path starts with 'tasks/', the
-        redundant prefix is removed to avoid 'tasks/tasks/'.
+        Relative paths resolve from the first directory in allowed paths (or workspace if none).
         """
         p = Path(path).expanduser()
         if not p.is_absolute():
-            default_dir = self.get_default_output_dir(config)
-            parts = p.parts
-            if len(parts) > 1 and parts[0] == default_dir.name:
-                p = default_dir / Path(*parts[1:])
-            else:
-                p = default_dir / p
+            default_dir = self.get_default_write_dir(config)
+            p = default_dir / p
         return p.resolve()
 
     def _check_security(self, resolved: Path) -> str | None:
@@ -121,23 +119,28 @@ class PathContext:
         return None
 
     def _is_within(self, path: Path, directory: Path) -> bool:
-        """Check if path is within a directory (follows symlinks)."""
+        """Check if path is within a directory.
+
+        Both arguments should be resolved paths.
+        """
         try:
-            path.relative_to(directory.resolve())
+            path.relative_to(directory)
             return True
         except ValueError:
             return False
 
     def _is_within_any(self, path: Path, directories: list[Path]) -> bool:
-        """Check if path is within any of the given directories/files."""
+        """Check if path is within any of the given directories/files.
+
+        Assumes all paths in directories list are already resolved.
+        """
         for d in directories:
-            d_resolved = d.resolve()
-            if d_resolved.is_file() or d_resolved.suffix:
+            if d.is_file() or d.suffix:
                 # It's a file path — exact match only
-                if path == d_resolved:
+                if path == d:
                     return True
             else:
                 # It's a directory — check containment
-                if self._is_within(path, d_resolved):
+                if self._is_within(path, d):
                     return True
         return False

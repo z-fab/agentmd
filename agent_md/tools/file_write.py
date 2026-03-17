@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.tools._shared import validate_and_handle_errors
+
 
 def create_file_write_tool(agent_config, path_context):
     """Create a file_write tool bound to an agent's path context.
 
-    Relative paths are resolved from the agent's default output directory.
+    Relative paths resolve from the first directory in allowed paths.
     Access is restricted to the agent's configured paths.
     """
 
@@ -17,22 +19,24 @@ def create_file_write_tool(agent_config, path_context):
         """Write content to a file. Creates parent directories if needed.
 
         Args:
-            path: Absolute path or filename. Absolute paths are used as-is.
-                  Relative paths (just a filename) resolve from the default output directory.
+            path: Absolute path or relative path.
+                  Absolute paths are used as-is (must be within allowed paths).
+                  Relative paths resolve from the first directory in allowed paths (or workspace if no paths defined).
             content: Text content to write.
 
         Returns:
             Confirmation message or error.
         """
-        resolved, error = path_context.validate_path(path, agent_config, resolve_from="output")
+        resolved, error = validate_and_handle_errors(path, agent_config, path_context, resolve_from="write")
         if error:
-            return f"ERROR: {error}"
+            return error
 
         try:
             resolved.parent.mkdir(parents=True, exist_ok=True)
             resolved.write_text(content, encoding="utf-8")
             return f"File written successfully: {resolved} ({len(content)} chars)"
         except Exception as e:
-            return f"ERROR writing file: {e}"
+            return f"ERROR: {e}"
 
     return file_write
+

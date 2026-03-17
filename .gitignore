@@ -275,4 +275,4 @@ workspace/config.yaml
 workspace/agents/*
 !workspace/agents/hello-world.md
 CLAUDE.md
-.claude
+.claudeworkspace/

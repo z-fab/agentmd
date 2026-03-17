@@ -30,15 +30,16 @@ data/
 
 ## Global Paths (Runtime Level)
 
-Five paths can be configured at startup:
+Four paths can be configured at startup:
 
 | Path | Description | Default |
 |------|-------------|---------|
-| `workspace` | Root directory for agents | `./workspace` |
+| `workspace` | Root directory for agents and data | `~/agentmd` |
 | `agents_dir` | Where `.md` files live | `{workspace}/agents` |
-| `output_dir` | Default output for all agents | `{workspace}/output` |
-| `db_path` | SQLite execution history | `./data/agentmd.db` |
+| `db_path` | SQLite execution history | `{workspace}/data/agentmd.db` |
 | `mcp_config` | MCP servers file | `{agents_dir}/mcp-servers.json` |
+
+**Note:** There is no global `output_dir`. Agents define their own writable paths via the `paths` field in frontmatter.
 
 ### Configuration Methods
 
@@ -48,75 +49,52 @@ Five paths can be configured at startup:
 agentmd start \
   --workspace /path/to/workspace \
   --agents-dir /path/to/agents \
-  --output-dir /path/to/output \
   --db-path /path/to/db.db
 
 # Available for: start, run, list
 ```
 
-#### Environment Variables
-
-```bash
-export AGENTMD_WORKSPACE=/path/to/workspace
-export AGENTMD_AGENTS_DIR=/path/to/agents
-export AGENTMD_OUTPUT_DIR=/path/to/output
-export AGENTMD_DB_PATH=/path/to/db.db
-export AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
-```
-
-Or in `.env`:
-
-```env
-AGENTMD_WORKSPACE=/path/to/workspace
-AGENTMD_AGENTS_DIR=/path/to/agents
-AGENTMD_OUTPUT_DIR=/path/to/output
-AGENTMD_DB_PATH=/path/to/db.db
-AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
-```
-
 #### Defaults (Lowest Priority)
 
+These defaults are automatically created in `~/.config/agentmd/config.yaml` on first run:
+
 ```
-workspace     → ./workspace
-agents_dir    → {workspace}/agents
-output_dir    → {workspace}/output
-db_path       → ./data/agentmd.db
-mcp_config    → {agents_dir}/mcp-servers.json
+workspace     → ~/agentmd
+agents_dir    → agents (relative to workspace)
+db_path       → data/agentmd.db (relative to workspace)
+mcp_config    → agents/mcp-servers.json (relative to workspace)
 ```
 
 ### Resolution Examples
 
-**Example 1: All defaults**
+**Example 1: All defaults (auto-created config)**
 ```
-workspace  → ./workspace
-agents_dir → ./workspace/agents
-output_dir → ./workspace/output
-db_path    → ./data/agentmd.db
+Config file: ~/.config/agentmd/config.yaml
+workspace  → ~/agentmd
+agents_dir → ~/agentmd/agents
+db_path    → ~/agentmd/data/agentmd.db
 ```
 
-**Example 2: Custom workspace via ENV**
-```env
-AGENTMD_WORKSPACE=/home/alice/my-agents
+**Example 2: Custom workspace in config**
+Edit `~/.config/agentmd/config.yaml`:
+```yaml
+workspace: /home/alice/my-agents
 ```
+Result:
 ```
 workspace  → /home/alice/my-agents
 agents_dir → /home/alice/my-agents/agents
-output_dir → /home/alice/my-agents/output
-db_path    → ./data/agentmd.db
+db_path    → /home/alice/my-agents/data/agentmd.db
 ```
 
-**Example 3: Mixed CLI + ENV (CLI wins)**
-```env
-AGENTMD_WORKSPACE=/home/alice/agents
-AGENTMD_OUTPUT_DIR=/mnt/storage/output
-```
+**Example 3: Override via CLI**
 ```bash
-agentmd start --db-path /var/lib/agentmd.db
+agentmd start --workspace /data/agents --db-path /var/lib/agentmd.db
 ```
 ```
-workspace  → /home/alice/agents           (ENV)
-output_dir → /mnt/storage/output          (ENV)
-db_path    → /var/lib/agentmd.db          (CLI - highest)
+workspace  → /data/agents               (CLI)
+agents_dir → /data/agents/agents        (derived from workspace)
+db_path    → /var/lib/agentmd.db        (CLI - highest)
 ```
 
 ## Agent Paths (Frontmatter Level)
@@ -139,8 +117,8 @@ paths:
 - Relative paths resolve from `workspace_root`
 - Absolute paths used as-is
 - `~` expanded to home directory
-- First directory in array is the default write location
-- Falls back to global `output_dir` if no `paths` field
+- First directory in array is the default write location for `file_write`
+- If no `paths` field defined: agent can access entire workspace
 
 **Examples:**
 
@@ -227,7 +205,7 @@ paths:
 
 ```yaml
 paths: ./data
-# Can only access ./data; writes default to output_dir
+# Can only access ./data; writes default to ./data
 ```
 
 ### Isolated Agent
@@ -235,7 +213,8 @@ paths: ./data
 ```yaml
 paths:
   - ./data/input
-  - ./output/agent1
+  - ./results/agent1
+# Reads from data/input, writes to results/agent1 (first writable path)
 ```
 
 ### Multi-Source Agent

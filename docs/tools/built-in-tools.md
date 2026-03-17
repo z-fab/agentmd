@@ -87,7 +87,7 @@ def file_write(path: str, content: str) -> str
 
 ### Behavior
 
-- **Relative paths** resolve from first directory in `paths` config, or `output/` if not specified
+- **Relative paths** resolve from workspace root, writes default to first directory in `paths` config (or workspace if no paths defined)
 - **Absolute paths** checked against security restrictions
 - Creates parent directories automatically
 - Overwrites existing files without warning
@@ -95,7 +95,7 @@ def file_write(path: str, content: str) -> str
 
 ### Security Rules
 
-1. **Allowed paths**: Only paths in agent's `paths` config (defaults to `output/`)
+1. **Allowed paths**: Only paths in agent's `paths` config (defaults to entire workspace if not specified)
 2. **Blocked paths**: Cannot write to `agents/`, `.db`, `.env`, or `.env.*` files
 
 ### Configuration
@@ -115,22 +115,23 @@ paths:
 ```yaml
 ---
 name: hello-world
+# No paths defined → can access entire workspace
 ---
 
 Write a greeting to `greeting.txt`.
 ```
-The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `{output_dir}/greeting.txt`
+The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `~/agentmd/greeting.txt`
 
 **Generate timestamped reports:**
 ```yaml
 ---
 name: daily-report
-paths: reports/
+paths: reports/  # Restricts access to reports/ directory
 ---
 
-Generate a daily summary and save to `reports/YYYY-MM-DD.md`.
+Generate a daily summary and save to `2026-03-11.md`.
 ```
-The agent will call `file_write("2026-03-11.md", "# Daily Report\n\n...")` → creates subdirectories automatically.
+The agent will call `file_write("2026-03-11.md", "# Daily Report\n\n...")` → `~/agentmd/reports/2026-03-11.md`
 
 **Create multi-file outputs:**
 ```yaml
