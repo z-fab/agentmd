@@ -9,6 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Installer** — fix stdin redirect and update command for git-based installs
 - **Agent generation (`agentmd new`)** — handle LLM providers (e.g. Gemini) that return `content` as a list of blocks instead of a plain string, which caused `'list' object has no attribute 'strip'`
 
+### Improved
+- **Agent generation prompt (`agentmd new`)** — richer prompt now documents all built-in tools (including memory and skills), the `history` field, trigger types with examples, and explicit guidance to prefer memory tools over file_write for persistent state
+
 ## [0.6.0] - 2026-03-16
 
 ### Added

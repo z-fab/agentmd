@@ -122,43 +122,81 @@ def _generate_agent_with_ai(agent_name: str, description: str, provider: str, mo
 
     prompt = f"""You are an expert at creating AI agent definitions for the Agent.md framework.
 
-Generate the content of a markdown agent file for an agent named "{agent_name}" that does the following:
+Generate the content of a markdown agent file for an agent named "{agent_name}" based on this description:
 {description}
 
-The file format is YAML frontmatter (between --- delimiters) followed by the system prompt.
+## File format
 
-Available frontmatter fields:
-- name (required): {agent_name}
+YAML frontmatter (between --- delimiters) followed by the system prompt in Markdown.
+
+## Frontmatter fields
+
+Required:
+- name: {agent_name}
+
+Optional:
 - description: one-line summary of what the agent does
-- model: (optional) object with provider and name fields. Only include if the user specified a model.
-- trigger: (optional) object — type: manual (default), schedule (with cron or every field), or watch (with paths list)
-- settings: (optional) temperature, max_tokens, timeout
-- read: (optional) list of file/dir paths the agent can read from the workspace
-- write: (optional) list of file/dir paths the agent can write to in the workspace
+- model: object with provider and name fields. Only include if the user specified a model.
+- trigger: execution trigger (see Trigger types below)
+- settings: object with temperature (float), max_tokens (int), timeout (int, seconds)
+- history: conversation memory across runs — "low" (10 msgs), "medium" (50), "high" (200), "off" (default)
+- read: list of file/dir paths the agent can read (relative to workspace root)
+- write: list of file/dir paths the agent can write (relative to workspace root)
 
-Available built-in tools (always available, do NOT list in frontmatter):
-- file_read: read files from allowed paths
-- file_write: write/create files in allowed paths
-- http_request: make HTTP requests to external APIs
+### Trigger types
+- manual (default): agent runs only when invoked via `agentmd run`
+- schedule: runs on a schedule. Fields: `every` (e.g. "30m", "2h", "24h") or `cron` (e.g. "0 9 * * *")
+- watch: runs when files change. Fields: `paths` (list of glob patterns to watch)
 
-Write ONLY the file content — no explanations, no code fences. Start with --- and end after the system prompt.
+## Built-in tools
 
-The system prompt should be clear, specific, and actionable. Tell the agent exactly what to do, step by step.
+These tools are always available to the agent. Do NOT list them in frontmatter.
+Choose the right tool for each use case — especially prefer memory tools over file_write for persistent knowledge.
 
-Example:
+### Filesystem
+- file_read(path): Read a file. Only works for paths listed in `read`.
+- file_write(path, content): Write/create a file. Only works for paths listed in `write`. Creates parent dirs automatically.
+
+### HTTP
+- http_request(url, method="GET", headers=None, body=None): Make HTTP requests. Returns status code and response body.
+
+### Long-term memory (persistent across runs)
+Use these when the agent needs to remember information between executions (e.g. tracking state, accumulating knowledge, storing preferences). Memory is stored in a dedicated `.memory.md` file per agent — do NOT use file_write for this purpose.
+- memory_save(section, content): Save/replace a named section in memory.
+- memory_append(section, content): Append to a named section (creates it if missing).
+- memory_retrieve(section): Read a named section from memory.
+
+## Rules
+
+- Write ONLY the file content. No explanations, no code fences.
+- Start with --- and end after the system prompt.
+- The system prompt must be clear, specific, and actionable — tell the agent exactly what to do, step by step.
+- If the agent needs to persist state or knowledge across runs, use memory tools (memory_save/memory_append/memory_retrieve), NOT file_write.
+- If the agent needs to remember previous conversations, set the `history` field.
+- Match the trigger type to the use case: use `watch` for file-change reactions, `schedule` for periodic tasks, `manual` for on-demand.
+- Only include frontmatter fields that are relevant. Omit fields that use defaults.
+
+## Example
+
 ---
 name: daily-summary
 description: Summarizes daily activity logs
 trigger:
   type: schedule
   every: 24h
+history: medium
 read:
   - logs/
 write:
   - output/
 ---
 
-You are a summarization agent. Every day, read all files in the logs/ directory, ...
+You are a summarization agent. Every day:
+
+1. Read all files in the `logs/` directory using `file_read`.
+2. Generate a concise summary of the day's activity.
+3. Write the summary to `output/daily-summary-YYYY-MM-DD.md` using `file_write`.
+4. Use `memory_save` to store the latest summary date in the "last_run" section so you can avoid reprocessing.
 """
 
     response = llm.invoke(prompt)
