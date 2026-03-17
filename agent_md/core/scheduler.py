@@ -9,7 +9,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from agent_md.core.parser import parse_agent_file
+from agent_md.core.parser import is_agent_file, parse_agent_file
 from agent_md.core.registry import AgentConfig, AgentRegistry
 from agent_md.core.runner import AgentRunner
 
@@ -182,7 +182,7 @@ class _AgentFileHandler(FileSystemEventHandler):
         self._loop = loop
 
     def _is_agent_file(self, event) -> bool:
-        return event.src_path.endswith(".md") and not event.is_directory
+        return not event.is_directory and is_agent_file(Path(event.src_path))
 
     def on_modified(self, event):
         if self._is_agent_file(event):
@@ -193,7 +193,7 @@ class _AgentFileHandler(FileSystemEventHandler):
             self._reload(Path(event.src_path))
 
     def on_deleted(self, event):
-        if event.src_path.endswith(".md") and not event.is_directory:
+        if not event.is_directory and is_agent_file(Path(event.src_path)):
             name = Path(event.src_path).stem
             self.registry.remove(name)
             self.scheduler.unschedule_agent(name)

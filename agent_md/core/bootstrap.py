@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_md.core.parser import parse_agent_file
+from agent_md.core.parser import is_agent_file, parse_agent_file
 from agent_md.core.path_context import PathContext
 from agent_md.core.registry import AgentRegistry
 from agent_md.core.runner import AgentRunner
@@ -132,7 +132,7 @@ async def bootstrap(
     scheduler = None
 
     # Scan agents directory for .md files
-    md_files = sorted(f for f in agents_dir.glob("*.md") if not f.name.endswith(".memory.md"))
+    md_files = sorted(f for f in agents_dir.glob("*.md") if is_agent_file(f))
     loaded = 0
     errors = 0
 

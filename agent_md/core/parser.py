@@ -10,6 +10,11 @@ from agent_md.core.models import AgentConfig, ModelConfig
 from agent_md.core.settings import settings
 
 
+def is_agent_file(path: Path) -> bool:
+    """Check if a path is an agent definition file (not memory, not directory)."""
+    return path.suffix == ".md" and not path.name.endswith(".memory.md")
+
+
 def parse_agent_file(path: Path) -> AgentConfig:
     """Parse a .md agent file and return a validated AgentConfig.
 
