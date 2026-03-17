@@ -162,7 +162,10 @@ You are a summarization agent. Every day, read all files in the logs/ directory,
 """
 
     response = llm.invoke(prompt)
-    content = response.content.strip()
+    raw = response.content
+    if isinstance(raw, list):
+        raw = "".join(block if isinstance(block, str) else block.get("text", "") for block in raw)
+    content = raw.strip()
 
     # Strip code fences if present
     if content.startswith("```"):

@@ -3,6 +3,12 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.1] - 2026-03-16
+
+### Fixed
+- **Installer** — fix stdin redirect and update command for git-based installs
+- **Agent generation (`agentmd new`)** — handle LLM providers (e.g. Gemini) that return `content` as a list of blocks instead of a plain string, which caused `'list' object has no attribute 'strip'`
+
 ## [0.6.0] - 2026-03-16
 
 ### Added
