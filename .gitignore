@@ -276,3 +276,4 @@ workspace/agents/*
 !workspace/agents/hello-world.md
 CLAUDE.md
 .claude
+docs/superpowers/
