@@ -277,3 +277,4 @@ workspace/agents/*
 CLAUDE.md
 .claude
 docs/superpowers/
+.worktrees/
