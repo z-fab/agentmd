@@ -23,7 +23,7 @@ def create_file_list_tool(agent_config, path_context):
         Returns:
             A formatted listing of directory contents, or an error message.
         """
-        resolved, error = path_context.validate_path(path, agent_config, resolve_from="workspace")
+        resolved, error = path_context.validate_path(path, agent_config)
         if error:
             return f"ERROR: {error}"
 

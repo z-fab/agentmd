@@ -30,7 +30,6 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
 def _build_file_access_prompt(agent_config, path_context) -> str:
     """Build the file access section of the system prompt."""
     allowed_paths = path_context.get_allowed_paths(agent_config)
-    default_output = path_context.get_default_output_dir(agent_config)
 
     path_list = "\n".join(f"- `{p}`" for p in allowed_paths)
 
@@ -43,9 +42,7 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
         "Any path outside these boundaries will be denied.\n",
         "### Path rules\n",
         "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
-        "- `file_read` and `file_list`: relative paths resolve from the workspace root.\n"
-        f"- `file_write`: relative paths (just a filename) resolve from the default output directory: `{default_output}`\n"
-        f"  - Do NOT prefix with `{default_output.name}/` — it is added automatically.\n"
+        "- Relative paths resolve from the workspace root for all tools.\n"
         "- Use `file_list` to discover files before reading. Never guess filenames.",
     ]
 

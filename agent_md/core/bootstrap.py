@@ -105,7 +105,6 @@ async def bootstrap(
     path_context = PathContext(
         workspace_root=workspace,
         agents_dir=agents_dir,
-        output_dir=output_dir,
         db_path=db_path,
         mcp_config=mcp_config,
         tools_dir=tools_dir,

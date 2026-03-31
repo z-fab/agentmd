@@ -10,7 +10,6 @@ class PathContext:
 
     workspace_root: Path
     agents_dir: Path
-    output_dir: Path
     db_path: Path
     mcp_config: Path
     tools_dir: Path
@@ -35,36 +34,19 @@ class PathContext:
         """Return the path to the agent's .memory.md file."""
         return self.agents_dir / f"{config.name}.memory.md"
 
-    def get_default_output_dir(self, config) -> Path:
-        """Return the default directory for resolving relative output paths.
-
-        Uses the first directory in the agent's paths config,
-        or falls back to the global output_dir.
-        """
-        allowed = self.get_allowed_paths(config)
-        for p in allowed:
-            if p.is_dir() or not p.suffix:
-                return p
-        # All paths are files — use parent of the first one
-        return allowed[0].parent if allowed else self.output_dir
-
-    def validate_path(self, path: str, config, *, resolve_from: str = "workspace") -> tuple[Path | None, str | None]:
+    def validate_path(self, path: str, config) -> tuple[Path | None, str | None]:
         """Resolve and validate a path for access.
+
+        Relative paths always resolve from workspace root.
 
         Args:
             path: The path to validate (absolute or relative).
             config: AgentConfig with paths and trigger info.
-            resolve_from: How to resolve relative paths:
-                - "workspace": relative to workspace_root (for reads/listing).
-                - "output": relative to default output dir (for file_write).
 
         Returns:
             (resolved_path, None) on success or (None, error_message) on failure.
         """
-        if resolve_from == "output":
-            resolved = self._resolve_for_output(path, config)
-        else:
-            resolved = self._resolve_relative(path)
+        resolved = self._resolve_relative(path)
 
         # Security checks
         error = self._check_security(resolved)
@@ -85,23 +67,6 @@ class PathContext:
         p = Path(path).expanduser()
         if not p.is_absolute():
             p = self.workspace_root / p
-        return p.resolve()
-
-    def _resolve_for_output(self, path: str, config) -> Path:
-        """Resolve an output path (relative to default output dir).
-
-        Detects and strips duplicated directory prefixes — e.g., if the default
-        output dir ends with 'tasks' and path starts with 'tasks/', the
-        redundant prefix is removed to avoid 'tasks/tasks/'.
-        """
-        p = Path(path).expanduser()
-        if not p.is_absolute():
-            default_dir = self.get_default_output_dir(config)
-            parts = p.parts
-            if len(parts) > 1 and parts[0] == default_dir.name:
-                p = default_dir / Path(*parts[1:])
-            else:
-                p = default_dir / p
         return p.resolve()
 
     def _check_security(self, resolved: Path) -> str | None:
