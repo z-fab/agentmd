@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_md.tools.http_request import http_request
+from agent_md.tools.http import http_request
 
 # Static tools (no agent context needed)
 _STATIC_TOOLS = [http_request]
@@ -21,9 +21,11 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     Returns:
         List of all built-in LangChain tool objects.
     """
-    from agent_md.tools.file_list import create_file_list_tool
-    from agent_md.tools.file_read import create_file_read_tool
-    from agent_md.tools.file_write import create_file_write_tool
+    from agent_md.tools.files import (
+        create_file_list_tool,
+        create_file_read_tool,
+        create_file_write_tool,
+    )
     from agent_md.tools.memory import (
         create_memory_append_tool,
         create_memory_retrieve_tool,
@@ -42,7 +44,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
 
         # Skill tools — only when the agent has skills configured
         if agent_config.skills and path_context.skills_dir.exists():
-            from agent_md.skills.tools import (
+            from agent_md.tools.skills import (
                 create_skill_read_file_tool,
                 create_skill_run_script_tool,
                 create_skill_use_tool,
