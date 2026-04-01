@@ -3,6 +3,21 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- **Meta messages** — system-injected `HumanMessage`s with XML tags (`<skill-context>`, `<skill-breadcrumb>`) and `additional_kwargs` metadata for semantic message handling
+- **`post_tool_processor` graph node** — sits between tools and agent nodes; detects `skill_use` activation and injects skill instructions as meta messages (HumanMessage directives) instead of ToolMessage data
+- **Smart history compaction** — `_trim_messages` now compacts skill-context to breadcrumb and truncates large tool results before applying count-based trimming
+
+### Changed
+- **`skill_use` tool** — now returns a short activation confirmation; full skill content is injected by `post_tool_processor` as a meta message
+- **System prompt** — new "Meta Messages" section teaches agents to interpret `<skill-context>` and `<skill-breadcrumb>` tags
+- **ReAct graph** — expanded from 2 nodes (agent, tools) to 3 nodes (agent, tools, post_tool_processor) when skills are configured
+
+### Internal
+- **`_resolve_skill_content()`** — extracted from `skill_use` into `agent_md/tools/skills/_resolver.py` as an internal function (not a tool)
+
 ## [0.6.2] - 2026-03-31
 
 ### Added

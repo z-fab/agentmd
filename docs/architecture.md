@@ -75,12 +75,28 @@ Has tool calls? ─ No → END (final answer)
   ↓ Yes
 [Execute Tools] (file I/O, HTTP, etc.)
   ↓
-[Format results as messages]
+[Post-Tool Processor] ← injects meta messages (when skills are configured)
   ↓
-[Call LLM again] ← tool results
+[Call LLM again] ← tool results + meta messages
   ↓
 (repeat...)
 ```
+
+When skills are configured, the graph uses 3 nodes instead of 2:
+```
+agent → [has tool_calls?] → tools → post_tool_processor → agent → ... → END
+```
+
+The `post_tool_processor` detects `skill_use` activation and injects skill instructions as meta messages rather than tool result data.
+
+### 5a. Meta Messages
+
+Meta messages are `HumanMessage` instances with `additional_kwargs` containing a `meta_type` field. They are injected by the runtime (not the user) to carry semantic context:
+
+- **`skill-context`** — full skill instructions wrapped in `<skill-context>` XML tags, injected when a skill is activated
+- **`skill-breadcrumb`** — compact summary wrapped in `<skill-breadcrumb>` tags, used after compaction
+
+Smart history trimming compacts `skill-context` messages into `skill-breadcrumb` summaries and truncates large tool results before applying count-based trimming. This keeps conversation history lean across runs.
 
 ### 6. Scheduler (`agent_md/core/scheduler.py`)
 APScheduler-based task scheduling:
