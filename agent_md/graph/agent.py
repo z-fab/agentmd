@@ -30,6 +30,7 @@ def _compact_messages(messages: list) -> list:
             )
         elif (
             isinstance(msg, ToolMessage)
+            and isinstance(msg.content, str)
             and len(msg.content) > _TOOL_RESULT_TRUNCATE_THRESHOLD
         ):
             truncated = (
@@ -49,15 +50,24 @@ def _compact_messages(messages: list) -> list:
     return compacted
 
 
-def _trim_messages(messages: list, limit: int) -> list:
+def _trim_messages(messages: list, limit: int, compact: bool = True) -> list:
     """Compact and trim messages for the next LLM call.
 
     Two-phase process:
     1. Semantic compaction — skill-context → breadcrumb, large tool results → truncated
+       (only on first call of a run, when loading checkpoint messages)
     2. Count-based trimming — keep last N non-system messages
+
+    Args:
+        messages: Full message list.
+        limit: Max non-system messages to keep.
+        compact: Whether to apply semantic compaction (phase 1).
+            Should be True on first invocation (compacts checkpoint messages)
+            and False on subsequent calls within the same run.
     """
-    # Phase 1: semantic compaction
-    messages = _compact_messages(messages)
+    # Phase 1: semantic compaction (only for checkpoint messages)
+    if compact:
+        messages = _compact_messages(messages)
 
     # Phase 2: count-based trimming
     system_msgs = [m for m in messages if getattr(m, "type", "") == "system"]
@@ -98,12 +108,14 @@ class ReactAgent:
         self.tools = tools
         self.memory_limit = memory_limit
         self.post_tool_processor = post_tool_processor
+        self._first_call = True
 
     async def agent(self, state: AgentState) -> dict:
         """LLM node: reasons about the task and decides next action."""
         messages = state["messages"]
         if self.memory_limit is not None:
-            messages = _trim_messages(messages, self.memory_limit)
+            messages = _trim_messages(messages, self.memory_limit, compact=self._first_call)
+            self._first_call = False
         response = await self.model.ainvoke(messages)
         return {"messages": [response]}
 
