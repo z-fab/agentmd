@@ -18,9 +18,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Tools reorganization** — flat `agent_md/tools/` restructured into domain subpackages (`files/`, `memory/`, `skills/`, `http/`) for maintainability
 - **Unified path resolution** — removed `output_dir` concept; all file tools resolve relative paths from workspace root
 - **`file_list` removed** — replaced by `file_glob` which supports recursive patterns and is more useful for file discovery
+- **Config location** — moved to `~/.config/agentmd/config.yaml` (XDG standard); auto-creates with defaults on first run
+- **Simplified autostart** — systemd/launchd services no longer require workspace path or environment variables
 
 ### Removed
 - **`output_dir`** — removed from settings, CLI setup, bootstrap, and documentation; agents write to workspace root or configured `paths`
+- **`AGENTMD_WORKSPACE`** — environment variable removed; config is always at `~/.config/agentmd/config.yaml`
 
 ## [0.6.1] - 2026-03-16
 
