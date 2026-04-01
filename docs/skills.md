@@ -130,7 +130,7 @@ When an agent has skills enabled, three tools are automatically available:
 
 ### `skill_use`
 
-Load a skill's full instructions.
+Activate a skill to receive its instructions.
 
 ```python
 skill_use(skill_name: str, arguments: str = "") -> str
@@ -141,7 +141,7 @@ skill_use(skill_name: str, arguments: str = "") -> str
 | `skill_name` | str | Yes | Name of the skill |
 | `arguments` | str | No | Arguments for variable substitution |
 
-Returns the processed instructions with all substitutions applied, plus lists of available scripts and references.
+Returns a short activation confirmation. The full skill instructions (with substitutions applied, scripts and references listed) are then injected by the runtime as a meta message — a `HumanMessage` with `<skill-context>` tags that the LLM treats as a directive to follow.
 
 ### `skill_read_file`
 
