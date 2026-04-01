@@ -42,8 +42,14 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
         "Any path outside these boundaries will be denied.\n",
         "### Path rules\n",
         "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
-        "- Relative paths resolve from the workspace root for all tools.\n"
-        "- Use `file_glob` to discover files before reading. Never guess filenames.",
+        "- Relative paths resolve from the workspace root.\n"
+        "- Use `file_glob` to discover files before reading. Never guess filenames.\n"
+        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n",
+        "### Tool usage\n",
+        "- `file_read(path)`: Read a file. Supports `offset` and `limit` for reading specific line ranges.\n"
+        "- `file_edit(path, old_text, new_text)`: Make targeted replacements in a file. Use for surgical edits.\n"
+        "- `file_write(path, content)`: Create a new file or fully overwrite an existing one.\n"
+        "- `file_glob(pattern)`: Find files matching a glob pattern (e.g. `**/*.py`).",
     ]
 
     if agent_config.trigger.type == "watch":
