@@ -11,7 +11,7 @@ _STATIC_TOOLS = [http_request]
 def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     """Return all built-in tools, ready to use.
 
-    Context-aware tools (file_read, file_write, file_list, memory_*, skill_*)
+    Context-aware tools (file_read, file_write, file_glob, memory_*, skill_*)
     are created dynamically with the agent's path context. Static tools are included as-is.
 
     Args:
@@ -23,7 +23,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     """
     from agent_md.tools.files import (
         create_file_edit_tool,
-        create_file_list_tool,
+        create_file_glob_tool,
         create_file_read_tool,
         create_file_write_tool,
     )
@@ -39,7 +39,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
         tools.append(create_file_read_tool(agent_config, path_context))
         tools.append(create_file_write_tool(agent_config, path_context))
         tools.append(create_file_edit_tool(agent_config, path_context))
-        tools.append(create_file_list_tool(agent_config, path_context))
+        tools.append(create_file_glob_tool(agent_config, path_context))
         tools.append(create_memory_save_tool(agent_config, path_context))
         tools.append(create_memory_append_tool(agent_config, path_context))
         tools.append(create_memory_retrieve_tool(agent_config, path_context))
@@ -64,7 +64,7 @@ def list_builtin_tools() -> list[str]:
     return sorted(
         [t.name for t in _STATIC_TOOLS]
         + [
-            "file_read", "file_write", "file_edit", "file_list",
+            "file_read", "file_write", "file_edit", "file_glob",
             "memory_save", "memory_append", "memory_retrieve",
             "skill_use", "skill_read_file", "skill_run_script",
         ]

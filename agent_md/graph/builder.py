@@ -35,7 +35,7 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
 
     sections = [
         "## File Access\n",
-        "You have three file tools: `file_read`, `file_write`, and `file_list`.\n",
+        "You have four file tools: `file_read`, `file_write`, `file_edit`, and `file_glob`.\n",
         "### Allowed paths\n",
         "You can ONLY access files within these paths:\n",
         f"{path_list}\n",
@@ -43,7 +43,7 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
         "### Path rules\n",
         "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
         "- Relative paths resolve from the workspace root for all tools.\n"
-        "- Use `file_list` to discover files before reading. Never guess filenames.",
+        "- Use `file_glob` to discover files before reading. Never guess filenames.",
     ]
 
     if agent_config.trigger.type == "watch":

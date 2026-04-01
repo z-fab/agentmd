@@ -155,7 +155,7 @@ Choose the right tool for each use case — especially prefer memory tools over 
 ### Filesystem
 - file_read(path): Read a file. Only works within `paths`.
 - file_write(path, content): Write/create a file. Only works within `paths`. Creates parent dirs automatically.
-- file_list(path): List files and directories at the given path. Only works within `paths`.
+- file_glob(pattern): Find files matching a glob pattern (e.g. '**/*.py'). Only works within `paths`.
 
 ### HTTP
 - http_request(url, method="GET", headers=None, body=None): Make HTTP requests. Returns status code and response body.
@@ -192,7 +192,7 @@ paths:
 
 You are a summarization agent. Every day:
 
-1. Use `file_list` to discover files in the `logs/` directory.
+1. Use `file_glob` to discover files in the `logs/` directory (e.g. `file_glob('logs/**/*')`).
 2. Read each file using `file_read`.
 3. Generate a concise summary of the day's activity.
 4. Write the summary to `output/daily-summary-YYYY-MM-DD.md` using `file_write`.
