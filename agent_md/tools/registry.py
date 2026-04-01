@@ -22,6 +22,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
         List of all built-in LangChain tool objects.
     """
     from agent_md.tools.files import (
+        create_file_edit_tool,
         create_file_list_tool,
         create_file_read_tool,
         create_file_write_tool,
@@ -37,6 +38,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     if agent_config is not None and path_context is not None:
         tools.append(create_file_read_tool(agent_config, path_context))
         tools.append(create_file_write_tool(agent_config, path_context))
+        tools.append(create_file_edit_tool(agent_config, path_context))
         tools.append(create_file_list_tool(agent_config, path_context))
         tools.append(create_memory_save_tool(agent_config, path_context))
         tools.append(create_memory_append_tool(agent_config, path_context))
@@ -62,7 +64,7 @@ def list_builtin_tools() -> list[str]:
     return sorted(
         [t.name for t in _STATIC_TOOLS]
         + [
-            "file_read", "file_write", "file_list",
+            "file_read", "file_write", "file_edit", "file_list",
             "memory_save", "memory_append", "memory_retrieve",
             "skill_use", "skill_read_file", "skill_run_script",
         ]
