@@ -84,7 +84,7 @@ def create_file_read_tool(agent_config, path_context):
                 if total_lines > MAX_LINES:
                     return (
                         f"ERROR: File has {total_lines} lines (max {MAX_LINES} for full read). "
-                        f"Use offset and limit to read a specific range, e.g. file_read(\"{path}\", offset=1, limit={MAX_LINES})."
+                        f'Use offset and limit to read a specific range, e.g. file_read("{path}", offset=1, limit={MAX_LINES}).'
                     )
                 lines = _read_line_range(resolved, 1, total_lines)
                 start_line = 1

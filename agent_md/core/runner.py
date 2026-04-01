@@ -97,7 +97,7 @@ class AgentRunner:
                     f"A file change was detected. Process it now.\n\n"
                     f"- Event: `{event_type}`\n"
                     f"- File: `{file_path}`\n\n"
-                    f"Start by calling `file_read(\"{file_path}\")` with the exact absolute path above."
+                    f'Start by calling `file_read("{file_path}")` with the exact absolute path above.'
                 )
             return f"A file change was detected. Process it now.\n\n- {trigger_context}"
 
@@ -144,7 +144,15 @@ class AgentRunner:
 
         return create_react_graph(chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit)
 
-    async def run(self, config: AgentConfig, trigger_type: str = "manual", trigger_context: str | None = None, on_event=None, on_start=None, on_complete=None) -> dict:
+    async def run(
+        self,
+        config: AgentConfig,
+        trigger_type: str = "manual",
+        trigger_context: str | None = None,
+        on_event=None,
+        on_start=None,
+        on_complete=None,
+    ) -> dict:
         """Execute an agent and persist the result.
 
         Args:
@@ -194,7 +202,9 @@ class AgentRunner:
 
             async def _stream():
                 nonlocal last_ai_msg, total_input_tokens, total_output_tokens
-                async for msg in stream_agent_graph(graph, config.system_prompt, config, self.path_context, user_input=user_input, config=graph_config):
+                async for msg in stream_agent_graph(
+                    graph, config.system_prompt, config, self.path_context, user_input=user_input, config=graph_config
+                ):
                     await ex_logger.log_message(msg)
 
                     # Accumulate token usage from every AI message
@@ -221,8 +231,11 @@ class AgentRunner:
 
             # 6. Persist success
             result = await self._finish_execution(
-                execution_id, "success", duration_ms,
-                total_input_tokens, total_output_tokens,
+                execution_id,
+                "success",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
                 output_data=output[:10000],
             )
             result["output"] = output
@@ -239,8 +252,11 @@ class AgentRunner:
             error_msg = f"Timeout after {config.settings.timeout}s"
             logger.warning(f"Execution timeout: {config.name} — {error_msg}")
             result = await self._finish_execution(
-                execution_id, "timeout", duration_ms,
-                total_input_tokens, total_output_tokens,
+                execution_id,
+                "timeout",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
                 error=error_msg,
             )
             if on_complete is not None:
@@ -252,8 +268,11 @@ class AgentRunner:
             error_msg = f"{type(e).__name__}: {e}"
             logger.error(f"Execution error: {config.name} — {error_msg}")
             result = await self._finish_execution(
-                execution_id, "error", duration_ms,
-                total_input_tokens, total_output_tokens,
+                execution_id,
+                "error",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
                 error=error_msg,
             )
             if on_complete is not None:

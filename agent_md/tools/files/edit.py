@@ -72,6 +72,8 @@ def create_file_edit_tool(agent_config, path_context):
         lines_changed = abs(new_lines - old_lines) + 1
         replaced = count if replace_all else 1
 
-        return f"Updated {resolved} ({replaced} replacement{'s' if replaced > 1 else ''}, ~{lines_changed} lines changed)"
+        return (
+            f"Updated {resolved} ({replaced} replacement{'s' if replaced > 1 else ''}, ~{lines_changed} lines changed)"
+        )
 
     return file_edit

@@ -37,9 +37,7 @@ def _extract_frontmatter(path: Path) -> tuple[dict, str]:
         raise ValueError(f"Invalid YAML in {path.name}: {e}") from e
 
     if not isinstance(frontmatter, dict):
-        raise ValueError(
-            f"Frontmatter in {path.name} must be a YAML mapping, got {type(frontmatter).__name__}"
-        )
+        raise ValueError(f"Frontmatter in {path.name} must be a YAML mapping, got {type(frontmatter).__name__}")
 
     # Normalize Claude Code hyphenated keys to underscored Python fields
     key_map = {

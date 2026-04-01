@@ -33,9 +33,7 @@ def load_custom_tools(tool_names: list[str], tools_dir: Path) -> list[BaseTool]:
     for name in tool_names:
         tool_file = tools_dir / f"{name}.py"
         if not tool_file.exists():
-            raise FileNotFoundError(
-                f"Custom tool '{name}' not found: expected file at {tool_file}"
-            )
+            raise FileNotFoundError(f"Custom tool '{name}' not found: expected file at {tool_file}")
 
         # Dynamically import the module
         spec = importlib.util.spec_from_file_location(f"custom_tool_{name}", tool_file)

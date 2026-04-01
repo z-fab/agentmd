@@ -170,7 +170,9 @@ async def bootstrap(
 
     # Schedule enabled agents (only when explicitly requested)
     if start_scheduler:
-        scheduler = AgentScheduler(registry, runner, path_context, on_event=on_event, on_complete=on_complete, on_start=on_start)
+        scheduler = AgentScheduler(
+            registry, runner, path_context, on_event=on_event, on_complete=on_complete, on_start=on_start
+        )
         for config in registry.enabled():
             scheduler.schedule_agent(config)
 

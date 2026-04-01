@@ -64,8 +64,15 @@ def list_builtin_tools() -> list[str]:
     return sorted(
         [t.name for t in _STATIC_TOOLS]
         + [
-            "file_read", "file_write", "file_edit", "file_glob",
-            "memory_save", "memory_append", "memory_retrieve",
-            "skill_use", "skill_read_file", "skill_run_script",
+            "file_read",
+            "file_write",
+            "file_edit",
+            "file_glob",
+            "memory_save",
+            "memory_append",
+            "memory_retrieve",
+            "skill_use",
+            "skill_read_file",
+            "skill_run_script",
         ]
     )

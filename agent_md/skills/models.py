@@ -24,9 +24,7 @@ class SkillConfig(BaseModel):
     @classmethod
     def validate_name(cls, v: str) -> str:
         if not re.match(r"^[a-zA-Z0-9_-]+$", v):
-            raise ValueError(
-                f"Skill name must contain only alphanumeric, hyphens, and underscores. Got: '{v}'"
-            )
+            raise ValueError(f"Skill name must contain only alphanumeric, hyphens, and underscores. Got: '{v}'")
         return v
 
 

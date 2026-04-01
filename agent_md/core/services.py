@@ -43,8 +43,11 @@ async def run_agent(
             raise AgentNotFoundError(agent_name)
 
         result = await rt.runner.run(
-            config, trigger_type="manual",
-            on_event=on_event, on_start=on_start, on_complete=on_complete,
+            config,
+            trigger_type="manual",
+            on_event=on_event,
+            on_start=on_start,
+            on_complete=on_complete,
         )
         return config, result
 
@@ -280,7 +283,10 @@ class ChatSession:
         await self._ex_logger.log_message(human_msg)
 
         new_msgs, in_tok, out_tok = await self._runner.chat_turn(
-            self._graph, self._messages, self._ex_logger, self._timeout,
+            self._graph,
+            self._messages,
+            self._ex_logger,
+            self._timeout,
             graph_config=self._graph_config,
         )
 
