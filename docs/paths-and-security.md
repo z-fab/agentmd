@@ -136,11 +136,9 @@ paths:
 **Behavior:**
 - Directory: access all files within (recursive)
 - File: access specific file only
-- Relative paths resolve from `workspace_root`
+- Relative paths resolve from `workspace_root` (for both reads and writes)
 - Absolute paths used as-is
 - `~` expanded to home directory
-- First directory in array is the default write location
-- Falls back to global `output_dir` if no `paths` field
 
 **Examples:**
 
@@ -172,8 +170,8 @@ paths:
   - ./data
 ```
 
-When agent writes `summary.txt`:
-- Resolves to: `./reports/summary.txt` (first path is default write location)
+When agent writes `reports/summary.txt`:
+- Resolves to: workspace root + `reports/summary.txt`
 
 ## Security Restrictions
 
@@ -227,7 +225,7 @@ paths:
 
 ```yaml
 paths: ./data
-# Can only access ./data; writes default to output_dir
+# Can only access ./data
 ```
 
 ### Isolated Agent

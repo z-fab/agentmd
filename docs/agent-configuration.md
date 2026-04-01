@@ -288,7 +288,7 @@ settings:
 | **Alias** | `custom_tools`, `tools` |
 | **Default** | `[]` |
 
-Custom tool modules to load from `workspace/tools/`. Built-in tools (`file_read`, `file_write`, `file_list`, `http_request`) are always available.
+Custom tool modules to load from `workspace/tools/`. Built-in tools (`file_read`, `file_write`, `file_edit`, `file_glob`, `http_request`) are always available.
 
 ```yaml
 custom_tools:
@@ -347,10 +347,9 @@ When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, 
 | **Required** | No |
 | **Default** | `[workspace_root]` |
 
-Allowed paths for file operations (reading, writing, and listing). See [Security & Paths](paths-and-security.md) for detailed options.
+Allowed paths for file operations (reading, writing, editing, and discovering files). See [Security & Paths](paths-and-security.md) for detailed options.
 
 - Can be single path (string) or multiple paths (array)
-- First directory in array is default write location
 - Relative paths resolve from workspace root
 - Absolute paths used as-is
 - Supports home directory expansion (`~`)

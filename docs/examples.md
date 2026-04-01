@@ -581,7 +581,8 @@ trigger:
 |------|-------|
 | `file_read` | Read files: `Read file at 'name.txt'` |
 | `file_write` | Write files: `Save to 'output.txt'` |
-| `file_list` | List directory: `List files in 'data/'` |
+| `file_edit` | Edit files: `Update line X in 'config.txt'` |
+| `file_glob` | Find files: `Find all '*.csv' files in 'data/'` |
 | `http_request` | Call APIs: `Use http_request to fetch...` |
 | `memory_save` | Store/replace: `Save to "notes" memory section` |
 | `memory_append` | Append: `Append to "log" memory section` |

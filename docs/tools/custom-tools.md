@@ -328,7 +328,7 @@ custom_tools:
   - csv_parser
 ```
 
-Built-in tools (`file_read`, `file_write`, `file_list`, `http_request`) are always available. Custom tools are added on top.
+Built-in tools (`file_read`, `file_write`, `file_edit`, `file_glob`, `http_request`) are always available. Custom tools are added on top.
 
 ---
 
