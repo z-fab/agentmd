@@ -9,7 +9,7 @@ from agent_md.graph.agent import ReactAgent
 from agent_md.graph.state import AgentState
 
 
-def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
+def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, post_tool_processor=None):
     """Create a compiled ReAct graph for a single agent.
 
     Convenience wrapper around ReactAgent.compile().
@@ -19,11 +19,12 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
         tools: List of LangChain tool objects available to this agent.
         checkpointer: Optional LangGraph checkpointer for session memory.
         memory_limit: Optional max number of non-system messages to send to the LLM.
+        post_tool_processor: Optional node function to run after tool execution.
 
     Returns:
         A compiled LangGraph StateGraph ready for ainvoke().
     """
-    agent = ReactAgent(chat_model, tools, memory_limit=memory_limit)
+    agent = ReactAgent(chat_model, tools, memory_limit=memory_limit, post_tool_processor=post_tool_processor)
     return agent.compile(checkpointer=checkpointer)
 
 
