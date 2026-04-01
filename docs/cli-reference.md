@@ -541,7 +541,6 @@ Located in your workspace directory. Controls paths and default model.
 ```yaml
 workspace: ~/agentmd
 agents_dir: agents          # relative to workspace
-output_dir: output          # relative to workspace
 db_path: data/agentmd.db   # relative to workspace
 mcp_config: agents/mcp-servers.json
 
@@ -596,7 +595,6 @@ GOOGLE_API_KEY=AIza...
 │   ├── hello-world.memory.md  # Long-term memory (auto-created)
 │   ├── mcp-servers.json    # MCP servers config (optional)
 │   └── tools/              # Custom tools (Python modules)
-├── output/                 # Default output directory
 └── data/
     ├── agentmd.db          # Execution history (auto-created)
     ├── agentmd_checkpoints.db  # Session history checkpoints (auto-created)

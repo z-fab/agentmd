@@ -30,23 +30,26 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
 def _build_file_access_prompt(agent_config, path_context) -> str:
     """Build the file access section of the system prompt."""
     allowed_paths = path_context.get_allowed_paths(agent_config)
-    default_output = path_context.get_default_output_dir(agent_config)
 
     path_list = "\n".join(f"- `{p}`" for p in allowed_paths)
 
     sections = [
         "## File Access\n",
-        "You have three file tools: `file_read`, `file_write`, and `file_list`.\n",
+        "You have four file tools: `file_read`, `file_write`, `file_edit`, and `file_glob`.\n",
         "### Allowed paths\n",
         "You can ONLY access files within these paths:\n",
         f"{path_list}\n",
         "Any path outside these boundaries will be denied.\n",
         "### Path rules\n",
         "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
-        "- `file_read` and `file_list`: relative paths resolve from the workspace root.\n"
-        f"- `file_write`: relative paths (just a filename) resolve from the default output directory: `{default_output}`\n"
-        f"  - Do NOT prefix with `{default_output.name}/` — it is added automatically.\n"
-        "- Use `file_list` to discover files before reading. Never guess filenames.",
+        "- Relative paths resolve from the workspace root.\n"
+        "- Use `file_glob` to discover files before reading. Never guess filenames.\n"
+        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n",
+        "### Tool usage\n",
+        "- `file_read(path)`: Read a file. Supports `offset` and `limit` for reading specific line ranges.\n"
+        "- `file_edit(path, old_text, new_text)`: Make targeted replacements in a file. Use for surgical edits.\n"
+        "- `file_write(path, content)`: Create a new file or fully overwrite an existing one.\n"
+        "- `file_glob(pattern)`: Find files matching a glob pattern (e.g. `**/*.py`).",
     ]
 
     if agent_config.trigger.type == "watch":

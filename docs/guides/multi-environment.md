@@ -338,9 +338,6 @@ agentmd run daily-report \
 ```bash
 # Override API key for single run
 OPENAI_API_KEY=sk-test-key agentmd run test-agent
-
-# Override output directory
-OUTPUT_DIR=/tmp/test-output agentmd run test-agent
 ```
 
 ## Database Separation

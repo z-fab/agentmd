@@ -59,7 +59,6 @@ The setup wizard creates two files in your workspace:
 ```yaml
 workspace: ~/agentmd
 agents_dir: agents
-output_dir: output
 
 defaults:
   provider: google

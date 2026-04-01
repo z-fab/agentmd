@@ -170,7 +170,8 @@ tools:
 **Available built-in tools:**
 - `file_read` - Read files from allowed paths
 - `file_write` - Write files to allowed paths
-- `file_list` - List files and directories at allowed paths
+- `file_edit` - Edit files with targeted text replacement
+- `file_glob` - Find files matching a glob pattern
 - `http_request` - Make HTTP requests
 
 ---

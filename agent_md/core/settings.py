@@ -63,7 +63,6 @@ class Settings(BaseSettings):
     # --- App config (from config.yaml) ---
     workspace: str = ""
     agents_dir: str = "agents"
-    output_dir: str = "output"
     db_path: str = "data/agentmd.db"
     mcp_config: str = "agents/mcp-servers.json"
     defaults_provider: str = "google"

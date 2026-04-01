@@ -9,18 +9,23 @@ Read files from the local filesystem with path security restrictions.
 ### Signature
 
 ```python
-def file_read(path: str) -> str
+def file_read(path: str, offset: int | None = None, limit: int | None = None, with_line_numbers: bool = True) -> str
 ```
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `path` | `str` | Yes | Absolute or relative path to file |
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | `str` | Yes | - | Absolute or relative path to file |
+| `offset` | `int` | No | `None` | 1-based line number to start reading from |
+| `limit` | `int` | No | `None` | Number of lines to read |
+| `with_line_numbers` | `bool` | No | `True` | Prefix each line with `N | ` |
 
 ### Behavior
 
 - **Relative paths** resolve from workspace root
 - **Absolute paths** checked against security restrictions
-- Returns file contents as UTF-8 string
+- Full reads are capped at 500 lines — use `offset` and `limit` for larger files
+- Binary files are rejected (files containing null bytes)
+- Returns file contents as UTF-8 string; lines prefixed as `N | ` when `with_line_numbers=True`
 - Returns error message if access denied or file not found
 
 ### Security Rules
@@ -51,6 +56,17 @@ paths: config/
 
 Read `config/app.json` and summarize the settings.
 ```
+
+**Read a large file in chunks:**
+```yaml
+---
+name: log-reader
+paths: logs/
+---
+
+Read lines 1-500 of `logs/app.log`, then lines 501-1000 if needed.
+```
+Use `file_read("logs/app.log", offset=1, limit=500)` then `file_read("logs/app.log", offset=501, limit=500)`.
 
 **Read from watched paths:**
 ```yaml
@@ -87,15 +103,16 @@ def file_write(path: str, content: str) -> str
 
 ### Behavior
 
-- **Relative paths** resolve from first directory in `paths` config, or `output/` if not specified
+- **Relative paths** resolve from workspace root
 - **Absolute paths** checked against security restrictions
+- Binary content is rejected (content containing null bytes)
 - Creates parent directories automatically
 - Overwrites existing files without warning
-- Returns confirmation with file path and character count
+- Returns confirmation: `Created path (N chars, M lines)` or `Updated path (N chars, M lines)`
 
 ### Security Rules
 
-1. **Allowed paths**: Only paths in agent's `paths` config (defaults to `output/`)
+1. **Allowed paths**: Only paths in agent's `paths` config (defaults to workspace root)
 2. **Blocked paths**: Cannot write to `agents/`, `.db`, `.env`, or `.env.*` files
 
 ### Configuration
@@ -104,7 +121,7 @@ def file_write(path: str, content: str) -> str
 ---
 name: report-generator
 paths:
-  - reports/          # Default write directory
+  - reports/
   - archive/
 ---
 ```
@@ -119,7 +136,7 @@ name: hello-world
 
 Write a greeting to `greeting.txt`.
 ```
-The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `{output_dir}/greeting.txt`
+The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `workspace/greeting.txt`
 
 **Generate timestamped reports:**
 ```yaml
@@ -130,7 +147,7 @@ paths: reports/
 
 Generate a daily summary and save to `reports/YYYY-MM-DD.md`.
 ```
-The agent will call `file_write("2026-03-11.md", "# Daily Report\n\n...")` → creates subdirectories automatically.
+The agent will call `file_write("reports/2026-03-11.md", "# Daily Report\n\n...")` → creates subdirectories automatically.
 
 **Create multi-file outputs:**
 ```yaml
@@ -140,9 +157,9 @@ paths: projects/my-app/
 ---
 
 Create project structure:
-- `src/main.py`
-- `src/utils.py`
-- `README.md`
+- `projects/my-app/src/main.py`
+- `projects/my-app/src/utils.py`
+- `projects/my-app/README.md`
 ```
 The agent calls `file_write` multiple times; parent directories are created automatically.
 
@@ -155,68 +172,59 @@ Read `logs/events.log`, append new entry, write back.
 
 ---
 
-## file_list
+## file_edit
 
-List files and directories at a given path (non-recursive) with path security restrictions.
+Edit files with targeted text replacement. Always read the file first with `file_read`.
 
 ### Signature
 
 ```python
-def file_list(path: str) -> str
+def file_edit(path: str, old_text: str, new_text: str, replace_all: bool = False) -> str
+```
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | `str` | Yes | - | Absolute or relative path to file |
+| `old_text` | `str` | Yes | - | Exact text to find and replace |
+| `new_text` | `str` | Yes | - | Replacement text |
+| `replace_all` | `bool` | No | `False` | Replace all occurrences |
+
+### Behavior
+
+- Replaces exact match of `old_text` with `new_text`
+- Fails if `old_text` not found (ensures precision)
+- Fails if multiple matches found and `replace_all=False`
+- Empty `old_text` creates a new file (fails if file already exists)
+- Returns summary with replacement count and lines changed
+
+### When to use
+
+- **`file_edit`**: surgical changes — fix a line, rename a variable, update a config value
+- **`file_write`**: create new files or full rewrites
+
+---
+
+## file_glob
+
+Find files matching a glob pattern. Use this to discover files before reading.
+
+### Signature
+
+```python
+def file_glob(pattern: str) -> str
 ```
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `path` | `str` | Yes | Absolute or relative path to directory |
+| `pattern` | `str` | Yes | Glob pattern (e.g. `**/*.py`, `src/**/*.md`) |
 
 ### Behavior
 
-- **Relative paths** resolve from workspace root
-- **Absolute paths** checked against security restrictions
-- Lists immediate contents only (non-recursive)
-- Returns a list of file and directory names
-- Returns error message if access denied or directory not found
-
-### Security Rules
-
-1. **Allowed paths**: Only paths in agent's `paths` config (defaults to workspace root)
-2. **Blocked paths**: Cannot list `agents/`, `.env`, or `.env.*` files
-
-### Configuration
-
-```yaml
----
-name: directory-browser
-paths:
-  - data/
-  - output/
----
-```
-
-### Examples
-
-**List directory contents:**
-```yaml
----
-name: file-scanner
-paths: ./data
----
-
-List all files in `data/` and summarize what's available.
-```
-
-**Use with file_read for discovery:**
-```yaml
----
-name: data-explorer
-paths:
-  - ./data
-  - ./output
----
-
-List the files in `data/`, then read and summarize each one.
-```
-The agent calls `file_list("data/")` to discover files, then `file_read` on each.
+- Globs from workspace root
+- Filtered by agent's allowed paths
+- Returns up to 100 absolute paths, sorted alphabetically
+- If more than 100 matches, shows first 100 with a count of omitted results
+- Read-only, no side effects
 
 ---
 
@@ -513,7 +521,9 @@ For full documentation, see [Skills](../skills.md).
 | Problem | Solution |
 |---|---|
 | `Access denied: 'data/file.txt' is outside allowed paths` | Add path to `paths` config: `paths: [data/]` |
-| `File not found: output/data.txt` | Verify file exists, check spelling (case-sensitive), verify path resolution |
+| `File not found: data/data.txt` | Verify file exists, check spelling (case-sensitive), verify path resolution |
+| `Binary file detected` | `file_read` and `file_write` only work with text files |
+| `old_text not found` | `file_edit` requires an exact match — read the file first with `file_read` |
 | `Request timed out after 30s` | Use faster APIs or split large requests into smaller chunks |
 | File created but empty | Verify `content` parameter isn't empty and agent generated content successfully |
 

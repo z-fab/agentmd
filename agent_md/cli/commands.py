@@ -52,7 +52,6 @@ def _resolve_workspace(workspace: Path | None) -> Path:
     return Path("./workspace").resolve()
 
 
-
 def _get_agents_for_picker(workspace: Path | None) -> list[AgentConfig]:
     """Bootstrap lightly to get agent list for interactive picker."""
     from agent_md.core.services import list_agents as svc_list
@@ -155,7 +154,7 @@ Choose the right tool for each use case — especially prefer memory tools over 
 ### Filesystem
 - file_read(path): Read a file. Only works within `paths`.
 - file_write(path, content): Write/create a file. Only works within `paths`. Creates parent dirs automatically.
-- file_list(path): List files and directories at the given path. Only works within `paths`.
+- file_glob(pattern): Find files matching a glob pattern (e.g. '**/*.py'). Only works within `paths`.
 
 ### HTTP
 - http_request(url, method="GET", headers=None, body=None): Make HTTP requests. Returns status code and response body.
@@ -192,7 +191,7 @@ paths:
 
 You are a summarization agent. Every day:
 
-1. Use `file_list` to discover files in the `logs/` directory.
+1. Use `file_glob` to discover files in the `logs/` directory (e.g. `file_glob('logs/**/*')`).
 2. Read each file using `file_read`.
 3. Generate a concise summary of the day's activity.
 4. Write the summary to `output/daily-summary-YYYY-MM-DD.md` using `file_write`.
@@ -241,7 +240,7 @@ def _ask_agent_details(agent_name: str) -> str:
         schedule_val = Prompt.ask("  [cyan]Schedule[/cyan] [dim](e.g. 30m, 2h, or cron: 0 9 * * *)[/dim]")
         if schedule_val.strip():
             if " " in schedule_val.strip():
-                trigger_extra = f"  cron: \"{schedule_val.strip()}\""
+                trigger_extra = f'  cron: "{schedule_val.strip()}"'
             else:
                 trigger_extra = f"  every: {schedule_val.strip()}"
     elif trigger_type == "watch":
@@ -252,7 +251,9 @@ def _ask_agent_details(agent_name: str) -> str:
             trigger_extra = f"  paths:\n{trigger_extra}"
 
     # Paths (unified read/write)
-    agent_paths = Prompt.ask("  [cyan]Paths[/cyan] [dim](comma-separated dirs the agent can access, or empty)[/dim]", default="")
+    agent_paths = Prompt.ask(
+        "  [cyan]Paths[/cyan] [dim](comma-separated dirs the agent can access, or empty)[/dim]", default=""
+    )
 
     # System prompt
     console.print()
@@ -386,7 +387,9 @@ async def _start_foreground(workspace: Path, on_event=None, quiet: bool = False)
 
     on_start = print_agent_start if on_event else None
     on_complete = print_agent_complete if on_event else None
-    runtime = await bootstrap(workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete, on_start=on_start)
+    runtime = await bootstrap(
+        workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete, on_start=on_start
+    )
 
     agents = runtime.registry.all()
     enabled = [a for a in agents if a.enabled]
@@ -458,10 +461,15 @@ def run(
     on_complete = print_agent_complete if not quiet else None
 
     try:
-        _, result = asyncio.run(run_agent(
-            agent_name, workspace,
-            on_event=on_event, on_start=on_start, on_complete=on_complete,
-        ))
+        _, result = asyncio.run(
+            run_agent(
+                agent_name,
+                workspace,
+                on_event=on_event,
+                on_start=on_start,
+                on_complete=on_complete,
+            )
+        )
     except AgentNotFoundError:
         print_error(f"Agent '{agent_name}' not found in workspace.", "Run 'agentmd list' to see available agents.")
         raise typer.Exit(1)
@@ -607,7 +615,6 @@ def logs(
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """Show recent execution history for an agent."""
-
 
     # Follow mode
     if follow:
@@ -778,6 +785,7 @@ def validate(
     # History (session memory)
     if result.history_level != "off":
         from agent_md.core.models import HISTORY_LIMITS
+
         limit = HISTORY_LIMITS[result.history_level]
         print_kv("History", f"{result.history_level} (last {limit} messages)")
     else:
