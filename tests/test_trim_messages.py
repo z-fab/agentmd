@@ -123,52 +123,28 @@ def test_message_ordering_invariants():
     assert isinstance(non_system[0], HumanMessage)
 
 
-def test_compact_false_preserves_skill_context():
-    """When compact=False, skill-context is NOT converted to breadcrumb."""
+def test_keeps_only_latest_system_message():
+    """Multiple SystemMessages from different runs — only the latest is kept."""
     messages = [
-        SystemMessage(content="system"),
-        HumanMessage(content="do stuff"),
-        AIMessage(
-            content="",
-            tool_calls=[{"id": "c1", "name": "skill_use", "args": {"skill_name": "review-pr"}}],
-        ),
-        ToolMessage(content="Skill activated", tool_call_id="c1", name="skill_use"),
-        HumanMessage(
-            content='<skill-context name="review-pr">\nFull instructions here\n</skill-context>',
-            additional_kwargs={"meta_type": "skill-context", "skill_name": "review-pr"},
-        ),
-        AIMessage(content="Following the skill."),
+        SystemMessage(content="system prompt run 1"),
+        HumanMessage(content="task 1"),
+        AIMessage(content="done 1"),
+        SystemMessage(content="system prompt run 2"),
+        HumanMessage(content="task 2"),
+        AIMessage(content="done 2"),
+        SystemMessage(content="system prompt run 3"),
+        HumanMessage(content="task 3"),
+        AIMessage(content="done 3"),
     ]
 
-    result = _trim_messages(messages, limit=100, compact=False)
+    result = _trim_messages(messages, limit=100)
 
-    # skill-context should be preserved (not converted to breadcrumb)
-    context_msgs = [m for m in result if m.additional_kwargs.get("meta_type") == "skill-context"]
-    assert len(context_msgs) == 1
-    assert "Full instructions here" in context_msgs[0].content
-    breadcrumb_msgs = [m for m in result if m.additional_kwargs.get("meta_type") == "skill-breadcrumb"]
-    assert len(breadcrumb_msgs) == 0
-
-
-def test_compact_false_preserves_large_tool_results():
-    """When compact=False, large tool results are NOT truncated."""
-    large_content = "x" * 1000
-    messages = [
-        SystemMessage(content="system"),
-        HumanMessage(content="read"),
-        AIMessage(
-            content="",
-            tool_calls=[{"id": "c1", "name": "file_read", "args": {"path": "/tmp/big.py"}}],
-        ),
-        ToolMessage(content=large_content, tool_call_id="c1", name="file_read"),
-        AIMessage(content="Got it."),
-    ]
-
-    result = _trim_messages(messages, limit=100, compact=False)
-
-    tool_msgs = [m for m in result if isinstance(m, ToolMessage)]
-    assert len(tool_msgs) == 1
-    assert tool_msgs[0].content == large_content
+    system_msgs = [m for m in result if isinstance(m, SystemMessage)]
+    assert len(system_msgs) == 1
+    assert system_msgs[0].content == "system prompt run 3"
+    # All non-system messages should still be present
+    non_system = [m for m in result if not isinstance(m, SystemMessage)]
+    assert len(non_system) == 6
 
 
 def test_tool_call_pairs_preserved():

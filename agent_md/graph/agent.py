@@ -50,31 +50,31 @@ def _compact_messages(messages: list) -> list:
     return compacted
 
 
-def _trim_messages(messages: list, limit: int, compact: bool = True) -> list:
-    """Compact and trim messages for the next LLM call.
+def _trim_messages(messages: list, limit: int) -> list:
+    """Compact and trim messages at the start of a new run.
 
-    Two-phase process:
-    1. Semantic compaction — skill-context → breadcrumb, large tool results → truncated
-       (only on first call of a run, when loading checkpoint messages)
-    2. Count-based trimming — keep last N non-system messages
+    Called ONCE at the beginning of each run (not mid-run) to prepare
+    checkpoint messages for the LLM. Three-phase process:
+
+    1. Keep only the latest SystemMessage (discard stale ones from previous runs)
+    2. Semantic compaction — skill-context → breadcrumb, large tool results → truncated
+    3. Count-based trimming — keep last N non-system messages
 
     Args:
-        messages: Full message list.
+        messages: Full message list (checkpoint + new initial state).
         limit: Max non-system messages to keep.
-        compact: Whether to apply semantic compaction (phase 1).
-            Should be True on first invocation (compacts checkpoint messages)
-            and False on subsequent calls within the same run.
     """
-    # Phase 1: semantic compaction (only for checkpoint messages)
-    if compact:
-        messages = _compact_messages(messages)
-
-    # Phase 2: count-based trimming
+    # Phase 1: keep only the latest system message
     system_msgs = [m for m in messages if getattr(m, "type", "") == "system"]
     other_msgs = [m for m in messages if getattr(m, "type", "") != "system"]
+    latest_system = [system_msgs[-1]] if system_msgs else []
 
+    # Phase 2: semantic compaction
+    other_msgs = _compact_messages(other_msgs)
+
+    # Phase 3: count-based trimming
     if len(other_msgs) <= limit:
-        return system_msgs + other_msgs
+        return latest_system + other_msgs
 
     start = len(other_msgs) - limit
     trimmed = other_msgs[start:]
@@ -85,7 +85,7 @@ def _trim_messages(messages: list, limit: int, compact: bool = True) -> list:
         start -= 1
         trimmed = [other_msgs[start]] + trimmed
 
-    return system_msgs + trimmed
+    return latest_system + trimmed
 
 
 class ReactAgent:
@@ -113,8 +113,8 @@ class ReactAgent:
     async def agent(self, state: AgentState) -> dict:
         """LLM node: reasons about the task and decides next action."""
         messages = state["messages"]
-        if self.memory_limit is not None:
-            messages = _trim_messages(messages, self.memory_limit, compact=self._first_call)
+        if self.memory_limit is not None and self._first_call:
+            messages = _trim_messages(messages, self.memory_limit)
             self._first_call = False
         response = await self.model.ainvoke(messages)
         return {"messages": [response]}
