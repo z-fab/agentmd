@@ -3,6 +3,25 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.2] - 2026-03-31
+
+### Added
+- **`file_edit` tool** — targeted in-place text replacement with `old_text`/`new_text`, single or bulk replace, and new file creation mode
+- **`file_glob` tool** — find files by glob pattern from workspace root, filtered by allowed paths, capped at 100 results
+
+### Improved
+- **`file_read`** — optional range reads with `offset`/`limit` parameters, line number prefixes, binary file detection (null byte check), and 500-line cap for full reads
+- **`file_write`** — binary content detection, richer return messages with `Created/Updated` status, char and line counts
+- **System prompt** — documents all four file tools with usage guidance, instructs agents to read before editing/overwriting
+
+### Changed
+- **Tools reorganization** — flat `agent_md/tools/` restructured into domain subpackages (`files/`, `memory/`, `skills/`, `http/`) for maintainability
+- **Unified path resolution** — removed `output_dir` concept; all file tools resolve relative paths from workspace root
+- **`file_list` removed** — replaced by `file_glob` which supports recursive patterns and is more useful for file discovery
+
+### Removed
+- **`output_dir`** — removed from settings, CLI setup, bootstrap, and documentation; agents write to workspace root or configured `paths`
+
 ## [0.6.1] - 2026-03-16
 
 ### Fixed
