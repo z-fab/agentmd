@@ -13,35 +13,48 @@ Agent.md uses a two-level path system:
 
 ## Workspace Structure
 
-Default layout with both levels:
+Default layout:
 
 ```
-workspace/
+~/.config/agentmd/
+└── config.yaml         # Application settings (auto-created on first run)
+
+~/agentmd/
+├── .env                # API keys (secrets)
 ├── agents/
 │   ├── agent1.md
 │   ├── agent2.md
 │   └── mcp-servers.json (optional)
 └── data/
-    └── results.txt
-
-data/
-└── agentmd.db
+    └── agentmd.db
 ```
 
 ## Global Paths (Runtime Level)
 
-Four paths can be configured at startup:
+Four paths can be configured:
 
 | Path | Description | Default |
 |------|-------------|---------|
-| `workspace` | Root directory for agents | `./workspace` |
+| `workspace` | Root directory for agents | `~/agentmd` |
 | `agents_dir` | Where `.md` files live | `{workspace}/agents` |
-| `db_path` | SQLite execution history | `./data/agentmd.db` |
+| `db_path` | SQLite execution history | `{workspace}/data/agentmd.db` |
 | `mcp_config` | MCP servers file | `{agents_dir}/mcp-servers.json` |
 
-### Configuration Methods
+### Configuration File
 
-#### CLI Arguments (Highest Priority)
+Runtime settings live in `~/.config/agentmd/config.yaml` (XDG standard). This file is **auto-created with defaults on first run** — no manual setup needed.
+
+```yaml
+# ~/.config/agentmd/config.yaml
+workspace: ~/agentmd
+agents_dir: agents          # relative to workspace
+
+defaults:
+  provider: google
+  model: gemini-2.5-flash
+```
+
+### CLI Arguments (Highest Priority)
 
 ```bash
 agentmd start \
@@ -52,30 +65,12 @@ agentmd start \
 # Available for: start, run, list
 ```
 
-#### Environment Variables
-
-```bash
-export AGENTMD_WORKSPACE=/path/to/workspace
-export AGENTMD_AGENTS_DIR=/path/to/agents
-export AGENTMD_DB_PATH=/path/to/db.db
-export AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
-```
-
-Or in `.env`:
-
-```env
-AGENTMD_WORKSPACE=/path/to/workspace
-AGENTMD_AGENTS_DIR=/path/to/agents
-AGENTMD_DB_PATH=/path/to/db.db
-AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
-```
-
 #### Defaults (Lowest Priority)
 
 ```
-workspace     → ./workspace
+workspace     → ~/agentmd
 agents_dir    → {workspace}/agents
-db_path       → ./data/agentmd.db
+db_path       → {workspace}/data/agentmd.db
 mcp_config    → {agents_dir}/mcp-servers.json
 ```
 
@@ -83,30 +78,32 @@ mcp_config    → {agents_dir}/mcp-servers.json
 
 **Example 1: All defaults**
 ```
-workspace  → ./workspace
-agents_dir → ./workspace/agents
-db_path    → ./data/agentmd.db
+config     → ~/.config/agentmd/config.yaml
+workspace  → ~/agentmd
+agents_dir → ~/agentmd/agents
+db_path    → ~/agentmd/data/agentmd.db
 ```
 
-**Example 2: Custom workspace via ENV**
-```env
-AGENTMD_WORKSPACE=/home/alice/my-agents
+**Example 2: Custom workspace via config.yaml**
+```yaml
+workspace: /home/alice/my-agents
 ```
 ```
 workspace  → /home/alice/my-agents
 agents_dir → /home/alice/my-agents/agents
-db_path    → ./data/agentmd.db
+db_path    → /home/alice/my-agents/data/agentmd.db
 ```
 
-**Example 3: Mixed CLI + ENV (CLI wins)**
-```env
-AGENTMD_WORKSPACE=/home/alice/agents
+**Example 3: Config + CLI (CLI wins)**
+```yaml
+# config.yaml
+workspace: /home/alice/agents
 ```
 ```bash
 agentmd start --db-path /var/lib/agentmd.db
 ```
 ```
-workspace  → /home/alice/agents           (ENV)
+workspace  → /home/alice/agents           (config.yaml)
 db_path    → /var/lib/agentmd.db          (CLI - highest)
 ```
 
@@ -250,7 +247,7 @@ paths:
 
 ### Development
 
-Use defaults:
+Use defaults (zero-config):
 
 ```bash
 agentmd start
@@ -258,38 +255,39 @@ agentmd start
 
 **Structure:**
 ```
-workspace/
-└── agents/
-data/
-└── agentmd.db
+~/.config/agentmd/config.yaml
+~/agentmd/
+├── .env
+├── agents/
+└── data/agentmd.db
 ```
 
 ### Production
 
-Separate data directories:
+Custom workspace via config:
 
-```env
-AGENTMD_WORKSPACE=/srv/agentmd/workspace
-AGENTMD_DB_PATH=/var/lib/agentmd/db.db
+```yaml
+# ~/.config/agentmd/config.yaml
+workspace: /srv/agentmd
 ```
 
 **Structure:**
 ```
-/srv/agentmd/workspace/agents/
-/var/lib/agentmd/db.db
+/srv/agentmd/agents/
+/srv/agentmd/data/agentmd.db
 ```
 
 ### Multi-Workspace
 
 ```bash
-agentmd start --workspace ~/projects/project1/agents
-agentmd start --workspace ~/projects/project2/agents
+agentmd start --workspace ~/projects/project1
+agentmd start --workspace ~/projects/project2
 ```
 
 ### Docker
 
 ```bash
-docker run -v ./workspace:/workspace -v ./data:/data agentmd start
+docker run -v ./agentmd:/root/agentmd agentmd start
 ```
 
 ## Best Practices
@@ -355,7 +353,7 @@ workspace/
 
 **Fix:** Check path:
 ```bash
-ls -la workspace/agents
+ls -la ~/agentmd/agents
 agentmd start --agents-dir /correct/path
 ```
 
@@ -385,10 +383,10 @@ mv workspace/agents/file.txt workspace/data/
 
 **Cause:** `db_path` directory missing
 
-**Fix:** Create parent:
+**Fix:** Create parent or use a custom path:
 ```bash
-mkdir -p data
-agentmd start --db-path ./data/agentmd.db
+mkdir -p ~/agentmd/data
+agentmd start --db-path ~/agentmd/data/agentmd.db
 ```
 
 ### "Permission denied"
@@ -397,7 +395,7 @@ agentmd start --db-path ./data/agentmd.db
 
 **Fix:** Use accessible paths:
 ```bash
-agentmd start --workspace ~/agentmd/workspace
+agentmd start --workspace ~/agentmd
 ```
 
 ## Related Documentation

@@ -52,9 +52,9 @@ agentmd config    # Show current configuration
 
 ## 2. Configuration
 
-The setup wizard creates two files in your workspace:
+Agent.md is zero-config by default — `~/.config/agentmd/config.yaml` is auto-created on first run with sensible defaults. The setup wizard can also create it for you.
 
-### `config.yaml` — Application settings
+### `~/.config/agentmd/config.yaml` — Application settings
 
 ```yaml
 workspace: ~/agentmd
@@ -65,7 +65,7 @@ defaults:
   model: gemini-2.5-flash
 ```
 
-### `.env` — API keys (secrets only)
+### `~/agentmd/.env` — API keys (secrets only)
 
 ```bash
 GOOGLE_API_KEY=your-key-here
@@ -177,7 +177,7 @@ This opens an interactive session where you type messages and the agent responds
 ## 6. Check the Output
 
 ```bash
-cat ~/agentmd/output/hello-output.txt
+cat ~/agentmd/hello-output.txt
 ```
 
 Example:

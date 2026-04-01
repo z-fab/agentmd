@@ -134,15 +134,15 @@ That's it! 🎉
 
 ## ⚙️ Configuration
 
-Agent.md uses two configuration files in your workspace:
+Agent.md uses two configuration files:
 
 | File | Purpose |
 |------|---------|
-| `config.yaml` | Application settings (paths, default model, log level) |
-| `.env` | Secrets only (API keys) |
+| `~/.config/agentmd/config.yaml` | Application settings (paths, default model) — auto-created on first run |
+| `~/agentmd/.env` | Secrets only (API keys) |
 
 ```yaml
-# config.yaml
+# ~/.config/agentmd/config.yaml
 workspace: ~/agentmd
 agents_dir: agents
 
@@ -152,7 +152,7 @@ defaults:
 ```
 
 ```bash
-# .env
+# ~/agentmd/.env
 GOOGLE_API_KEY=your-key-here
 ```
 
