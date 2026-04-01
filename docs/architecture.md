@@ -45,7 +45,7 @@ Extracts YAML frontmatter (config) and Markdown body (system prompt) from `.md` 
 Pydantic models validating:
 - **AgentConfig** — Top-level agent configuration
 - **ModelConfig** — LLM provider settings (model name, API key, temperature, etc.)
-- **SettingsConfig** — Runtime settings (output directory, timeout, max retries)
+- **SettingsConfig** — Runtime settings (timeout, max retries)
 - **ToolsConfig** — Tool definitions and parameters
 
 ### 3. Provider Factory (`agent_md/providers/factory.py`)
@@ -145,7 +145,6 @@ agent_md/
   cli/        → Typer CLI commands
 
 workspace/   → User agent .md files
-output/      → Default output directory for agent artifacts
 ```
 
 ## Typical Workflow

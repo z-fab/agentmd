@@ -6,7 +6,7 @@ Complete guide to path configuration and file access control in Agent.md.
 
 Agent.md uses a two-level path system:
 
-1. **Global paths (runtime)** — Configure where agents, outputs, and databases live
+1. **Global paths (runtime)** — Configure where agents and databases live
 2. **Agent paths (frontmatter)** — Declare what each agent can access
 
 **Resolution order:** CLI → ENV → Defaults
@@ -21,7 +21,7 @@ workspace/
 │   ├── agent1.md
 │   ├── agent2.md
 │   └── mcp-servers.json (optional)
-└── output/
+└── data/
     └── results.txt
 
 data/
@@ -30,13 +30,12 @@ data/
 
 ## Global Paths (Runtime Level)
 
-Five paths can be configured at startup:
+Four paths can be configured at startup:
 
 | Path | Description | Default |
 |------|-------------|---------|
 | `workspace` | Root directory for agents | `./workspace` |
 | `agents_dir` | Where `.md` files live | `{workspace}/agents` |
-| `output_dir` | Default output for all agents | `{workspace}/output` |
 | `db_path` | SQLite execution history | `./data/agentmd.db` |
 | `mcp_config` | MCP servers file | `{agents_dir}/mcp-servers.json` |
 
@@ -48,7 +47,6 @@ Five paths can be configured at startup:
 agentmd start \
   --workspace /path/to/workspace \
   --agents-dir /path/to/agents \
-  --output-dir /path/to/output \
   --db-path /path/to/db.db
 
 # Available for: start, run, list
@@ -59,7 +57,6 @@ agentmd start \
 ```bash
 export AGENTMD_WORKSPACE=/path/to/workspace
 export AGENTMD_AGENTS_DIR=/path/to/agents
-export AGENTMD_OUTPUT_DIR=/path/to/output
 export AGENTMD_DB_PATH=/path/to/db.db
 export AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
 ```
@@ -69,7 +66,6 @@ Or in `.env`:
 ```env
 AGENTMD_WORKSPACE=/path/to/workspace
 AGENTMD_AGENTS_DIR=/path/to/agents
-AGENTMD_OUTPUT_DIR=/path/to/output
 AGENTMD_DB_PATH=/path/to/db.db
 AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
 ```
@@ -79,7 +75,6 @@ AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
 ```
 workspace     → ./workspace
 agents_dir    → {workspace}/agents
-output_dir    → {workspace}/output
 db_path       → ./data/agentmd.db
 mcp_config    → {agents_dir}/mcp-servers.json
 ```
@@ -90,7 +85,6 @@ mcp_config    → {agents_dir}/mcp-servers.json
 ```
 workspace  → ./workspace
 agents_dir → ./workspace/agents
-output_dir → ./workspace/output
 db_path    → ./data/agentmd.db
 ```
 
@@ -101,21 +95,18 @@ AGENTMD_WORKSPACE=/home/alice/my-agents
 ```
 workspace  → /home/alice/my-agents
 agents_dir → /home/alice/my-agents/agents
-output_dir → /home/alice/my-agents/output
 db_path    → ./data/agentmd.db
 ```
 
 **Example 3: Mixed CLI + ENV (CLI wins)**
 ```env
 AGENTMD_WORKSPACE=/home/alice/agents
-AGENTMD_OUTPUT_DIR=/mnt/storage/output
 ```
 ```bash
 agentmd start --db-path /var/lib/agentmd.db
 ```
 ```
 workspace  → /home/alice/agents           (ENV)
-output_dir → /mnt/storage/output          (ENV)
 db_path    → /var/lib/agentmd.db          (CLI - highest)
 ```
 
@@ -268,8 +259,7 @@ agentmd start
 **Structure:**
 ```
 workspace/
-├── agents/
-└── output/
+└── agents/
 data/
 └── agentmd.db
 ```
@@ -280,14 +270,12 @@ Separate data directories:
 
 ```env
 AGENTMD_WORKSPACE=/srv/agentmd/workspace
-AGENTMD_OUTPUT_DIR=/var/lib/agentmd/output
 AGENTMD_DB_PATH=/var/lib/agentmd/db.db
 ```
 
 **Structure:**
 ```
 /srv/agentmd/workspace/agents/
-/var/lib/agentmd/output/
 /var/lib/agentmd/db.db
 ```
 
@@ -296,13 +284,6 @@ AGENTMD_DB_PATH=/var/lib/agentmd/db.db
 ```bash
 agentmd start --workspace ~/projects/project1/agents
 agentmd start --workspace ~/projects/project2/agents
-```
-
-### Shared Output
-
-```bash
-agentmd start --workspace /team/workspace1 --output-dir /shared/output
-agentmd start --workspace /team/workspace2 --output-dir /shared/output
 ```
 
 ### Docker
@@ -362,7 +343,7 @@ paths: /Users/alice/data
 ```
 workspace/
 ├── agents/
-├── output/
+├── data/
 └── config/
 ```
 
@@ -416,9 +397,7 @@ agentmd start --db-path ./data/agentmd.db
 
 **Fix:** Use accessible paths:
 ```bash
-agentmd start \
-  --workspace ~/agentmd/workspace \
-  --output-dir ~/agentmd/output
+agentmd start --workspace ~/agentmd/workspace
 ```
 
 ## Related Documentation
