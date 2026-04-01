@@ -12,6 +12,7 @@ from agent_md.graph.builder import create_react_graph, stream_agent_graph, strea
 from agent_md.mcp.manager import MCPManager
 from agent_md.providers.factory import create_chat_model
 from agent_md.tools.custom_loader import load_custom_tools
+from agent_md.graph.post_tool_processor import create_post_tool_processor
 from agent_md.tools.registry import resolve_builtin_tools
 
 logger = logging.getLogger(__name__)
@@ -142,7 +143,14 @@ class AgentRunner:
             memory_limit = HISTORY_LIMITS[config.history]
             logger.info(f"Session history enabled: level={config.history}, limit={memory_limit}")
 
-        return create_react_graph(chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit)
+        # Create post-tool processor for skill meta message injection
+        post_processor = None
+        if config.skills and self.path_context and self.path_context.skills_dir.exists():
+            post_processor = create_post_tool_processor(config, self.path_context.skills_dir)
+
+        return create_react_graph(
+            chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit, post_tool_processor=post_processor
+        )
 
     async def run(
         self,

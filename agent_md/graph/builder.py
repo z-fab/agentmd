@@ -9,7 +9,7 @@ from agent_md.graph.agent import ReactAgent
 from agent_md.graph.state import AgentState
 
 
-def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
+def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, post_tool_processor=None):
     """Create a compiled ReAct graph for a single agent.
 
     Convenience wrapper around ReactAgent.compile().
@@ -19,11 +19,12 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None):
         tools: List of LangChain tool objects available to this agent.
         checkpointer: Optional LangGraph checkpointer for session memory.
         memory_limit: Optional max number of non-system messages to send to the LLM.
+        post_tool_processor: Optional node function to run after tool execution.
 
     Returns:
         A compiled LangGraph StateGraph ready for ainvoke().
     """
-    agent = ReactAgent(chat_model, tools, memory_limit=memory_limit)
+    agent = ReactAgent(chat_model, tools, memory_limit=memory_limit, post_tool_processor=post_tool_processor)
     return agent.compile(checkpointer=checkpointer)
 
 
@@ -90,6 +91,10 @@ def build_system_message(
         skills_prompt = _build_skills_prompt(agent_config, path_context)
         if skills_prompt:
             extra_info += "\n\n" + skills_prompt
+
+        # Meta messages section — only when agent has skills configured
+        if agent_config.skills:
+            extra_info += "\n\n" + _build_meta_messages_prompt()
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
     return SystemMessage(content=full_prompt)
@@ -169,6 +174,20 @@ def _build_skills_prompt(agent_config, path_context) -> str:
         "You have access to the following skills. "
         "Use the `skill_use` tool to load a skill's full instructions when needed.\n\n"
         f"{skill_list}"
+    )
+
+
+def _build_meta_messages_prompt() -> str:
+    """Build the meta messages section of the system prompt."""
+    return (
+        "## Meta Messages\n\n"
+        "During this session, you may receive messages wrapped in special tags. "
+        "These are system-injected directives — treat them as instructions to follow, "
+        "not as user conversation.\n\n"
+        "- `<skill-context name=\"...\">`: A skill has been activated. "
+        "Follow the instructions inside exactly.\n"
+        "- `<skill-breadcrumb name=\"...\">`: A skill was activated in a previous run. "
+        "Noted for context only."
     )
 
 

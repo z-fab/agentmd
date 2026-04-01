@@ -391,7 +391,16 @@ Controls session history persistence via LangGraph checkpointing. Determines how
 - `high`: Last 200 messages — deep context for research and long projects
 - `off`: Stateless — no history between runs
 
-All messages are always saved to the checkpoint database; this setting only controls how many are sent to the LLM. See [Memory](memory.md) for details.
+All messages are always saved to the checkpoint database; this setting only controls how many are sent to the LLM.
+
+**Trimming behavior:** At the start of each run, the runtime applies smart compaction before count-based trimming:
+
+1. Only the latest `SystemMessage` is kept (stale prompts from previous runs are discarded)
+2. Skill instructions (`<skill-context>`) from previous runs are compacted to lightweight breadcrumbs
+3. Large tool results (>500 chars) are truncated
+4. Count-based limit is applied (10/50/200 messages)
+
+Trimming runs **only at the start of each run** — during execution, the full conversation is available to the LLM. See [Memory](memory.md) for details.
 
 ```yaml
 # Chat agent with extended history

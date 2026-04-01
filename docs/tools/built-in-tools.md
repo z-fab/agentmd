@@ -412,7 +412,7 @@ For detailed usage, examples, and best practices, see [Memory](../memory.md).
 
 ## skill_use
 
-Load a skill's instructions with variable substitutions applied. Only available when the agent has `skills` configured.
+Activate a skill. Only available when the agent has `skills` configured.
 
 ### Signature
 
@@ -422,15 +422,16 @@ def skill_use(skill_name: str, arguments: str = "") -> str
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `skill_name` | `str` | Yes | Name of the skill to load |
+| `skill_name` | `str` | Yes | Name of the skill to activate |
 | `arguments` | `str` | No | Arguments for variable substitution (`$ARGUMENTS`) |
 
 ### Behavior
 
 - Validates the skill is enabled for this agent
-- Parses the full `SKILL.md` (tier 2 loading)
-- Applies substitutions: `$ARGUMENTS`, `${SKILL_DIR}`, `` !`command` ``
-- Returns processed instructions with available scripts and references listed
+- Returns a short activation confirmation
+- The `post_tool_processor` graph node then loads the full `SKILL.md`, applies substitutions (`$ARGUMENTS`, `${SKILL_DIR}`, `` !`command` ``), and injects the instructions as a meta message (`HumanMessage` with `<skill-context>` tags)
+
+This design ensures skill instructions are treated as directives (user messages) rather than optional data (tool results), improving instruction-following by the LLM.
 
 ### Example
 
@@ -444,7 +445,7 @@ skills:
 Use skills to help with code tasks.
 ```
 
-Agent calls: `skill_use("review-code", "main.py")` → returns full review instructions with `main.py` substituted.
+Agent calls: `skill_use("review-code", "main.py")` → returns `"Skill 'review-code' activated successfully."` → skill instructions are injected as a follow-up meta message.
 
 ---
 
