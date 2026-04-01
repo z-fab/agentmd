@@ -270,6 +270,7 @@ $RECYCLE.BIN/
 *.db-wal
 
 # Agent.md
+config.yaml
 workspace/output/
 workspace/config.yaml
 workspace/agents/*

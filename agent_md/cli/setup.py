@@ -32,9 +32,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={agentmd_path} start --workspace {workspace}
+ExecStart={agentmd_path} start
 Restart=on-failure
-Environment=AGENTMD_WORKSPACE={workspace}
 
 [Install]
 WantedBy=default.target
@@ -52,8 +51,6 @@ LAUNCHD_PLIST_TEMPLATE = """\
     <array>
         <string>{agentmd_path}</string>
         <string>start</string>
-        <string>--workspace</string>
-        <string>{workspace}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -62,37 +59,25 @@ LAUNCHD_PLIST_TEMPLATE = """\
         <key>SuccessfulExit</key>
         <false/>
     </dict>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>AGENTMD_WORKSPACE</key>
-        <string>{workspace}</string>
-    </dict>
 </dict>
 </plist>
 """
 
 
-def _is_dev_repo() -> bool:
-    """Check if CWD is an agentmd development clone."""
-    pyproject = Path.cwd() / "pyproject.toml"
-    if not pyproject.is_file():
-        return False
-    try:
-        content = pyproject.read_text()
-        return 'name = "agentmd"' in content
-    except OSError:
-        return False
-
-
 def _default_workspace() -> Path:
-    """Return default workspace path based on context."""
-    if _is_dev_repo():
-        return (Path.cwd() / "workspace").resolve()
+    """Return default workspace path (always ~/agentmd)."""
     return Path.home() / "agentmd"
 
 
+def _get_config_dir() -> Path:
+    """Get the config directory (~/.config/agentmd)."""
+    config_dir = Path.home() / ".config" / "agentmd"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
+
+
 def _write_config_yaml(workspace: Path, provider: str, model: str):
-    """Write config.yaml to workspace."""
+    """Write config.yaml to ~/.config/agentmd/config.yaml."""
     config = {
         "workspace": str(workspace),
         "agents_dir": "agents",
@@ -104,7 +89,7 @@ def _write_config_yaml(workspace: Path, provider: str, model: str):
         },
         "log_level": "INFO",
     }
-    config_path = workspace / "config.yaml"
+    config_path = _get_config_dir() / "config.yaml"
     config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
 
 
@@ -150,54 +135,7 @@ def _create_workspace(workspace: Path, provider: str, model: str):
         mcp_config.write_text("{}\n")
 
 
-def _export_workspace_env(workspace: Path):
-    """Export AGENTMD_WORKSPACE in the user's shell profile."""
-    system = platform.system()
-    workspace_str = str(workspace)
-
-    if system == "Windows":
-        try:
-            subprocess.run(
-                ["setx", "AGENTMD_WORKSPACE", workspace_str],
-                check=True,
-                capture_output=True,
-            )
-            console.print(f"  Set AGENTMD_WORKSPACE={workspace_str} in user environment")
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            console.print("  [yellow]Could not set AGENTMD_WORKSPACE automatically.[/]")
-            console.print(f"  Add this to your environment: AGENTMD_WORKSPACE={workspace_str}")
-        return
-
-    # Unix: append to shell profile
-    shell_name = os.path.basename(os.environ.get("SHELL", "bash"))
-    if shell_name == "zsh":
-        profile = Path.home() / ".zshrc"
-    elif shell_name == "bash":
-        profile = Path.home() / ".bashrc"
-    else:
-        profile = Path.home() / ".profile"
-
-    export_line = f'export AGENTMD_WORKSPACE="{workspace_str}"'
-
-    if profile.is_file():
-        content = profile.read_text()
-        if "AGENTMD_WORKSPACE=" in content:
-            new_lines = []
-            for line in content.splitlines():
-                if "AGENTMD_WORKSPACE=" in line:
-                    new_lines.append(export_line)
-                else:
-                    new_lines.append(line)
-            profile.write_text("\n".join(new_lines) + "\n")
-            console.print(f"  Updated AGENTMD_WORKSPACE in {profile}")
-            return
-
-    with profile.open("a") as f:
-        f.write(f"\n{export_line}\n")
-    console.print(f"  Added AGENTMD_WORKSPACE to {profile}")
-
-
-def _setup_autostart(workspace: Path) -> bool:
+def _setup_autostart() -> bool:
     """Configure auto-start based on platform. Returns True if configured."""
     agentmd_path = shutil.which("agentmd")
     if not agentmd_path:
@@ -205,7 +143,6 @@ def _setup_autostart(workspace: Path) -> bool:
         return False
 
     system = platform.system()
-    workspace_str = str(workspace)
 
     if system == "Linux":
         systemd_dir = Path.home() / ".config" / "systemd" / "user"
@@ -215,7 +152,7 @@ def _setup_autostart(workspace: Path) -> bool:
 
         systemd_dir.mkdir(parents=True, exist_ok=True)
         unit_path = systemd_dir / "agentmd.service"
-        unit_path.write_text(SYSTEMD_UNIT_TEMPLATE.format(agentmd_path=agentmd_path, workspace=workspace_str))
+        unit_path.write_text(SYSTEMD_UNIT_TEMPLATE.format(agentmd_path=agentmd_path))
         subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, capture_output=True)
         subprocess.run(["systemctl", "--user", "enable", "agentmd.service"], check=True, capture_output=True)
         console.print("  Created and enabled systemd user service")
@@ -225,7 +162,7 @@ def _setup_autostart(workspace: Path) -> bool:
         plist_dir = Path.home() / "Library" / "LaunchAgents"
         plist_dir.mkdir(parents=True, exist_ok=True)
         plist_path = plist_dir / "me.zfab.agentmd.plist"
-        plist_path.write_text(LAUNCHD_PLIST_TEMPLATE.format(agentmd_path=agentmd_path, workspace=workspace_str))
+        plist_path.write_text(LAUNCHD_PLIST_TEMPLATE.format(agentmd_path=agentmd_path))
         console.print(f"  Created Launch Agent at {plist_path}")
         return True
 
@@ -258,15 +195,15 @@ def _setup_autostart(workspace: Path) -> bool:
 
 def _build_config_panel():
     """Build a Rich Panel showing the current effective configuration."""
-    from agent_md.core.settings import Settings, _find_config_yaml, _find_env_file
+    from agent_md.core.settings import Settings, _ensure_default_config, _find_env_file
 
-    config_yaml = _find_config_yaml()
+    config_yaml = _ensure_default_config()
     env_file = _find_env_file()
 
     # Reload settings fresh
     current = Settings()
 
-    workspace = current.workspace or ("./workspace" if _is_dev_repo() else str(Path.home() / "agentmd"))
+    workspace = current.workspace or str(Path.home() / "agentmd")
     ws_path = Path(workspace).expanduser().resolve()
 
     # Detect which providers have keys
@@ -310,7 +247,7 @@ def setup(
 ):
     """Interactive setup wizard for Agent.md."""
     from agent_md import __version__
-    from agent_md.core.settings import _find_config_yaml
+    from agent_md.core.settings import _ensure_default_config, _get_config_path
 
     console.print()
     console.print(
@@ -321,9 +258,9 @@ def setup(
     )
 
     # Check for existing setup
-    existing_config = _find_config_yaml()
+    existing_config = _get_config_path().exists()
     if existing_config and not reconfigure:
-        console.print(f"\n[green]Existing configuration found:[/] {existing_config}")
+        console.print(f"\n[green]Existing configuration found:[/] {_get_config_path()}")
         if not Confirm.ask("Do you want to reconfigure?", default=False):
             console.print("\n[green]Setup complete![/] Your configuration is already in place.")
             raise typer.Exit()
@@ -373,22 +310,17 @@ def setup(
 
     # Write config.yaml
     _write_config_yaml(workspace, provider, model)
-    console.print(f"  Config written to {workspace / 'config.yaml'}")
+    config_path = _get_config_dir() / "config.yaml"
+    console.print(f"  Config written to {config_path}")
 
     # Write .env (secrets only)
     env_path = workspace / ".env"
     _write_env_file(env_path, api_key, env_var)
     console.print(f"  Secrets written to {env_path}")
 
-    # Set env var in current process
-    os.environ["AGENTMD_WORKSPACE"] = str(workspace)
-
-    # Export AGENTMD_WORKSPACE in shell profile
-    _export_workspace_env(workspace)
-
     # Auto-start
     if autostart:
-        _setup_autostart(workspace)
+        _setup_autostart()
 
     # Summary
     console.print(
@@ -398,14 +330,14 @@ def setup(
                     f"[bold]Workspace:[/]     {workspace}",
                     f"[bold]Provider:[/]      {provider}",
                     f"[bold]Model:[/]         {model}",
-                    f"[bold]Config:[/]        {workspace / 'config.yaml'}",
+                    f"[bold]Config:[/]        {config_path}",
                     f"[bold]Secrets:[/]       {env_path}",
                     f"[bold]Auto-start:[/]    {'enabled' if autostart else 'disabled'}",
                     "",
                     "[bold]Next steps:[/]",
-                    "  agentmd start           \u2014 Start the runtime",
-                    "  agentmd run hello-world \u2014 Run the sample agent",
-                    "  agentmd config          \u2014 Show current configuration",
+                    "  agentmd start           — Start the runtime",
+                    "  agentmd run hello-world — Run the sample agent",
+                    "  agentmd config          — Show current configuration",
                 ]
             ),
             title="Setup Complete",
