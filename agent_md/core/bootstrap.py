@@ -52,7 +52,6 @@ def _resolve_path(value: str, workspace: Path) -> Path:
 async def bootstrap(
     workspace: Path | None = None,
     agents_dir: Path | None = None,
-    output_dir: Path | None = None,
     db_path: Path | None = None,
     mcp_config: Path | None = None,
     start_scheduler: bool = False,
@@ -65,7 +64,6 @@ async def bootstrap(
     Args:
         workspace: Root workspace directory.
         agents_dir: Directory containing .md agent files. Defaults to {workspace}/agents.
-        output_dir: Default output directory for agents. Defaults to {workspace}/output.
         db_path: Path to SQLite database. Defaults to {workspace}/data/agentmd.db.
         mcp_config: Path to MCP servers JSON config. Defaults to {agents_dir}/mcp-servers.json.
         start_scheduler: Whether to start the scheduler and file watcher.
@@ -86,10 +84,6 @@ async def bootstrap(
     if agents_dir is None:
         agents_dir = _resolve_path(settings.agents_dir, workspace)
     agents_dir = agents_dir.resolve()
-
-    if output_dir is None:
-        output_dir = _resolve_path(settings.output_dir, workspace)
-    output_dir = output_dir.resolve()
 
     if db_path is None:
         db_path = _resolve_path(settings.db_path, workspace)
@@ -112,7 +106,7 @@ async def bootstrap(
     )
 
     # Ensure directories exist
-    for d in (workspace, agents_dir, output_dir, db_path.parent, skills_dir):
+    for d in (workspace, agents_dir, db_path.parent, skills_dir):
         if not d.exists():
             d.mkdir(parents=True)
             logger.info(f"Created directory: {d}")

@@ -96,7 +96,6 @@ def _write_config_yaml(workspace: Path, provider: str, model: str):
     config = {
         "workspace": str(workspace),
         "agents_dir": "agents",
-        "output_dir": "output",
         "db_path": "data/agentmd.db",
         "mcp_config": "agents/mcp-servers.json",
         "defaults": {
@@ -126,10 +125,9 @@ def _create_workspace(workspace: Path, provider: str, model: str):
     """Create workspace directory structure, hello-world agent, and MCP config."""
     agents_dir = workspace / "agents"
     tools_dir = agents_dir / "tools"
-    output_dir = workspace / "output"
     data_dir = workspace / "data"
 
-    for d in (agents_dir, tools_dir, output_dir, data_dir):
+    for d in (agents_dir, tools_dir, data_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     # Hello-world agent (no model — uses default from config.yaml)

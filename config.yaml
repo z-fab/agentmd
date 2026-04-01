@@ -1,6 +1,5 @@
 workspace: ./workspace
 agents_dir: agents
-output_dir: output
 db_path: data/agentmd.db
 mcp_config: agents/mcp-servers.json
 
