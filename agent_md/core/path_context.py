@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,11 +54,13 @@ class PathContext:
         # Security checks
         error = self._check_security(resolved)
         if error:
+            logger.warning("Security check failed for '%s': %s", path, error)
             return None, error
 
         # Check against allowed paths
         allowed = self.get_allowed_paths(config)
         if not self._is_within_any(resolved, allowed):
+            logger.warning("Path '%s' is outside allowed paths: %s", path, [str(p) for p in allowed])
             return None, f"Access denied: '{path}' is outside allowed paths"
 
         return resolved, None
@@ -88,7 +93,7 @@ class PathContext:
     def _is_within(self, path: Path, directory: Path) -> bool:
         """Check if path is within a directory (follows symlinks)."""
         try:
-            path.relative_to(directory.resolve())
+            path.relative_to(directory)
             return True
         except ValueError:
             return False
@@ -96,13 +101,12 @@ class PathContext:
     def _is_within_any(self, path: Path, directories: list[Path]) -> bool:
         """Check if path is within any of the given directories/files."""
         for d in directories:
-            d_resolved = d.resolve()
-            if d_resolved.is_file() or d_resolved.suffix:
+            if d.is_file() or d.suffix:
                 # It's a file path — exact match only
-                if path == d_resolved:
+                if path == d:
                     return True
             else:
                 # It's a directory — check containment
-                if self._is_within(path, d_resolved):
+                if self._is_within(path, d):
                     return True
         return False
