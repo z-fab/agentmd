@@ -92,8 +92,9 @@ def build_system_message(
         if skills_prompt:
             extra_info += "\n\n" + skills_prompt
 
-        # Meta messages section — always included when agent has context
-        extra_info += "\n\n" + _build_meta_messages_prompt()
+        # Meta messages section — only when agent has skills configured
+        if agent_config.skills:
+            extra_info += "\n\n" + _build_meta_messages_prompt()
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
     return SystemMessage(content=full_prompt)
