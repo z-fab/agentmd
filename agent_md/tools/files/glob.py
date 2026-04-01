@@ -21,20 +21,19 @@ def create_file_glob_tool(agent_config, path_context):
             Matching file paths (one per line), or an error message.
         """
         workspace = path_context.workspace_root
-        allowed = path_context.get_allowed_paths(agent_config)
 
         try:
             all_matches = sorted(workspace.glob(pattern))
         except Exception as e:
             return f"ERROR: Invalid glob pattern: {e}"
 
-        # Filter to only files (not directories) within allowed paths
+        # Filter to only files within allowed paths that pass security checks
         matches = []
         for match in all_matches:
             if not match.is_file():
                 continue
-            resolved = match.resolve()
-            if path_context._is_within_any(resolved, allowed):
+            resolved, error = path_context.validate_path(str(match), agent_config)
+            if error is None:
                 matches.append(resolved)
 
         if not matches:
