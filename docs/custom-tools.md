@@ -28,10 +28,12 @@ use, import the helper from `agent_md.sandbox`:
 from langchain_core.tools import tool
 from agent_md.sandbox import validate_path
 
-@tool
-def my_custom_tool(file: str, agent_config, path_context) -> str:
-    resolved, error = validate_path(file, agent_config, path_context)
-    if error:
-        return error
-    return resolved.read_text()
+def create_my_tool(agent_config, path_context):
+    @tool
+    def my_custom_tool(file: str) -> str:
+        resolved, error = validate_path(file, agent_config, path_context)
+        if error:
+            return error
+        return resolved.read_text()
+    return my_custom_tool
 ```

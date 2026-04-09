@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime
 from typing import AsyncGenerator
 
@@ -7,6 +9,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from agent_md.graph.agent import ReactAgent
 from agent_md.graph.state import AgentState
+
+logger = logging.getLogger(__name__)
 
 
 def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, post_tool_processor=None):
@@ -104,6 +108,12 @@ def build_system_message(
 
     cwd = str(path_context.workspace_root) if path_context else None
     full_prompt = apply_substitutions(full_prompt, arguments=arguments, cwd=cwd)
+
+    if arguments and not re.search(r"\$(?:ARGUMENTS|\d)", system_prompt):
+        logger.warning(
+            "Arguments passed to agent '%s' but prompt contains no $ARGUMENTS or $0..$9 placeholders",
+            agent_config.name if agent_config else "unknown",
+        )
 
     return SystemMessage(content=full_prompt)
 

@@ -4,16 +4,18 @@ Custom tools run with full process permissions — AgentMD does not enforce
 the agent's `paths` whitelist on them. Use this helper to opt-in to
 the same path validation that built-in tools use.
 
-Example:
+Example::
 
     from agent_md.sandbox import validate_path
 
-    @tool
-    def my_custom_tool(file: str, agent_config, path_context) -> str:
-        resolved, error = validate_path(file, agent_config, path_context)
-        if error:
-            return error
-        # ... safe to read/write `resolved`
+    def create_my_tool(agent_config, path_context):
+        @tool
+        def my_custom_tool(file: str) -> str:
+            resolved, error = validate_path(file, agent_config, path_context)
+            if error:
+                return error
+            return resolved.read_text()
+        return my_custom_tool
 """
 
 from __future__ import annotations
