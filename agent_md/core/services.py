@@ -147,13 +147,14 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
     paths_valid = []
     paths_missing = []
     warnings = []
-    for pp in config.paths:
-        p = _resolve_relative(pp, ws)
+    for alias, entry in config.paths.items():
+        p = _resolve_relative(entry.path, ws)
+        label = f"{alias} → {entry.path}"
         if p.exists():
-            paths_valid.append(pp)
+            paths_valid.append(label)
         else:
-            paths_missing.append(pp)
-            warnings.append(f"path: {pp} (does not exist yet)")
+            paths_missing.append(label)
+            warnings.append(f"path: {label} (does not exist yet)")
 
     # Check MCP servers
     mcp_configured = []
