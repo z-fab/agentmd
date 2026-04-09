@@ -5,6 +5,29 @@ from pydantic import BaseModel, field_validator, model_validator
 
 HISTORY_LIMITS = {"low": 10, "medium": 50, "high": 200}
 
+RESERVED_ALIASES = {"workspace", "skill_dir", "today", "now", "agents", "tools", "skills"}
+
+ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+class PathEntry(BaseModel):
+    """A named path entry in an agent's `paths` dict.
+
+    Accepts either a plain string (treated as `path` with no description)
+    or a dict with `path` and optional `description`.
+    """
+
+    path: str
+    description: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_string(cls, data):
+        """Allow `paths.alias: "/abs/path"` shorthand."""
+        if isinstance(data, str):
+            return {"path": data}
+        return data
+
 
 class TriggerConfig(BaseModel):
     """Configuration for agent triggers."""
