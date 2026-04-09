@@ -343,31 +343,33 @@ When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, 
 
 | Property | Value |
 |----------|-------|
-| **Type** | string \| string[] |
+| **Type** | dict[string, string] |
 | **Required** | No |
 | **Default** | `[workspace_root]` |
 
-Allowed paths for file operations (reading, writing, editing, and discovering files). See [Security & Paths](paths-and-security.md) for detailed options.
+Allowed paths for file operations (reading, writing, editing, and discovering files). Each key is a named alias, each value is the path. Use `{alias}` syntax in prompts and file tools. See [Security & Paths](paths-and-security.md) for detailed options.
 
-- Can be single path (string) or multiple paths (array)
+- Keys are alias names, values are paths
 - Relative paths resolve from workspace root
 - Absolute paths used as-is
 - Supports home directory expansion (`~`)
+- All file tools accept `{alias}` syntax: `file_read("{data}/input.csv")`
 
 ```yaml
 # Single directory
-paths: ./data
+paths:
+  data: ./data
 
 # Multiple paths
 paths:
-  - ./data
-  - ./logs
-  - /var/log/app
+  data: ./data
+  logs: ./logs
+  app_logs: /var/log/app
 
 # Specific files
 paths:
-  - ./config/settings.json
-  - ./data/input.csv
+  settings: ./config/settings.json
+  input: ./data/input.csv
 ```
 
 **Security restrictions:**

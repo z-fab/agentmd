@@ -109,24 +109,28 @@ db_path    → /var/lib/agentmd.db          (CLI - highest)
 
 ## Agent Paths (Frontmatter Level)
 
-Each agent declares allowed paths in frontmatter. The `paths` field controls which directories and files the agent can access for reading, writing, and listing.
+Each agent declares allowed paths in frontmatter. The `paths` field is a **dict of named aliases** that controls which directories and files the agent can access for reading, writing, and listing.
 
 ### Configuration
 
 ```yaml
 paths:
-  - ./data
-  - ./output
+  data: ./data
+  output: ./output
 ```
 
 **Defaults:** `[workspace_root]` (entire workspace)
 
 **Behavior:**
+- Each key is an alias name, each value is the path
 - Directory: access all files within (recursive)
 - File: access specific file only
 - Relative paths resolve from `workspace_root` (for both reads and writes)
 - Absolute paths used as-is
 - `~` expanded to home directory
+- All file tools accept `{alias}` syntax: `file_read("{data}/input.csv")`
+
+**Resolution order:** alias → absolute → relative
 
 **Examples:**
 
@@ -134,32 +138,34 @@ paths:
 # Access entire workspace (default, omit field)
 
 # Single directory
-paths: ./data
+paths:
+  data: ./data
 
 # Multiple locations
 paths:
-  - ./data
-  - ./logs
-  - /var/log/app
-  - ./output
+  data: ./data
+  logs: ./logs
+  app_logs: /var/log/app
+  output: ./output
 
 # Specific files
 paths:
-  - ./config/settings.json
-  - ./data/input.csv
-  - ./output/result.txt
+  settings: ./config/settings.json
+  input: ./data/input.csv
+  result: ./output/result.txt
 ```
 
 **Path resolution example:**
 
 ```yaml
 paths:
-  - ./reports
-  - ./data
+  reports: ./reports
+  data: ./data
 ```
 
-When agent writes `reports/summary.txt`:
-- Resolves to: workspace root + `reports/summary.txt`
+When agent calls `file_write("{reports}/summary.txt", content)`:
+- `{reports}` resolves to workspace root + `reports/`
+- Final path: `workspace_root/reports/summary.txt`
 
 ## Security Restrictions
 
@@ -202,8 +208,8 @@ trigger:
   paths:
     - ./data/input.txt
 paths:
-  - ./config
-  - ./output
+  config: ./config
+  output: ./output
 # Can access ./data/input.txt, ./config, AND ./output
 ```
 
@@ -212,35 +218,36 @@ paths:
 ### Minimal Access
 
 ```yaml
-paths: ./data
-# Can only access ./data
+paths:
+  data: ./data
+# Can only access ./data via {data}
 ```
 
 ### Isolated Agent
 
 ```yaml
 paths:
-  - ./data/input
-  - ./output/agent1
+  input: ./data/input
+  output: ./output/agent1
 ```
 
 ### Multi-Source Agent
 
 ```yaml
 paths:
-  - ./data
-  - ./logs
-  - /var/log/app
-  - ./reports
+  data: ./data
+  logs: ./logs
+  app_logs: /var/log/app
+  reports: ./reports
 ```
 
 ### Specific File Access
 
 ```yaml
 paths:
-  - ./config/settings.json
-  - ./data/input.csv
-  - ./output/result.txt
+  settings: ./config/settings.json
+  input: ./data/input.csv
+  result: ./output/result.txt
 ```
 
 ## Setup Examples
@@ -299,11 +306,12 @@ Grant minimum necessary access:
 ```yaml
 # ✅ Good: specific paths
 paths:
-  - ./data/input
-  - ./output/results
+  input: ./data/input
+  results: ./output/results
 
 # ❌ Avoid: overly broad
-paths: /
+paths:
+  root: /
 ```
 
 ### Separate Concerns
@@ -313,13 +321,13 @@ Use different directories per agent:
 ```yaml
 # Agent 1
 paths:
-  - ./data/agent1
-  - ./output/agent1
+  data: ./data/agent1
+  output: ./output/agent1
 
 # Agent 2
 paths:
-  - ./data/agent2
-  - ./output/agent2
+  data: ./data/agent2
+  output: ./output/agent2
 ```
 
 ### Use Relative Paths
@@ -329,11 +337,12 @@ Prefer relative for portability:
 ```yaml
 # ✅ Portable
 paths:
-  - ./data
-  - ./output
+  data: ./data
+  output: ./output
 
 # ⚠️ Machine-specific
-paths: /Users/alice/data
+paths:
+  data: /Users/alice/data
 ```
 
 ### Keep Workspace Self-Contained
@@ -364,10 +373,10 @@ agentmd start --agents-dir /correct/path
 **Fix:** Add to `paths`:
 ```yaml
 paths:
-  - ./data
-  - ./logs    # Add missing
-  - ./output
-  - /tmp/cache  # Add missing
+  data: ./data
+  logs: ./logs         # Add missing
+  output: ./output
+  cache: /tmp/cache    # Add missing
 ```
 
 ### "Access denied: cannot read from agents directory"
