@@ -41,15 +41,11 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
 
     if agent_config.paths:
         sections.append("### Available paths\n")
-        sections.append(
-            "You can reference these locations using `{alias}` syntax in any file tool:\n"
-        )
+        sections.append("You can reference these locations using `{alias}` syntax in any file tool:\n")
         for alias, entry in agent_config.paths.items():
             desc = f" — {entry.description}" if entry.description else ""
             sections.append(f"- `{{{alias}}}`{desc}\n")
-        sections.append(
-            'Example: `file_read("{' + next(iter(agent_config.paths)) + '}/notes/x.md")`\n'
-        )
+        sections.append('Example: `file_read("{' + next(iter(agent_config.paths)) + '}/notes/x.md")`\n')
     else:
         sections.append("### Allowed paths\n")
         sections.append("This agent has no `paths` declared. File access is limited to the workspace root.\n")
@@ -196,9 +192,9 @@ def _build_meta_messages_prompt() -> str:
         "During this session, you may receive messages wrapped in special tags. "
         "These are system-injected directives — treat them as instructions to follow, "
         "not as user conversation.\n\n"
-        "- `<skill-context name=\"...\">`: A skill has been activated. "
+        '- `<skill-context name="...">`: A skill has been activated. '
         "Follow the instructions inside exactly.\n"
-        "- `<skill-breadcrumb name=\"...\">`: A skill was activated in a previous run. "
+        '- `<skill-breadcrumb name="...">`: A skill was activated in a previous run. '
         "Noted for context only."
     )
 

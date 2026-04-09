@@ -1,6 +1,5 @@
 """Tests for expanded _trim_messages with smart compaction."""
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from agent_md.graph.agent import _trim_messages

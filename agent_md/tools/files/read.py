@@ -117,7 +117,7 @@ def create_file_read_tool(agent_config, path_context):
                 tail = (
                     f"\n\nNOTE: file has {total_lines} lines, showed {start_line}-{end_line}. "
                     f"{remaining} more lines remain. "
-                    f'Call file_read again with offset={next_offset}, limit={MAX_LINES} to continue.'
+                    f"Call file_read again with offset={next_offset}, limit={MAX_LINES} to continue."
                 )
             return f"{header}\n{body}{tail}"
 

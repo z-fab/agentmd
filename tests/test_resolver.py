@@ -1,7 +1,6 @@
 """Tests for internal skill content resolver."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from agent_md.tools.skills._resolver import resolve_skill_content

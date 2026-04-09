@@ -177,15 +177,9 @@ class AgentConfig(BaseModel):
             if not isinstance(alias, str):
                 raise ValueError(f"path alias must be a string, got {type(alias).__name__}")
             if alias in RESERVED_ALIASES:
-                raise ValueError(
-                    f"path alias '{alias}' is reserved. "
-                    f"Reserved names: {sorted(RESERVED_ALIASES)}"
-                )
+                raise ValueError(f"path alias '{alias}' is reserved. Reserved names: {sorted(RESERVED_ALIASES)}")
             if not ALIAS_PATTERN.match(alias):
-                raise ValueError(
-                    f"path alias '{alias}' is invalid. "
-                    "Aliases must match [a-z][a-z0-9_]*."
-                )
+                raise ValueError(f"path alias '{alias}' is invalid. Aliases must match [a-z][a-z0-9_]*.")
         return v
 
     @field_validator("name")
