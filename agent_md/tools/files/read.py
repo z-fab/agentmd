@@ -110,7 +110,16 @@ def create_file_read_tool(agent_config, path_context):
             else:
                 body = "\n".join(lines)
 
-            return f"{header}\n{body}"
+            tail = ""
+            if end_line < total_lines:
+                next_offset = end_line + 1
+                remaining = total_lines - end_line
+                tail = (
+                    f"\n\nNOTE: file has {total_lines} lines, showed {start_line}-{end_line}. "
+                    f"{remaining} more lines remain. "
+                    f"Call file_read again with offset={next_offset}, limit={MAX_LINES} to continue."
+                )
+            return f"{header}\n{body}{tail}"
 
         except Exception as e:
             return f"ERROR reading file: {e}"

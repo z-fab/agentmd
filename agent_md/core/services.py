@@ -35,6 +35,7 @@ async def run_agent(
     on_event=None,
     on_start=None,
     on_complete=None,
+    arguments: str = "",
 ) -> tuple[AgentConfig, dict]:
     """Execute a single agent by name and return ``(config, result)``."""
     async with _runtime(workspace) as rt:
@@ -48,6 +49,7 @@ async def run_agent(
             on_event=on_event,
             on_start=on_start,
             on_complete=on_complete,
+            arguments=arguments,
         )
         return config, result
 
@@ -147,13 +149,14 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
     paths_valid = []
     paths_missing = []
     warnings = []
-    for pp in config.paths:
-        p = _resolve_relative(pp, ws)
+    for alias, entry in config.paths.items():
+        p = _resolve_relative(entry.path, ws)
+        label = f"{alias} → {entry.path}"
         if p.exists():
-            paths_valid.append(pp)
+            paths_valid.append(label)
         else:
-            paths_missing.append(pp)
-            warnings.append(f"path: {pp} (does not exist yet)")
+            paths_missing.append(label)
+            warnings.append(f"path: {label} (does not exist yet)")
 
     # Check MCP servers
     mcp_configured = []

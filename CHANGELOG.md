@@ -3,6 +3,36 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0] — 2026-04-08
+
+### Breaking Changes
+
+- **`paths` field is now a dict of named aliases** — the list format (`paths: [/a, /b]`) is no longer accepted. Migrate to named aliases:
+  ```yaml
+  paths:
+    vault: /Users/x/vault
+    inbox: /Users/x/inbox
+  ```
+  `agentmd validate` detects the old format and prints a migration hint. See [Path Model](docs/path-model.md).
+
+### Added
+
+- **Named path aliases** — declare `paths` as a dict with aliases like `vault`, `inbox`, `output`. Use `{alias}` syntax in prompts and file tools: `file_read("{vault}/daily/x.md")`.
+- **`$ARGUMENTS` and `!`cmd`` in agent prompts** — pass arguments via `agentmd run my-agent -- arg1 arg2`, reference them as `$ARGUMENTS`, `$0`, `$1` in the system prompt. Shell commands via `` !`date +%Y-%m-%d` `` are also supported.
+- **`file_glob` accepts absolute and alias patterns** — `file_glob("{vault}/**/*.md")` and `file_glob("/abs/path/*.md")` now work. Previously only relative patterns were accepted.
+- **`file_read` truncation hint** — when a partial read is returned, the output now includes a NOTE with the exact `offset` and `limit` to continue reading.
+- **`agent_md.sandbox.validate_path`** — public helper for custom tool authors to opt-in to the same path sandbox as built-in tools.
+
+### Fixed
+
+- **`history: off` YAML parsing** — YAML 1.1 parses `off` as `False`. The validator now accepts `False` and normalizes to `"off"`. `True` raises a helpful error explaining the YAML gotcha.
+- **`file_glob` error messages** — now include the pattern that failed and list available aliases as hints.
+
+### Changed
+
+- **System prompt: "Available paths" block** — lists alias names (not absolute paths) so the LLM knows the `{alias}` syntax without leaking filesystem layout.
+- **`apply_substitutions` extracted** to `agent_md.core.substitutions` — shared between skills and agent prompts. The skills loader is now a backward-compatible shim.
+
 ## [0.6.3] - 2026-04-01
 
 ### Added

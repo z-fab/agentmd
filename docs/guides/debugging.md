@@ -77,11 +77,11 @@ paths
 ```yaml
 # Wrong
 paths:
-  - /etc/passwd  # ❌ Outside workspace
+  secrets: /etc/passwd  # ❌ Outside workspace
 
 # Correct
 paths:
-  - /workspace/data/  # ✓ Inside workspace
+  data: /workspace/data/  # ✓ Inside workspace
 ```
 
 ### 2. Provider Not Installed
@@ -277,9 +277,9 @@ PermissionError: Access denied to path '/workspace/data/secrets.txt'
 
 **Fix:**
 ```yaml
-# Add path to allowed list
+# Add path to allowed aliases
 paths:
-  - /workspace/data/secrets.txt
+  secrets: /workspace/data/secrets.txt
 ```
 
 **Or check file actually exists:**
@@ -303,21 +303,21 @@ PathSecurityError: Write path '/workspace/input.json' not allowed
 ```yaml
 # Wrong
 paths:
-  - /output/  # Can only access /output/
+  output: /output/  # Can only access /output/
 
 # Agent tries to write to /workspace/ → Error
 
 # Correct
 paths:
-  - /output/
-  - /workspace/results/  # Add if needed
+  output: /output/
+  results: /workspace/results/  # Add if needed
 ```
 
 **Best practice:** Only include the paths the agent actually needs.
 ```yaml
 paths:
-  - /workspace/data/  # Source data
-  - /output/          # Generated files
+  data: /workspace/data/  # Source data
+  output: /output/        # Generated files
 ```
 
 ### 6. Timeouts

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime
 from typing import AsyncGenerator
 
@@ -7,6 +9,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from agent_md.graph.agent import ReactAgent
 from agent_md.graph.state import AgentState
+
+logger = logging.getLogger(__name__)
 
 
 def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, post_tool_processor=None):
@@ -29,37 +33,49 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, 
 
 
 def _build_file_access_prompt(agent_config, path_context) -> str:
-    """Build the file access section of the system prompt."""
-    allowed_paths = path_context.get_allowed_paths(agent_config)
+    """Build the file access section of the system prompt.
 
-    path_list = "\n".join(f"- `{p}`" for p in allowed_paths)
-
+    Lists alias names (no absolute paths) and explains the path syntax
+    accepted by all file tools.
+    """
     sections = [
         "## File Access\n",
         "You have four file tools: `file_read`, `file_write`, `file_edit`, and `file_glob`.\n",
-        "### Allowed paths\n",
-        "You can ONLY access files within these paths:\n",
-        f"{path_list}\n",
-        "Any path outside these boundaries will be denied.\n",
-        "### Path rules\n",
-        "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
+    ]
+
+    if agent_config.paths:
+        sections.append("### Available paths\n")
+        sections.append("You can reference these locations using `{alias}` syntax in any file tool:\n")
+        for alias, entry in agent_config.paths.items():
+            desc = f" — {entry.description}" if entry.description else ""
+            sections.append(f"- `{{{alias}}}`{desc}\n")
+        sections.append('Example: `file_read("{' + next(iter(agent_config.paths)) + '}/notes/x.md")`\n')
+    else:
+        sections.append("### Allowed paths\n")
+        sections.append("This agent has no `paths` declared. File access is limited to the workspace root.\n")
+
+    sections.append(
+        "### Path rules\n"
+        "- Use `{alias}/sub` to reference a declared path location.\n"
+        "- Absolute paths (e.g. `/Users/.../x.md`) work if they fall inside a declared path.\n"
         "- Relative paths resolve from the workspace root.\n"
         "- Use `file_glob` to discover files before reading. Never guess filenames.\n"
-        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n",
-        "### Tool usage\n",
-        "- `file_read(path)`: Read a file. Supports `offset` and `limit` for reading specific line ranges.\n"
-        "- `file_edit(path, old_text, new_text)`: Make targeted replacements in a file. Use for surgical edits.\n"
-        "- `file_write(path, content)`: Create a new file or fully overwrite an existing one.\n"
-        "- `file_glob(pattern)`: Find files matching a glob pattern (e.g. `**/*.py`).",
-    ]
+        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n"
+    )
+    sections.append(
+        "### Tool usage\n"
+        "- `file_read(path)`: Read a file. Supports `offset` and `limit` for line ranges.\n"
+        "- `file_edit(path, old_text, new_text)`: Targeted text replacement.\n"
+        "- `file_write(path, content)`: Create or fully overwrite a file.\n"
+        "- `file_glob(pattern)`: Find files matching a glob pattern."
+    )
 
     if agent_config.trigger.type == "watch":
         sections.append(
             "\n### Watch trigger\n"
             "This agent is activated by file changes. The user message contains the event type "
             "and the **absolute path** of the changed file.\n"
-            "**You MUST use that exact absolute path** with `file_read` to read the file. "
-            "Do not extract just the filename — always use the full path provided."
+            "**You MUST use that exact absolute path** with `file_read` to read the file."
         )
 
     return "\n".join(sections)
@@ -69,17 +85,11 @@ def build_system_message(
     system_prompt: str,
     agent_config=None,
     path_context=None,
+    arguments: str = "",
 ) -> SystemMessage:
-    """Build the system message for an agent, shared by run and chat modes.
+    """Build the system message for an agent, shared by run and chat modes."""
+    from agent_md.core.substitutions import apply_substitutions
 
-    Args:
-        system_prompt: The agent's system prompt (from .md body).
-        agent_config: AgentConfig for path context injection.
-        path_context: PathContext for path resolution.
-
-    Returns:
-        A SystemMessage with date/time info, file access context, and system prompt.
-    """
     now = datetime.now()
     extra_info = f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
 
@@ -91,12 +101,20 @@ def build_system_message(
         skills_prompt = _build_skills_prompt(agent_config, path_context)
         if skills_prompt:
             extra_info += "\n\n" + skills_prompt
-
-        # Meta messages section — only when agent has skills configured
         if agent_config.skills:
             extra_info += "\n\n" + _build_meta_messages_prompt()
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
+
+    cwd = str(path_context.workspace_root) if path_context else None
+    full_prompt = apply_substitutions(full_prompt, arguments=arguments, cwd=cwd)
+
+    if arguments and not re.search(r"\$(?:ARGUMENTS|\d)", system_prompt):
+        logger.warning(
+            "Arguments passed to agent '%s' but prompt contains no $ARGUMENTS or $0..$9 placeholders",
+            agent_config.name if agent_config else "unknown",
+        )
+
     return SystemMessage(content=full_prompt)
 
 
@@ -184,9 +202,9 @@ def _build_meta_messages_prompt() -> str:
         "During this session, you may receive messages wrapped in special tags. "
         "These are system-injected directives — treat them as instructions to follow, "
         "not as user conversation.\n\n"
-        "- `<skill-context name=\"...\">`: A skill has been activated. "
+        '- `<skill-context name="...">`: A skill has been activated. '
         "Follow the instructions inside exactly.\n"
-        "- `<skill-breadcrumb name=\"...\">`: A skill was activated in a previous run. "
+        '- `<skill-breadcrumb name="...">`: A skill was activated in a previous run. '
         "Noted for context only."
     )
 
@@ -196,9 +214,10 @@ def _build_initial_state(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
+    arguments: str = "",
 ) -> AgentState:
     """Build the initial state dict for graph execution."""
-    system_msg = build_system_message(system_prompt, agent_config, path_context)
+    system_msg = build_system_message(system_prompt, agent_config, path_context, arguments=arguments)
     return {
         "messages": [
             system_msg,
@@ -213,6 +232,7 @@ async def run_agent_graph(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
+    arguments: str = "",
 ) -> dict:
     """Execute a compiled graph with the given prompts.
 
@@ -226,7 +246,7 @@ async def run_agent_graph(
     Returns:
         The final state dict with all messages.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input)
+    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments)
     return await graph.ainvoke(initial_state)
 
 
@@ -245,6 +265,7 @@ async def stream_agent_graph(
     path_context=None,
     user_input: str = "Execute your task.",
     config: dict | None = None,
+    arguments: str = "",
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution, yielding each message as it is produced.
 
@@ -259,7 +280,7 @@ async def stream_agent_graph(
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input)
+    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments)
     async for msg in _stream_state(graph, initial_state, config=config):
         yield msg
 

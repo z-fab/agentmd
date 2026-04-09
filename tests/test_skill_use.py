@@ -1,7 +1,6 @@
 """Tests for simplified skill_use tool."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from agent_md.tools.skills.use import create_skill_use_tool
@@ -13,10 +12,7 @@ def tmp_skill(tmp_path):
     skill_dir = tmp_path / "review-pr"
     skill_dir.mkdir()
     skill_md = skill_dir / "SKILL.md"
-    skill_md.write_text(
-        "---\nname: review-pr\ndescription: Review PRs\n---\n"
-        "Review the PR $ARGUMENTS."
-    )
+    skill_md.write_text("---\nname: review-pr\ndescription: Review PRs\n---\nReview the PR $ARGUMENTS.")
     return tmp_path
 
 

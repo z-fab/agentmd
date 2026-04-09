@@ -1,7 +1,6 @@
 """Tests for post_tool_processor graph node."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -15,10 +14,7 @@ def tmp_skill(tmp_path):
     skill_dir = tmp_path / "review-pr"
     skill_dir.mkdir()
     skill_md = skill_dir / "SKILL.md"
-    skill_md.write_text(
-        "---\nname: review-pr\ndescription: Review PRs\n---\n"
-        "Review the PR $ARGUMENTS carefully."
-    )
+    skill_md.write_text("---\nname: review-pr\ndescription: Review PRs\n---\nReview the PR $ARGUMENTS carefully.")
     return tmp_path
 
 
@@ -38,7 +34,9 @@ def test_injects_meta_message_on_skill_use(tmp_skill, agent_config):
             HumanMessage(content="Review PR 123"),
             AIMessage(
                 content="",
-                tool_calls=[{"id": "call_1", "name": "skill_use", "args": {"skill_name": "review-pr", "arguments": "123"}}],
+                tool_calls=[
+                    {"id": "call_1", "name": "skill_use", "args": {"skill_name": "review-pr", "arguments": "123"}}
+                ],
             ),
             ToolMessage(
                 content="Skill 'review-pr' activated successfully. Instructions will follow.",
@@ -89,7 +87,9 @@ def test_no_injection_when_skill_validation_fails(tmp_skill, agent_config):
             HumanMessage(content="Use unknown skill"),
             AIMessage(
                 content="",
-                tool_calls=[{"id": "call_1", "name": "skill_use", "args": {"skill_name": "nonexistent", "arguments": ""}}],
+                tool_calls=[
+                    {"id": "call_1", "name": "skill_use", "args": {"skill_name": "nonexistent", "arguments": ""}}
+                ],
             ),
             ToolMessage(
                 content="Skill 'nonexistent' is not enabled for this agent.",

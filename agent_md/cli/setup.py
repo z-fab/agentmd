@@ -247,7 +247,7 @@ def setup(
 ):
     """Interactive setup wizard for Agent.md."""
     from agent_md import __version__
-    from agent_md.core.settings import _ensure_default_config, _get_config_path
+    from agent_md.core.settings import _get_config_path
 
     console.print()
     console.print(

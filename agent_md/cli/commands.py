@@ -139,7 +139,7 @@ Optional:
 - trigger: execution trigger (see Trigger types below)
 - settings: object with temperature (float), max_tokens (int), timeout (int, seconds)
 - history: conversation memory across runs — "low" (10 msgs), "medium" (50), "high" (200), "off" (default)
-- paths: list of file/dir paths the agent can access — read, write, and list (relative to workspace root or absolute)
+- paths: dict of named aliases for directories the agent can access. Each key is an alias name (lowercase, e.g. "vault", "output"), each value is a path string. Use `{{alias}}` syntax in prompts and tool calls.
 
 ### Trigger types
 - manual (default): agent runs only when invoked via `agentmd run`
@@ -185,16 +185,16 @@ trigger:
   every: 24h
 history: medium
 paths:
-  - logs/
-  - output/
+  logs: logs/
+  output: output/
 ---
 
 You are a summarization agent. Every day:
 
-1. Use `file_glob` to discover files in the `logs/` directory (e.g. `file_glob('logs/**/*')`).
-2. Read each file using `file_read`.
+1. Use `file_glob` to discover files in the logs directory (e.g. `file_glob('{{logs}}/**/*')`).
+2. Read each file using `file_read` with the `{{logs}}` alias.
 3. Generate a concise summary of the day's activity.
-4. Write the summary to `output/daily-summary-YYYY-MM-DD.md` using `file_write`.
+4. Write the summary to `{{output}}/daily-summary-YYYY-MM-DD.md` using `file_write`.
 5. Use `memory_save` to store the latest summary date in the "last_run" section so you can avoid reprocessing.
 """
 
@@ -250,9 +250,9 @@ def _ask_agent_details(agent_name: str) -> str:
             trigger_extra = "\n".join(f"  - {p}" for p in paths)
             trigger_extra = f"  paths:\n{trigger_extra}"
 
-    # Paths (unified read/write)
+    # Paths (named aliases)
     agent_paths = Prompt.ask(
-        "  [cyan]Paths[/cyan] [dim](comma-separated dirs the agent can access, or empty)[/dim]", default=""
+        "  [cyan]Paths[/cyan] [dim](alias=path pairs, comma-separated, e.g. vault=/data,output=./out)[/dim]", default=""
     )
 
     # System prompt
@@ -274,9 +274,19 @@ def _ask_agent_details(agent_name: str) -> str:
             lines.append(trigger_extra)
     if agent_paths.strip():
         lines.append("paths:")
-        for p in agent_paths.split(","):
-            if p.strip():
-                lines.append(f"  - {p.strip()}")
+        for pair in agent_paths.split(","):
+            pair = pair.strip()
+            if not pair:
+                continue
+            if "=" in pair:
+                alias, path = pair.split("=", 1)
+                lines.append(f"  {alias.strip()}: {path.strip()}")
+            else:
+                # No alias given — use basename as alias
+                from pathlib import Path as _P
+
+                alias = _P(pair).name or pair.replace("/", "_").strip("_") or "data"
+                lines.append(f"  {alias}: {pair}")
     lines.append("---")
     lines.append("")
     lines.append(system_prompt or "You are a helpful assistant. Describe your agent's task here.")
@@ -445,16 +455,22 @@ async def _start_foreground(workspace: Path, on_event=None, quiet: bool = False)
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run(
+    ctx: typer.Context,
     agent: str = typer.Argument(None, help="Agent name (interactive picker if omitted)"),
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress output except result"),
 ):
-    """Execute a single agent manually (one-shot)."""
+    """Execute a single agent manually (one-shot).
+
+    Pass extra positional arguments to substitute $ARGUMENTS / $0..$9 in the prompt:
+        agentmd run my-agent -- arg1 arg2
+    """
     from agent_md.core.services import AgentNotFoundError, run_agent
 
     agent_name = _pick_or_resolve_agent(agent, workspace)
+    arguments = " ".join(ctx.args) if ctx.args else ""
 
     on_event = print_agent_event if not quiet else None
     on_start = print_agent_start if not quiet else None
@@ -468,6 +484,7 @@ def run(
                 on_event=on_event,
                 on_start=on_start,
                 on_complete=on_complete,
+                arguments=arguments,
             )
         )
     except AgentNotFoundError:

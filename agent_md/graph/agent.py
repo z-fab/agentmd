@@ -33,10 +33,7 @@ def _compact_messages(messages: list) -> list:
             and isinstance(msg.content, str)
             and len(msg.content) > _TOOL_RESULT_TRUNCATE_THRESHOLD
         ):
-            truncated = (
-                msg.content[:200]
-                + f"\n\n[truncated — {msg.name} result was {len(msg.content)} chars]"
-            )
+            truncated = msg.content[:200] + f"\n\n[truncated — {msg.name} result was {len(msg.content)} chars]"
             compacted.append(
                 ToolMessage(
                     content=truncated,

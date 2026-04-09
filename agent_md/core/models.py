@@ -5,6 +5,29 @@ from pydantic import BaseModel, field_validator, model_validator
 
 HISTORY_LIMITS = {"low": 10, "medium": 50, "high": 200}
 
+RESERVED_ALIASES = {"workspace", "skill_dir", "today", "now", "agents", "tools", "skills"}
+
+ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+class PathEntry(BaseModel):
+    """A named path entry in an agent's `paths` dict.
+
+    Accepts either a plain string (treated as `path` with no description)
+    or a dict with `path` and optional `description`.
+    """
+
+    path: str
+    description: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_string(cls, data):
+        """Allow `paths.alias: "/abs/path"` shorthand."""
+        if isinstance(data, str):
+            return {"path": data}
+        return data
+
 
 class TriggerConfig(BaseModel):
     """Configuration for agent triggers."""
@@ -95,11 +118,20 @@ class AgentConfig(BaseModel):
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
     history: str = "low"  # 'low', 'medium', 'high', 'off'
-    paths: list[str] = []
+    paths: dict[str, PathEntry] = {}
 
-    @field_validator("history")
+    @field_validator("history", mode="before")
     @classmethod
-    def validate_history(cls, v: str) -> str:
+    def validate_history(cls, v):
+        # YAML 1.1 parses `off` as False — accept it.
+        if v is False:
+            return "off"
+        if v is True:
+            raise ValueError(
+                "history: true is not valid. "
+                "Note: YAML parses `on` as True and `off` as False — "
+                'quote string values: history: "low" / "medium" / "high" / "off"'
+            )
         allowed = ("low", "medium", "high", "off")
         if v not in allowed:
             raise ValueError(f"History level must be one of {allowed}, got '{v}'")
@@ -118,12 +150,36 @@ class AgentConfig(BaseModel):
             data["custom_tools"] = data.pop("tools")
         return data
 
-    @field_validator("paths", "skills", mode="before")
+    @field_validator("skills", mode="before")
     @classmethod
-    def normalize_to_list(cls, v):
+    def normalize_skills(cls, v):
         """Accept a single string or a list of strings."""
         if isinstance(v, str):
             return [v]
+        return v
+
+    @field_validator("paths", mode="before")
+    @classmethod
+    def validate_paths_format(cls, v):
+        """Accept dict only — reject the legacy list format with a helpful error."""
+        if v is None:
+            return {}
+        if isinstance(v, list):
+            raise ValueError(
+                "paths must be a dict of named aliases (changed in v0.7.0).\n"
+                "Migrate from:\n  paths:\n    - /a\n    - /b\n"
+                "To:\n  paths:\n    alias_a: /a\n    alias_b: /b\n"
+                "See docs/path-model.md for details."
+            )
+        if not isinstance(v, dict):
+            raise ValueError(f"paths must be a dict, got {type(v).__name__}")
+        for alias in v.keys():
+            if not isinstance(alias, str):
+                raise ValueError(f"path alias must be a string, got {type(alias).__name__}")
+            if alias in RESERVED_ALIASES:
+                raise ValueError(f"path alias '{alias}' is reserved. Reserved names: {sorted(RESERVED_ALIASES)}")
+            if not ALIAS_PATTERN.match(alias):
+                raise ValueError(f"path alias '{alias}' is invalid. Aliases must match [a-z][a-z0-9_]*.")
         return v
 
     @field_validator("name")

@@ -59,9 +59,7 @@ def create_post_tool_processor(agent_config, skills_dir: Path):
             skill_name = call["args"].get("skill_name", "")
             arguments = call["args"].get("arguments", "")
 
-            content = resolve_skill_content(
-                skill_name, arguments, agent_config, skills_dir
-            )
+            content = resolve_skill_content(skill_name, arguments, agent_config, skills_dir)
             if content is None:
                 continue
 
