@@ -29,37 +29,53 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, 
 
 
 def _build_file_access_prompt(agent_config, path_context) -> str:
-    """Build the file access section of the system prompt."""
-    allowed_paths = path_context.get_allowed_paths(agent_config)
+    """Build the file access section of the system prompt.
 
-    path_list = "\n".join(f"- `{p}`" for p in allowed_paths)
-
+    Lists alias names (no absolute paths) and explains the path syntax
+    accepted by all file tools.
+    """
     sections = [
         "## File Access\n",
         "You have four file tools: `file_read`, `file_write`, `file_edit`, and `file_glob`.\n",
-        "### Allowed paths\n",
-        "You can ONLY access files within these paths:\n",
-        f"{path_list}\n",
-        "Any path outside these boundaries will be denied.\n",
-        "### Path rules\n",
-        "- **Always prefer absolute paths.** When you know the full path to a file, use it as-is.\n"
+    ]
+
+    if agent_config.paths:
+        sections.append("### Available paths\n")
+        sections.append(
+            "You can reference these locations using `{alias}` syntax in any file tool:\n"
+        )
+        for alias, entry in agent_config.paths.items():
+            desc = f" — {entry.description}" if entry.description else ""
+            sections.append(f"- `{{{alias}}}`{desc}\n")
+        sections.append(
+            'Example: `file_read("{' + next(iter(agent_config.paths)) + '}/notes/x.md")`\n'
+        )
+    else:
+        sections.append("### Allowed paths\n")
+        sections.append("This agent has no `paths` declared. File access is limited to the workspace root.\n")
+
+    sections.append(
+        "### Path rules\n"
+        "- Use `{alias}/sub` to reference a declared path location.\n"
+        "- Absolute paths (e.g. `/Users/.../x.md`) work if they fall inside a declared path.\n"
         "- Relative paths resolve from the workspace root.\n"
         "- Use `file_glob` to discover files before reading. Never guess filenames.\n"
-        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n",
-        "### Tool usage\n",
-        "- `file_read(path)`: Read a file. Supports `offset` and `limit` for reading specific line ranges.\n"
-        "- `file_edit(path, old_text, new_text)`: Make targeted replacements in a file. Use for surgical edits.\n"
-        "- `file_write(path, content)`: Create a new file or fully overwrite an existing one.\n"
-        "- `file_glob(pattern)`: Find files matching a glob pattern (e.g. `**/*.py`).",
-    ]
+        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n"
+    )
+    sections.append(
+        "### Tool usage\n"
+        "- `file_read(path)`: Read a file. Supports `offset` and `limit` for line ranges.\n"
+        "- `file_edit(path, old_text, new_text)`: Targeted text replacement.\n"
+        "- `file_write(path, content)`: Create or fully overwrite a file.\n"
+        "- `file_glob(pattern)`: Find files matching a glob pattern."
+    )
 
     if agent_config.trigger.type == "watch":
         sections.append(
             "\n### Watch trigger\n"
             "This agent is activated by file changes. The user message contains the event type "
             "and the **absolute path** of the changed file.\n"
-            "**You MUST use that exact absolute path** with `file_read` to read the file. "
-            "Do not extract just the filename — always use the full path provided."
+            "**You MUST use that exact absolute path** with `file_read` to read the file."
         )
 
     return "\n".join(sections)
