@@ -120,9 +120,18 @@ class AgentConfig(BaseModel):
     history: str = "low"  # 'low', 'medium', 'high', 'off'
     paths: dict[str, PathEntry] = {}
 
-    @field_validator("history")
+    @field_validator("history", mode="before")
     @classmethod
-    def validate_history(cls, v: str) -> str:
+    def validate_history(cls, v):
+        # YAML 1.1 parses `off` as False — accept it.
+        if v is False:
+            return "off"
+        if v is True:
+            raise ValueError(
+                "history: true is not valid. "
+                "Note: YAML parses `on` as True and `off` as False — "
+                'quote string values: history: "low" / "medium" / "high" / "off"'
+            )
         allowed = ("low", "medium", "high", "off")
         if v not in allowed:
             raise ValueError(f"History level must be one of {allowed}, got '{v}'")
