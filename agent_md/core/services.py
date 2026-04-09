@@ -35,6 +35,7 @@ async def run_agent(
     on_event=None,
     on_start=None,
     on_complete=None,
+    arguments: str = "",
 ) -> tuple[AgentConfig, dict]:
     """Execute a single agent by name and return ``(config, result)``."""
     async with _runtime(workspace) as rt:
@@ -48,6 +49,7 @@ async def run_agent(
             on_event=on_event,
             on_start=on_start,
             on_complete=on_complete,
+            arguments=arguments,
         )
         return config, result
 

@@ -160,6 +160,7 @@ class AgentRunner:
         on_event=None,
         on_start=None,
         on_complete=None,
+        arguments: str = "",
     ) -> dict:
         """Execute an agent and persist the result.
 
@@ -211,7 +212,13 @@ class AgentRunner:
             async def _stream():
                 nonlocal last_ai_msg, total_input_tokens, total_output_tokens
                 async for msg in stream_agent_graph(
-                    graph, config.system_prompt, config, self.path_context, user_input=user_input, config=graph_config
+                    graph,
+                    config.system_prompt,
+                    config,
+                    self.path_context,
+                    user_input=user_input,
+                    config=graph_config,
+                    arguments=arguments,
                 ):
                     await ex_logger.log_message(msg)
 

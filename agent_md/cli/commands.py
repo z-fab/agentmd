@@ -445,16 +445,22 @@ async def _start_foreground(workspace: Path, on_event=None, quiet: bool = False)
 # ---------------------------------------------------------------------------
 
 
-@app.command()
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run(
+    ctx: typer.Context,
     agent: str = typer.Argument(None, help="Agent name (interactive picker if omitted)"),
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress output except result"),
 ):
-    """Execute a single agent manually (one-shot)."""
+    """Execute a single agent manually (one-shot).
+
+    Pass extra positional arguments to substitute $ARGUMENTS / $0..$9 in the prompt:
+        agentmd run my-agent -- arg1 arg2
+    """
     from agent_md.core.services import AgentNotFoundError, run_agent
 
     agent_name = _pick_or_resolve_agent(agent, workspace)
+    arguments = " ".join(ctx.args) if ctx.args else ""
 
     on_event = print_agent_event if not quiet else None
     on_start = print_agent_start if not quiet else None
@@ -468,6 +474,7 @@ def run(
                 on_event=on_event,
                 on_start=on_start,
                 on_complete=on_complete,
+                arguments=arguments,
             )
         )
     except AgentNotFoundError:

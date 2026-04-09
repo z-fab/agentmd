@@ -85,17 +85,11 @@ def build_system_message(
     system_prompt: str,
     agent_config=None,
     path_context=None,
+    arguments: str = "",
 ) -> SystemMessage:
-    """Build the system message for an agent, shared by run and chat modes.
+    """Build the system message for an agent, shared by run and chat modes."""
+    from agent_md.core.substitutions import apply_substitutions
 
-    Args:
-        system_prompt: The agent's system prompt (from .md body).
-        agent_config: AgentConfig for path context injection.
-        path_context: PathContext for path resolution.
-
-    Returns:
-        A SystemMessage with date/time info, file access context, and system prompt.
-    """
     now = datetime.now()
     extra_info = f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
 
@@ -107,12 +101,14 @@ def build_system_message(
         skills_prompt = _build_skills_prompt(agent_config, path_context)
         if skills_prompt:
             extra_info += "\n\n" + skills_prompt
-
-        # Meta messages section — only when agent has skills configured
         if agent_config.skills:
             extra_info += "\n\n" + _build_meta_messages_prompt()
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
+
+    cwd = str(path_context.workspace_root) if path_context else None
+    full_prompt = apply_substitutions(full_prompt, arguments=arguments, cwd=cwd)
+
     return SystemMessage(content=full_prompt)
 
 
@@ -212,9 +208,10 @@ def _build_initial_state(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
+    arguments: str = "",
 ) -> AgentState:
     """Build the initial state dict for graph execution."""
-    system_msg = build_system_message(system_prompt, agent_config, path_context)
+    system_msg = build_system_message(system_prompt, agent_config, path_context, arguments=arguments)
     return {
         "messages": [
             system_msg,
@@ -229,6 +226,7 @@ async def run_agent_graph(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
+    arguments: str = "",
 ) -> dict:
     """Execute a compiled graph with the given prompts.
 
@@ -242,7 +240,7 @@ async def run_agent_graph(
     Returns:
         The final state dict with all messages.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input)
+    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments)
     return await graph.ainvoke(initial_state)
 
 
@@ -261,6 +259,7 @@ async def stream_agent_graph(
     path_context=None,
     user_input: str = "Execute your task.",
     config: dict | None = None,
+    arguments: str = "",
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution, yielding each message as it is produced.
 
@@ -275,7 +274,7 @@ async def stream_agent_graph(
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input)
+    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments)
     async for msg in _stream_state(graph, initial_state, config=config):
         yield msg
 
