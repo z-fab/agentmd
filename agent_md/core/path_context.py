@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+ALIAS_REF = re.compile(r"^\{([a-z][a-z0-9_]*)\}(.*)$")
 
 
 @dataclass
@@ -19,14 +22,16 @@ class PathContext:
     skills_dir: Path
 
     def get_allowed_paths(self, config) -> list[Path]:
-        """Return resolved paths the agent can read from and write to.
+        """Return absolute paths the agent can read from and write to.
 
-        Defaults to [workspace_root] if the agent has no 'paths' config.
-        Watch paths are automatically included so agents can access watched files.
+        If the agent declares no `paths`, defaults to [workspace_root].
+        Watch trigger paths are included automatically.
         """
-        paths = [self._resolve_relative(p) for p in config.paths] if config.paths else [self.workspace_root]
+        if config.paths:
+            paths = [self._resolve_relative(entry.path) for entry in config.paths.values()]
+        else:
+            paths = [self.workspace_root]
 
-        # Include watch paths so agents can access files they're watching
         if config.trigger.type == "watch" and config.trigger.paths:
             watch_paths = [self._resolve_relative(p) for p in config.trigger.paths]
             paths.extend(watch_paths)
@@ -37,27 +42,50 @@ class PathContext:
         """Return the path to the agent's .memory.md file."""
         return self.agents_dir / f"{config.name}.memory.md"
 
-    def validate_path(self, path: str, config) -> tuple[Path | None, str | None]:
-        """Resolve and validate a path for access.
+    def resolve_alias(self, name: str, config) -> Path:
+        """Return the absolute Path for a declared alias.
 
-        Relative paths always resolve from workspace root.
-
-        Args:
-            path: The path to validate (absolute or relative).
-            config: AgentConfig with paths and trigger info.
-
-        Returns:
-            (resolved_path, None) on success or (None, error_message) on failure.
+        Raises KeyError if the alias is not declared on this agent.
         """
-        resolved = self._resolve_relative(path)
+        if name not in config.paths:
+            raise KeyError(f"path alias '{name}' is not declared on agent '{config.name}'")
+        return self._resolve_relative(config.paths[name].path)
 
-        # Security checks
+    def expand(self, value: str, config) -> Path:
+        """Resolve a path string to an absolute Path, without sandbox validation.
+
+        Handles three forms:
+            - "{alias}" or "{alias}/sub"  — alias expansion
+            - "/abs/path"                 — used as-is
+            - "rel/path" or "./rel"       — resolved against workspace_root
+
+        Raises KeyError if the alias is not declared.
+        """
+        m = ALIAS_REF.match(value)
+        if m:
+            alias_name = m.group(1)
+            remainder = m.group(2)
+            base = self.resolve_alias(alias_name, config)
+            if remainder.startswith("/"):
+                remainder = remainder[1:]
+            return (base / remainder).resolve() if remainder else base
+        return self._resolve_relative(value)
+
+    def validate_path(self, path: str, config) -> tuple[Path | None, str | None]:
+        """Resolve and sandbox-check a path.
+
+        Returns (resolved_path, None) on success or (None, error_message).
+        """
+        try:
+            resolved = self.expand(path, config)
+        except KeyError as e:
+            return None, f"Access denied: {e}"
+
         error = self._check_security(resolved)
         if error:
             logger.warning("Security check failed for '%s': %s", path, error)
             return None, error
 
-        # Check against allowed paths
         allowed = self.get_allowed_paths(config)
         if not self._is_within_any(resolved, allowed):
             logger.warning("Path '%s' is outside allowed paths: %s", path, [str(p) for p in allowed])
@@ -68,30 +96,21 @@ class PathContext:
     # --- Private helpers ---
 
     def _resolve_relative(self, path: str) -> Path:
-        """Resolve a path relative to workspace_root."""
         p = Path(path).expanduser()
         if not p.is_absolute():
             p = self.workspace_root / p
         return p.resolve()
 
     def _check_security(self, resolved: Path) -> str | None:
-        """Check security restrictions. Returns error message or None."""
-        # Cannot access the agents directory
         if self._is_within(resolved, self.agents_dir):
             return "Access denied: cannot access agents directory"
-
-        # Cannot access .env files
         if resolved.name.startswith(".env"):
             return "Access denied: cannot access .env files"
-
-        # Cannot write .db files
         if resolved.suffix == ".db":
             return "Access denied: cannot access .db files"
-
         return None
 
     def _is_within(self, path: Path, directory: Path) -> bool:
-        """Check if path is within a directory (follows symlinks)."""
         try:
             path.relative_to(directory)
             return True
@@ -99,14 +118,11 @@ class PathContext:
             return False
 
     def _is_within_any(self, path: Path, directories: list[Path]) -> bool:
-        """Check if path is within any of the given directories/files."""
         for d in directories:
             if d.is_file() or d.suffix:
-                # It's a file path — exact match only
                 if path == d:
                     return True
             else:
-                # It's a directory — check containment
                 if self._is_within(path, d):
                     return True
         return False
