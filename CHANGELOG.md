@@ -3,6 +3,33 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.1] — 2026-04-10
+
+### Added
+
+- **Execution limits** — configurable hard limits to prevent runaway agents:
+  - `max_tool_calls` (default: 50) — abort after N tool invocations
+  - `max_execution_tokens` (default: 500,000) — abort when cumulative input+output tokens exceed limit
+  - `max_cost_usd` (default: none) — abort when estimated cost exceeds cap
+  - `loop_detection` (default: true) — abort when the same tool error repeats 3 consecutive times
+- **Pricing registry** — built-in cost-per-token table for Google, OpenAI, and Anthropic models. Override or add models via `~/.config/agentmd/pricing.yaml`.
+- **Cost tracking** — estimated cost persisted in the database and shown in `agentmd logs` when available
+- **Ghost cleanup** — PID tracked per execution; orphaned executions (dead process) automatically marked `orphaned` on startup
+- **Global limit defaults** — configure default limits for all agents in `~/.config/agentmd/config.yaml` under `defaults:`
+- **Validate pricing warning** — `agentmd validate` warns when `max_cost_usd` is set but the model has no pricing data
+- **New execution statuses** — `aborted` (limit hit), `orphaned` (process died) shown in `agentmd logs`
+- **Execution limits documentation** — `docs/limits.md` with configuration, pricing overrides, and behavior reference
+
+### Fixed
+
+- **`file_glob` sandbox warnings** — glob results are now filtered silently instead of logging a warning per rejected file (reduces noise in terminal and LLM context)
+- **`data/` directory blocked in sandbox** — agents can no longer access the database directory via file tools
+- **Loop detection reset** — successful tool responses now reset the error tracker, so only truly consecutive identical errors trigger abort
+
+### Changed
+
+- **Pricing cache** — pricing data loaded once per process instead of re-parsing YAML on every cost estimation call
+
 ## [0.7.0] — 2026-04-08
 
 ### Breaking Changes

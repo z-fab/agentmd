@@ -6,6 +6,7 @@ import time
 
 from agent_md.core.execution_logger import ExecutionLogger
 from agent_md.core.path_context import PathContext
+from agent_md.core.pricing import estimate_cost
 from agent_md.core.registry import AgentConfig
 from agent_md.db.database import Database
 from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn
@@ -16,6 +17,44 @@ from agent_md.graph.post_tool_processor import create_post_tool_processor
 from agent_md.tools.registry import resolve_builtin_tools
 
 logger = logging.getLogger(__name__)
+
+
+class LimitExceeded(Exception):
+    """Raised when an execution limit is hit."""
+
+    def __init__(self, reason: str, detail: str = ""):
+        self.reason = reason
+        self.detail = detail
+        super().__init__(f"{reason}: {detail}" if detail else reason)
+
+
+def _check_limits(settings, tool_call_count: int, total_tokens: int, cost_usd: float | None = None) -> None:
+    """Raise LimitExceeded if any hard limit is breached."""
+    if settings.max_tool_calls is not None and tool_call_count > settings.max_tool_calls:
+        raise LimitExceeded("max_tool_calls", f"{tool_call_count} calls (limit: {settings.max_tool_calls})")
+
+    if settings.max_execution_tokens is not None and total_tokens > settings.max_execution_tokens:
+        raise LimitExceeded(
+            "max_execution_tokens",
+            f"{total_tokens:,} tokens (limit: {settings.max_execution_tokens:,})",
+        )
+
+    if settings.max_cost_usd is not None and cost_usd is not None and cost_usd > settings.max_cost_usd:
+        raise LimitExceeded("max_cost_usd", f"${cost_usd:.4f} (limit: ${settings.max_cost_usd:.2f})")
+
+
+def _looks_like_error(msg) -> bool:
+    """Return True if a tool response looks like an error."""
+    if getattr(msg, "type", "") != "tool":
+        return False
+    content = str(getattr(msg, "content", ""))
+    return content.startswith(("ERROR:", "Error:", "Exception"))
+
+
+def _normalize_error(content: str) -> str:
+    """Extract a stable signature from an error message."""
+    first_line = content.strip().split("\n", 1)[0]
+    return first_line[:200]
 
 
 def _is_final_ai_message(msg) -> bool:
@@ -52,6 +91,7 @@ class AgentRunner:
         *,
         output_data: str | None = None,
         error: str | None = None,
+        cost_usd: float | None = None,
     ) -> dict:
         """Persist execution result and return a standard result dict."""
         total_tokens = input_tokens + output_tokens
@@ -62,6 +102,7 @@ class AgentRunner:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
+            cost_usd=cost_usd,
             **({"output_data": output_data} if output_data else {}),
             **({"error": error} if error else {}),
         )
@@ -75,6 +116,8 @@ class AgentRunner:
         }
         if error:
             result["error"] = error
+        if cost_usd is not None:
+            result["cost_usd"] = cost_usd
         return result
 
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
@@ -197,6 +240,10 @@ class AgentRunner:
         # Token accumulators
         total_input_tokens = 0
         total_output_tokens = 0
+        tool_call_count = 0
+        cost_usd: float | None = None
+        _pricing_warned = False
+        last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
 
         try:
             # 2. Build model + tools + graph
@@ -210,7 +257,7 @@ class AgentRunner:
             graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, _pricing_warned, last_errors
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -227,6 +274,49 @@ class AgentRunner:
                     if usage:
                         total_input_tokens += usage.get("input_tokens", 0)
                         total_output_tokens += usage.get("output_tokens", 0)
+
+                    # Count tool calls
+                    if getattr(msg, "type", "") == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
+                        tool_call_count += len(msg.tool_calls)
+
+                    # Estimate running cost
+                    if usage:
+                        cost_usd = estimate_cost(
+                            config.model.provider,
+                            config.model.name,
+                            total_input_tokens,
+                            total_output_tokens,
+                        )
+
+                    # Warn once if cost limit is set but pricing is unknown
+                    if (
+                        not _pricing_warned
+                        and config.settings.max_cost_usd is not None
+                        and cost_usd is None
+                        and (total_input_tokens + total_output_tokens) > 0
+                    ):
+                        logger.warning(
+                            f"max_cost_usd configured but no pricing data for "
+                            f"{config.model.provider}/{config.model.name}; limit will not be enforced"
+                        )
+                        _pricing_warned = True
+
+                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+
+                    # Loop detection: same tool error 3 consecutive times
+                    if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
+                        if _looks_like_error(msg):
+                            sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
+                            last_errors.append(sig)
+                            if len(last_errors) > 3:
+                                last_errors.pop(0)
+                            if len(last_errors) == 3 and len(set(last_errors)) == 1:
+                                raise LimitExceeded(
+                                    "loop_detected",
+                                    f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
+                                )
+                        else:
+                            last_errors.clear()  # Reset on successful tool response
 
                     if _is_final_ai_message(msg):
                         last_ai_msg = msg
@@ -252,6 +342,7 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 output_data=output[:10000],
+                cost_usd=cost_usd,
             )
             result["output"] = output
             logger.info(
@@ -273,6 +364,24 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 error=error_msg,
+                cost_usd=cost_usd,
+            )
+            if on_complete is not None:
+                on_complete(config.name, result)
+            return result
+
+        except LimitExceeded as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            error_msg = f"Aborted: {e.reason}" + (f" ({e.detail})" if e.detail else "")
+            logger.warning(f"Execution aborted: {config.name} — {error_msg}")
+            result = await self._finish_execution(
+                execution_id,
+                "aborted",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                error=error_msg,
+                cost_usd=cost_usd,
             )
             if on_complete is not None:
                 on_complete(config.name, result)
@@ -289,6 +398,7 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 error=error_msg,
+                cost_usd=cost_usd,
             )
             if on_complete is not None:
                 on_complete(config.name, result)

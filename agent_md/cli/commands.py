@@ -658,32 +658,50 @@ def logs(
 
     console.print(f"\n  [bold]Recent executions \u2014 {agent}[/bold]\n")
 
-    status_style = {"success": "green", "error": "red", "timeout": "yellow", "running": "cyan"}
+    status_style = {
+        "success": "green",
+        "error": "red",
+        "timeout": "yellow",
+        "running": "cyan",
+        "aborted": "yellow",
+        "killed": "red",
+        "orphaned": "dim red",
+    }
 
-    table = make_table(
+    has_cost = any(getattr(ex, "cost_usd", None) is not None for ex in executions)
+
+    columns = [
         ("#", {"style": "dim"}),
         ("Status", {"justify": "center"}),
         ("Trigger", {}),
         ("Duration", {"justify": "right"}),
         ("Tokens", {"justify": "right"}),
-        ("Started", {"style": "dim"}),
-    )
+    ]
+    if has_cost:
+        columns.append(("Cost", {"justify": "right"}))
+    columns.append(("Started", {"style": "dim"}))
+
+    table = make_table(*columns)
 
     for ex in executions:
         style = status_style.get(ex.status, "white")
         started = ex.started_at
         if started and len(started) > 10:
-            # Show just time portion if today
             started = started.split("T")[-1].split(".")[0] if "T" in started else started
 
-        table.add_row(
+        row = [
             str(ex.id),
             f"[{style}]{ex.status}[/{style}]",
             ex.trigger or "\u2014",
             format_duration(ex.duration_ms),
             format_tokens(ex.total_tokens),
-            started or "\u2014",
-        )
+        ]
+        if has_cost:
+            cost = getattr(ex, "cost_usd", None)
+            row.append(f"${cost:.4f}" if cost is not None else "\u2014")
+        row.append(started or "\u2014")
+
+        table.add_row(*row)
 
     console.print(table)
     console.print()
@@ -854,6 +872,14 @@ def validate(
             print_check(p, detail="exists")
         for p in result.paths_missing:
             print_check(p, "warn", "does not exist yet")
+
+    # Other warnings (not already surfaced above)
+    _surfaced = {"cron", "watch path", "path:"}
+    other_warnings = [w for w in result.warnings if not any(k in w.lower() for k in _surfaced)]
+    if other_warnings:
+        console.print("\n  [bold]Warnings[/bold]")
+        for w in other_warnings:
+            console.print(f"  [yellow]⚠ {w}[/yellow]")
 
     # Summary
     warn_count = len(result.warnings)

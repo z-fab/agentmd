@@ -68,12 +68,50 @@ class TriggerConfig(BaseModel):
         return self
 
 
+def _get_global_limit_defaults() -> dict:
+    """Read limit defaults from config.yaml via the global Settings singleton."""
+    try:
+        from agent_md.core.settings import settings
+
+        defaults = {}
+        if settings.defaults_max_tool_calls is not None:
+            defaults["max_tool_calls"] = settings.defaults_max_tool_calls
+        if settings.defaults_max_execution_tokens is not None:
+            defaults["max_execution_tokens"] = settings.defaults_max_execution_tokens
+        if settings.defaults_max_cost_usd is not None:
+            defaults["max_cost_usd"] = settings.defaults_max_cost_usd
+        if settings.defaults_loop_detection is not None:
+            defaults["loop_detection"] = settings.defaults_loop_detection
+        return defaults
+    except Exception:
+        return {}
+
+
 class SettingsConfig(BaseModel):
     """LLM and runtime settings for an agent."""
 
     temperature: float = 0.7
     max_tokens: int = 4096
     timeout: int = 300  # seconds
+    # Execution limits (Spec 2)
+    max_tool_calls: int | None = 50
+    max_execution_tokens: int | None = 500_000
+    max_cost_usd: float | None = None
+    loop_detection: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_global_defaults(cls, data):
+        """Apply config.yaml limit defaults (frontmatter overrides)."""
+        if not isinstance(data, dict):
+            data = {}
+
+        global_defaults = _get_global_limit_defaults()
+        for field, value in global_defaults.items():
+            if field not in data:
+                data[field] = value
+
+        return data
 
 
 class ModelConfig(BaseModel):

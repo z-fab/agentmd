@@ -71,10 +71,12 @@ class PathContext:
             return (base / remainder).resolve() if remainder else base
         return self._resolve_relative(value)
 
-    def validate_path(self, path: str, config) -> tuple[Path | None, str | None]:
+    def validate_path(self, path: str, config, *, quiet: bool = False) -> tuple[Path | None, str | None]:
         """Resolve and sandbox-check a path.
 
         Returns (resolved_path, None) on success or (None, error_message).
+        When *quiet* is True, validation errors are not logged (used by
+        file_glob to silently filter results).
         """
         try:
             resolved = self.expand(path, config)
@@ -83,12 +85,14 @@ class PathContext:
 
         error = self._check_security(resolved)
         if error:
-            logger.warning("Security check failed for '%s': %s", path, error)
+            if not quiet:
+                logger.warning("Security check failed for '%s': %s", path, error)
             return None, error
 
         allowed = self.get_allowed_paths(config)
         if not self._is_within_any(resolved, allowed):
-            logger.warning("Path '%s' is outside allowed paths: %s", path, [str(p) for p in allowed])
+            if not quiet:
+                logger.warning("Path '%s' is outside allowed paths: %s", path, [str(p) for p in allowed])
             return None, f"Access denied: '{path}' is outside allowed paths"
 
         return resolved, None
@@ -104,6 +108,8 @@ class PathContext:
     def _check_security(self, resolved: Path) -> str | None:
         if self._is_within(resolved, self.agents_dir):
             return "Access denied: cannot access agents directory"
+        if self._is_within(resolved, self.db_path.parent):
+            return "Access denied: cannot access data directory"
         if resolved.name.startswith(".env"):
             return "Access denied: cannot access .env files"
         if resolved.suffix == ".db":

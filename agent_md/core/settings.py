@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     mcp_config: str = "agents/mcp-servers.json"
     defaults_provider: str = "google"
     defaults_model: str = "gemini-2.5-flash"
+    defaults_max_tool_calls: int | None = None
+    defaults_max_execution_tokens: int | None = None
+    defaults_max_cost_usd: float | None = None
+    defaults_loop_detection: bool | None = None
     log_level: str = "INFO"
 
     # --- Internal ---
@@ -105,7 +109,14 @@ class Settings(BaseSettings):
         # Flatten nested 'defaults' key
         defaults = raw.pop("defaults", {})
         if isinstance(defaults, dict):
-            for key, flat_key in (("provider", "defaults_provider"), ("model", "defaults_model")):
+            for key, flat_key in (
+                ("provider", "defaults_provider"),
+                ("model", "defaults_model"),
+                ("max_tool_calls", "defaults_max_tool_calls"),
+                ("max_execution_tokens", "defaults_max_execution_tokens"),
+                ("max_cost_usd", "defaults_max_cost_usd"),
+                ("loop_detection", "defaults_loop_detection"),
+            ):
                 if key in defaults:
                     raw.setdefault(flat_key, defaults[key])
 

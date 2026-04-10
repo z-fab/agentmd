@@ -198,6 +198,17 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
             if not p.exists():
                 warnings.append(f"Watch path does not exist: {wp}")
 
+    # Check pricing availability when cost limit is set
+    if config.settings.max_cost_usd is not None and config.model:
+        from agent_md.core.pricing import estimate_cost
+
+        test_cost = estimate_cost(config.model.provider, config.model.name, 1000, 1000)
+        if test_cost is None:
+            warnings.append(
+                f"max_cost_usd is set (${config.settings.max_cost_usd:.2f}) but no pricing data for "
+                f"{config.model.provider}/{config.model.name} — limit will not be enforced at runtime"
+            )
+
     return ValidationResult(
         config=config,
         builtin_tools=builtins,

@@ -18,6 +18,8 @@ class ExecutionRecord:
         self.input_tokens: Optional[int] = kwargs.get("input_tokens")
         self.output_tokens: Optional[int] = kwargs.get("output_tokens")
         self.total_tokens: Optional[int] = kwargs.get("total_tokens")
+        self.cost_usd: Optional[float] = kwargs.get("cost_usd")
+        self.pid: Optional[int] = kwargs.get("pid")
 
 
 class LogRecord:
