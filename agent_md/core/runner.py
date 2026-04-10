@@ -18,6 +18,15 @@ from agent_md.tools.registry import resolve_builtin_tools
 logger = logging.getLogger(__name__)
 
 
+class LimitExceeded(Exception):
+    """Raised when an execution limit is hit."""
+
+    def __init__(self, reason: str, detail: str = ""):
+        self.reason = reason
+        self.detail = detail
+        super().__init__(f"{reason}: {detail}" if detail else reason)
+
+
 def _is_final_ai_message(msg) -> bool:
     """Return True if *msg* is an AI message without tool calls (i.e. a text response)."""
     return getattr(msg, "type", "") == "ai" and not (hasattr(msg, "tool_calls") and msg.tool_calls)

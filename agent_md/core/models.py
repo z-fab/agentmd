@@ -74,6 +74,11 @@ class SettingsConfig(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 4096
     timeout: int = 300  # seconds
+    # Execution limits (Spec 2)
+    max_tool_calls: int | None = 50
+    max_execution_tokens: int | None = 500_000
+    max_cost_usd: float | None = None
+    loop_detection: bool = True
 
 
 class ModelConfig(BaseModel):
