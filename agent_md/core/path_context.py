@@ -108,6 +108,8 @@ class PathContext:
     def _check_security(self, resolved: Path) -> str | None:
         if self._is_within(resolved, self.agents_dir):
             return "Access denied: cannot access agents directory"
+        if self._is_within(resolved, self.db_path.parent):
+            return "Access denied: cannot access data directory"
         if resolved.name.startswith(".env"):
             return "Access denied: cannot access .env files"
         if resolved.suffix == ".db":
