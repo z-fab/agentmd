@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,33 @@ from agent_md.mcp.config import load_mcp_config
 from agent_md.mcp.manager import MCPManager
 
 logger = logging.getLogger(__name__)
+
+
+def _pid_alive(pid: int) -> bool:
+    """Check if a process with the given PID is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+async def sweep_orphans(db) -> int:
+    """Mark running executions whose processes are dead as 'orphaned'.
+
+    Returns the number of cleaned-up executions.
+    """
+    rows = await db.list_running_executions()
+    cleaned = 0
+    for row in rows:
+        if row.pid is None or not _pid_alive(row.pid):
+            await db.update_execution(
+                execution_id=row.id,
+                status="orphaned",
+                error="process died without cleanup",
+            )
+            cleaned += 1
+    return cleaned
 
 
 @dataclass
@@ -114,6 +142,11 @@ async def bootstrap(
     # Initialize database
     db = Database(db_path)
     await db.connect()
+
+    # Sweep orphaned executions from previous crashes
+    cleaned = await sweep_orphans(db)
+    if cleaned:
+        logger.info(f"Cleaned {cleaned} orphaned execution(s)")
 
     # Load MCP server configuration
     mcp_servers = load_mcp_config(mcp_config)
