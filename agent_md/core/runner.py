@@ -27,6 +27,21 @@ class LimitExceeded(Exception):
         super().__init__(f"{reason}: {detail}" if detail else reason)
 
 
+def _check_limits(settings, tool_call_count: int, total_tokens: int, cost_usd: float | None = None) -> None:
+    """Raise LimitExceeded if any hard limit is breached."""
+    if settings.max_tool_calls is not None and tool_call_count > settings.max_tool_calls:
+        raise LimitExceeded("max_tool_calls", f"{tool_call_count} calls (limit: {settings.max_tool_calls})")
+
+    if settings.max_execution_tokens is not None and total_tokens > settings.max_execution_tokens:
+        raise LimitExceeded(
+            "max_execution_tokens",
+            f"{total_tokens:,} tokens (limit: {settings.max_execution_tokens:,})",
+        )
+
+    if settings.max_cost_usd is not None and cost_usd is not None and cost_usd > settings.max_cost_usd:
+        raise LimitExceeded("max_cost_usd", f"${cost_usd:.4f} (limit: ${settings.max_cost_usd:.2f})")
+
+
 def _is_final_ai_message(msg) -> bool:
     """Return True if *msg* is an AI message without tool calls (i.e. a text response)."""
     return getattr(msg, "type", "") == "ai" and not (hasattr(msg, "tool_calls") and msg.tool_calls)
@@ -206,6 +221,7 @@ class AgentRunner:
         # Token accumulators
         total_input_tokens = 0
         total_output_tokens = 0
+        tool_call_count = 0
 
         try:
             # 2. Build model + tools + graph
@@ -219,7 +235,7 @@ class AgentRunner:
             graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -236,6 +252,11 @@ class AgentRunner:
                     if usage:
                         total_input_tokens += usage.get("input_tokens", 0)
                         total_output_tokens += usage.get("output_tokens", 0)
+
+                    # Count tool calls and check hard limits
+                    if getattr(msg, "type", "") == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
+                        tool_call_count += len(msg.tool_calls)
+                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens)
 
                     if _is_final_ai_message(msg):
                         last_ai_msg = msg
@@ -278,6 +299,22 @@ class AgentRunner:
             result = await self._finish_execution(
                 execution_id,
                 "timeout",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                error=error_msg,
+            )
+            if on_complete is not None:
+                on_complete(config.name, result)
+            return result
+
+        except LimitExceeded as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            error_msg = f"Aborted: {e.reason}" + (f" ({e.detail})" if e.detail else "")
+            logger.warning(f"Execution aborted: {config.name} — {error_msg}")
+            result = await self._finish_execution(
+                execution_id,
+                "aborted",
                 duration_ms,
                 total_input_tokens,
                 total_output_tokens,
