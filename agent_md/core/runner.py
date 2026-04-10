@@ -43,6 +43,20 @@ def _check_limits(settings, tool_call_count: int, total_tokens: int, cost_usd: f
         raise LimitExceeded("max_cost_usd", f"${cost_usd:.4f} (limit: ${settings.max_cost_usd:.2f})")
 
 
+def _looks_like_error(msg) -> bool:
+    """Return True if a tool response looks like an error."""
+    if getattr(msg, "type", "") != "tool":
+        return False
+    content = str(getattr(msg, "content", ""))
+    return content.startswith(("ERROR:", "Error:", "Exception"))
+
+
+def _normalize_error(content: str) -> str:
+    """Extract a stable signature from an error message."""
+    first_line = content.strip().split("\n", 1)[0]
+    return first_line[:200]
+
+
 def _is_final_ai_message(msg) -> bool:
     """Return True if *msg* is an AI message without tool calls (i.e. a text response)."""
     return getattr(msg, "type", "") == "ai" and not (hasattr(msg, "tool_calls") and msg.tool_calls)
@@ -229,6 +243,7 @@ class AgentRunner:
         tool_call_count = 0
         cost_usd: float | None = None
         _pricing_warned = False
+        last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
 
         try:
             # 2. Build model + tools + graph
@@ -242,7 +257,7 @@ class AgentRunner:
             graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, _pricing_warned
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, _pricing_warned, last_errors
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -287,6 +302,18 @@ class AgentRunner:
                         _pricing_warned = True
 
                     _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+
+                    # Loop detection: same tool error 3 times in a row
+                    if config.settings.loop_detection and _looks_like_error(msg):
+                        sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
+                        last_errors.append(sig)
+                        if len(last_errors) > 3:
+                            last_errors.pop(0)
+                        if len(last_errors) == 3 and len(set(last_errors)) == 1:
+                            raise LimitExceeded(
+                                "loop_detected",
+                                f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
+                            )
 
                     if _is_final_ai_message(msg):
                         last_ai_msg = msg
