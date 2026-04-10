@@ -47,7 +47,7 @@ def create_file_glob_tool(agent_config, path_context):
         for match in all_matches:
             if not match.is_file():
                 continue
-            resolved, error = path_context.validate_path(str(match), agent_config)
+            resolved, error = path_context.validate_path(str(match), agent_config, quiet=True)
             if error is None:
                 matches.append(resolved)
 
