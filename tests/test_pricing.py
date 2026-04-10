@@ -36,6 +36,7 @@ def test_estimate_cost_unknown_model():
 
 def test_user_override_merges(tmp_path):
     """User override file merges with built-in pricing."""
+    import agent_md.core.pricing as pricing_mod
     from agent_md.core.pricing import load_pricing
 
     override = tmp_path / "pricing.yaml"
@@ -44,8 +45,11 @@ def test_user_override_merges(tmp_path):
         "  custom-model:\n    input: 1.00\n    output: 2.00\n"
     )
 
+    # Clear cache so override is picked up
+    pricing_mod._pricing_cache = None
     with patch("agent_md.core.pricing._get_user_pricing_path", return_value=override):
         pricing = load_pricing()
+    pricing_mod._pricing_cache = None  # Reset for other tests
 
     # Overridden values
     assert pricing["google"]["gemini-2.0-flash"]["input"] == 0.20

@@ -11,6 +11,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _BUILTIN_PATH = Path(__file__).parent / "pricing.yaml"
+_pricing_cache: dict | None = None
 
 
 def _get_user_pricing_path() -> Path:
@@ -19,7 +20,14 @@ def _get_user_pricing_path() -> Path:
 
 
 def load_pricing() -> dict:
-    """Load built-in pricing + user override, returning merged dict."""
+    """Load built-in pricing + user override, returning merged dict.
+
+    Results are cached for the lifetime of the process.
+    """
+    global _pricing_cache
+    if _pricing_cache is not None:
+        return _pricing_cache
+
     with open(_BUILTIN_PATH) as f:
         pricing = yaml.safe_load(f) or {}
 
@@ -34,6 +42,7 @@ def load_pricing() -> dict:
             if isinstance(models, dict):
                 pricing[provider].update(models)
 
+    _pricing_cache = pricing
     return pricing
 
 

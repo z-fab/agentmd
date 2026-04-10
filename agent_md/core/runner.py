@@ -303,17 +303,20 @@ class AgentRunner:
 
                     _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
 
-                    # Loop detection: same tool error 3 times in a row
-                    if config.settings.loop_detection and _looks_like_error(msg):
-                        sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
-                        last_errors.append(sig)
-                        if len(last_errors) > 3:
-                            last_errors.pop(0)
-                        if len(last_errors) == 3 and len(set(last_errors)) == 1:
-                            raise LimitExceeded(
-                                "loop_detected",
-                                f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
-                            )
+                    # Loop detection: same tool error 3 consecutive times
+                    if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
+                        if _looks_like_error(msg):
+                            sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
+                            last_errors.append(sig)
+                            if len(last_errors) > 3:
+                                last_errors.pop(0)
+                            if len(last_errors) == 3 and len(set(last_errors)) == 1:
+                                raise LimitExceeded(
+                                    "loop_detected",
+                                    f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
+                                )
+                        else:
+                            last_errors.clear()  # Reset on successful tool response
 
                     if _is_final_ai_message(msg):
                         last_ai_msg = msg

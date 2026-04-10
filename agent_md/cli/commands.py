@@ -873,6 +873,14 @@ def validate(
         for p in result.paths_missing:
             print_check(p, "warn", "does not exist yet")
 
+    # Other warnings (not already surfaced above)
+    _surfaced = {"cron", "watch path", "path:"}
+    other_warnings = [w for w in result.warnings if not any(k in w.lower() for k in _surfaced)]
+    if other_warnings:
+        console.print("\n  [bold]Warnings[/bold]")
+        for w in other_warnings:
+            console.print(f"  [yellow]⚠ {w}[/yellow]")
+
     # Summary
     warn_count = len(result.warnings)
     console.print()
