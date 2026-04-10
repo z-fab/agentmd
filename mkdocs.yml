@@ -104,6 +104,8 @@ nav:
   - Agent Configuration: agent-configuration.md
   - CLI Reference: cli-reference.md
   - Paths & Security: paths-and-security.md
+  - Path Model: path-model.md
+  - Execution Limits: limits.md
   - Providers: providers.md
   - Triggers: triggers.md
   - Memory: memory.md

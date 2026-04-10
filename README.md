@@ -27,7 +27,8 @@ No boilerplate. No frameworks to learn. Just Markdown.
 - **🕐 Flexible triggers** — Run manually, on schedules (cron/intervals), or when files change
 - **🔧 Built-in tools** — File I/O and HTTP requests work out of the box
 - **🔌 MCP support** — Connect to any Model Context Protocol server
-- **📊 Execution tracking** — Every run logged with status, duration, and token usage
+- **📊 Execution tracking** — Every run logged with status, duration, token usage, and estimated cost
+- **🛡️ Execution limits** — Hard caps on tool calls, tokens, and cost to prevent runaway agents
 - **🎯 Git-friendly** — Version control your prompts. See exactly how they evolved.
 
 ---
@@ -149,6 +150,8 @@ agents_dir: agents
 defaults:
   provider: google
   model: gemini-2.5-flash
+  max_tool_calls: 50        # optional: limit tool invocations per run
+  max_cost_usd: 1.00        # optional: cost cap per run (USD)
 ```
 
 ```bash
@@ -215,6 +218,7 @@ Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://
 - [Quick Start](https://z-fab.github.io/agentmd/quick-start)
 - [Agent Configuration](https://z-fab.github.io/agentmd/agent-configuration)
 - [CLI Reference](https://z-fab.github.io/agentmd/cli-reference)
+- [Execution Limits](https://z-fab.github.io/agentmd/limits)
 - [Providers](https://z-fab.github.io/agentmd/providers)
 - [Triggers](https://z-fab.github.io/agentmd/triggers)
 - [Tools Documentation](https://z-fab.github.io/agentmd/tools/)
