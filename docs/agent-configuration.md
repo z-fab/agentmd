@@ -257,6 +257,21 @@ settings:
   timeout: 120  # Allow 2 minutes
 ```
 
+### Execution Limits
+
+Control resource usage per execution:
+
+```yaml
+settings:
+  max_tool_calls: 50          # default: 50
+  max_execution_tokens: 500000 # default: 500,000
+  max_cost_usd: 0.50          # default: none
+  loop_detection: true         # default: true
+```
+
+See [Execution Limits](limits.md) for details on how limits work,
+global defaults, and pricing configuration.
+
 **Example configurations:**
 
 ```yaml
