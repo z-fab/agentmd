@@ -187,6 +187,69 @@ async def test_max_execution_tokens_aborts():
 
 
 @pytest.mark.asyncio
+async def test_max_cost_usd_aborts():
+    """Execution aborts after exceeding max_cost_usd."""
+    config = _make_config(max_cost_usd=0.01)
+    config.model.provider = "openai"
+    config.model.name = "gpt-4o"
+
+    # gpt-4o: $2.50/1M input, $10.00/1M output
+    # 10k input + 10k output = $0.025 + $0.10 = $0.125 > $0.01
+    messages = [
+        _make_ai_msg("thinking", tool_calls=[{"name": "t", "args": {}}], input_tokens=10000, output_tokens=10000),
+        _make_tool_response("t"),
+        _make_ai_msg("done", input_tokens=100, output_tokens=100),
+    ]
+
+    db = AsyncMock()
+    db.create_execution = AsyncMock(return_value=1)
+    db.update_execution = AsyncMock()
+    db.add_log = AsyncMock()
+
+    runner = AgentRunner(db, MagicMock(), MagicMock())
+
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+            async def fake_stream(*args, **kwargs):
+                for m in messages:
+                    yield m
+            mock_stream.return_value = fake_stream()
+
+            result = await runner.run(config)
+
+    assert result["status"] == "aborted"
+    assert "max_cost_usd" in result.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_cost_warning_unknown_model():
+    """When max_cost_usd is set but model pricing is unknown, execution completes with warning."""
+    config = _make_config(max_cost_usd=0.50)
+    config.model.provider = "google"
+    config.model.name = "totally-unknown-model"
+
+    messages = [_make_ai_msg("done", input_tokens=100, output_tokens=50)]
+
+    db = AsyncMock()
+    db.create_execution = AsyncMock(return_value=1)
+    db.update_execution = AsyncMock()
+    db.add_log = AsyncMock()
+
+    runner = AgentRunner(db, MagicMock(), MagicMock())
+
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+            async def fake_stream(*args, **kwargs):
+                for m in messages:
+                    yield m
+            mock_stream.return_value = fake_stream()
+
+            result = await runner.run(config)
+
+    assert result["status"] == "success"
+
+
+@pytest.mark.asyncio
 async def test_null_limits_no_abort():
     """When limits are None, no abort happens."""
     config = _make_config(max_tool_calls=None, max_execution_tokens=None)

@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS executions (
     error         TEXT,
     input_tokens  INTEGER,
     output_tokens INTEGER,
-    total_tokens  INTEGER
+    total_tokens  INTEGER,
+    cost_usd      REAL,
+    pid           INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS execution_logs (
@@ -53,6 +55,12 @@ CREATE INDEX IF NOT EXISTS idx_logs_execution ON execution_logs(execution_id);
 # ---------------------------------------------------------------------------
 
 
+MIGRATIONS = [
+    "ALTER TABLE executions ADD COLUMN cost_usd REAL",
+    "ALTER TABLE executions ADD COLUMN pid INTEGER",
+]
+
+
 class Database:
     """Async SQLite database manager."""
 
@@ -67,6 +75,12 @@ class Database:
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(SCHEMA)
         await self._db.commit()
+        for migration in MIGRATIONS:
+            try:
+                await self._db.execute(migration)
+                await self._db.commit()
+            except Exception:
+                pass  # Column already exists
         logger.info(f"Database connected: {self.db_path}")
 
     async def close(self) -> None:
@@ -85,13 +99,12 @@ class Database:
 
     async def create_execution(self, agent_id: str, trigger: str, status: str = "running") -> int:
         """Create a new execution record. Returns the execution ID."""
+        import os
+
         now = datetime.now(timezone.utc).isoformat()
         cursor = await self.db.execute(
-            """
-            INSERT INTO executions (agent_id, status, trigger, started_at)
-            VALUES (?, ?, ?, ?)
-            """,
-            (agent_id, status, trigger, now),
+            "INSERT INTO executions (agent_id, status, trigger, started_at, pid) VALUES (?, ?, ?, ?, ?)",
+            (agent_id, status, trigger, now, os.getpid()),
         )
         await self.db.commit()
         return cursor.lastrowid
@@ -106,6 +119,7 @@ class Database:
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
         total_tokens: Optional[int] = None,
+        cost_usd: Optional[float] = None,
     ) -> None:
         """Update an execution with its final status."""
         now = datetime.now(timezone.utc).isoformat()
@@ -114,12 +128,19 @@ class Database:
             UPDATE executions
             SET status = ?, finished_at = ?, duration_ms = ?,
                 output_data = ?, error = ?,
-                input_tokens = ?, output_tokens = ?, total_tokens = ?
+                input_tokens = ?, output_tokens = ?, total_tokens = ?,
+                cost_usd = ?
             WHERE id = ?
             """,
-            (status, now, duration_ms, output_data, error, input_tokens, output_tokens, total_tokens, execution_id),
+            (status, now, duration_ms, output_data, error, input_tokens, output_tokens, total_tokens, cost_usd, execution_id),
         )
         await self.db.commit()
+
+    async def list_running_executions(self) -> list[ExecutionRecord]:
+        """Get all executions with status 'running'."""
+        cursor = await self.db.execute("SELECT * FROM executions WHERE status = 'running'")
+        rows = await cursor.fetchall()
+        return [ExecutionRecord(**dict(row)) for row in rows]
 
     async def get_executions(self, agent_id: str, limit: int = 10) -> list[ExecutionRecord]:
         """Get recent executions for an agent."""

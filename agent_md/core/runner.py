@@ -6,6 +6,7 @@ import time
 
 from agent_md.core.execution_logger import ExecutionLogger
 from agent_md.core.path_context import PathContext
+from agent_md.core.pricing import estimate_cost
 from agent_md.core.registry import AgentConfig
 from agent_md.db.database import Database
 from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn
@@ -76,6 +77,7 @@ class AgentRunner:
         *,
         output_data: str | None = None,
         error: str | None = None,
+        cost_usd: float | None = None,
     ) -> dict:
         """Persist execution result and return a standard result dict."""
         total_tokens = input_tokens + output_tokens
@@ -86,6 +88,7 @@ class AgentRunner:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
+            cost_usd=cost_usd,
             **({"output_data": output_data} if output_data else {}),
             **({"error": error} if error else {}),
         )
@@ -99,6 +102,8 @@ class AgentRunner:
         }
         if error:
             result["error"] = error
+        if cost_usd is not None:
+            result["cost_usd"] = cost_usd
         return result
 
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
@@ -222,6 +227,8 @@ class AgentRunner:
         total_input_tokens = 0
         total_output_tokens = 0
         tool_call_count = 0
+        cost_usd: float | None = None
+        _pricing_warned = False
 
         try:
             # 2. Build model + tools + graph
@@ -235,7 +242,7 @@ class AgentRunner:
             graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, _pricing_warned
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -253,10 +260,33 @@ class AgentRunner:
                         total_input_tokens += usage.get("input_tokens", 0)
                         total_output_tokens += usage.get("output_tokens", 0)
 
-                    # Count tool calls and check hard limits
+                    # Count tool calls
                     if getattr(msg, "type", "") == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
                         tool_call_count += len(msg.tool_calls)
-                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens)
+
+                    # Estimate running cost
+                    if usage:
+                        cost_usd = estimate_cost(
+                            config.model.provider,
+                            config.model.name,
+                            total_input_tokens,
+                            total_output_tokens,
+                        )
+
+                    # Warn once if cost limit is set but pricing is unknown
+                    if (
+                        not _pricing_warned
+                        and config.settings.max_cost_usd is not None
+                        and cost_usd is None
+                        and (total_input_tokens + total_output_tokens) > 0
+                    ):
+                        logger.warning(
+                            f"max_cost_usd configured but no pricing data for "
+                            f"{config.model.provider}/{config.model.name}; limit will not be enforced"
+                        )
+                        _pricing_warned = True
+
+                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
 
                     if _is_final_ai_message(msg):
                         last_ai_msg = msg
@@ -282,6 +312,7 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 output_data=output[:10000],
+                cost_usd=cost_usd,
             )
             result["output"] = output
             logger.info(
@@ -303,6 +334,7 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 error=error_msg,
+                cost_usd=cost_usd,
             )
             if on_complete is not None:
                 on_complete(config.name, result)
@@ -319,6 +351,7 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 error=error_msg,
+                cost_usd=cost_usd,
             )
             if on_complete is not None:
                 on_complete(config.name, result)
@@ -335,6 +368,7 @@ class AgentRunner:
                 total_input_tokens,
                 total_output_tokens,
                 error=error_msg,
+                cost_usd=cost_usd,
             )
             if on_complete is not None:
                 on_complete(config.name, result)
