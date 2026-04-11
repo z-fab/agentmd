@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import time
 
-from agent_md.core.execution_logger import ExecutionLogger
+from agent_md.core.execution_logger import ExecutionLogger, _extract_text
 from agent_md.core.path_context import PathContext
 from agent_md.core.pricing import estimate_cost
 from agent_md.core.registry import AgentConfig
@@ -17,6 +18,8 @@ from agent_md.graph.post_tool_processor import create_post_tool_processor
 from agent_md.tools.registry import resolve_builtin_tools
 
 logger = logging.getLogger(__name__)
+
+_COMPLETE_SEQ = sys.maxsize  # ensures complete event is never filtered by SSE dedup
 
 
 class LimitExceeded(Exception):
@@ -60,6 +63,48 @@ def _normalize_error(content: str) -> str:
 def _is_final_ai_message(msg) -> bool:
     """Return True if *msg* is an AI message without tool calls (i.e. a text response)."""
     return getattr(msg, "type", "") == "ai" and not (hasattr(msg, "tool_calls") and msg.tool_calls)
+
+
+def _classify_event_type(msg) -> str:
+    """Map a LangChain message to an SSE event type.
+
+    Returns one of: ai, tool_call, tool_result, meta, human, system.
+    These match the event types used by _print_event in the CLI.
+    """
+    meta_type = getattr(msg, "additional_kwargs", {}).get("meta_type")
+    if meta_type:
+        return "meta"
+    msg_type = getattr(msg, "type", "unknown")
+    if msg_type == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
+        return "tool_call"
+    if msg_type == "tool":
+        return "tool_result"
+    # Preserve original type (ai, human, system) for correct CLI display
+    return msg_type
+
+
+def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
+    """Build structured event data for the EventBus, including tool details."""
+    content = _extract_text(getattr(msg, "content", ""))[:500]
+    data: dict = {"event_type": event_type, "agent_name": agent_name}
+
+    if event_type == "tool_call" and hasattr(msg, "tool_calls") and msg.tool_calls:
+        tools = []
+        for tc in msg.tool_calls:
+            tools.append({
+                "name": tc.get("name", "unknown"),
+                "args": str(tc.get("args", {}))[:200],
+            })
+        data["tools"] = tools
+        if content:
+            data["content"] = content
+    elif event_type == "tool_result":
+        data["tool_name"] = getattr(msg, "name", "unknown")
+        data["content"] = content[:200]
+    else:
+        data["content"] = content
+
+    return data
 
 
 class AgentRunner:
@@ -204,6 +249,10 @@ class AgentRunner:
         on_start=None,
         on_complete=None,
         arguments: str = "",
+        event_bus=None,
+        cancel_event: asyncio.Event | None = None,
+        execution_id: int | None = None,
+        user_message: str | None = None,
     ) -> dict:
         """Execute an agent and persist the result.
 
@@ -228,11 +277,12 @@ class AgentRunner:
             on_start(config.name, model_info)
 
         # 1. Record execution start
-        execution_id = await self.db.create_execution(
-            agent_id=config.name,
-            trigger=trigger_type,
-            status="running",
-        )
+        if execution_id is None:
+            execution_id = await self.db.create_execution(
+                agent_id=config.name,
+                trigger=trigger_type,
+                status="running",
+            )
 
         ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=on_event)
         start_time = time.monotonic()
@@ -251,13 +301,22 @@ class AgentRunner:
 
             # 3. Build user input with trigger context
             user_input = self._build_user_input(trigger_type, trigger_context, config)
+            if user_message:
+                user_input = user_message
 
             # 4. Stream execution -- log each message in real time
             last_ai_msg = None
             graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, _pricing_warned, last_errors
+                nonlocal \
+                    last_ai_msg, \
+                    total_input_tokens, \
+                    total_output_tokens, \
+                    tool_call_count, \
+                    cost_usd, \
+                    _pricing_warned, \
+                    last_errors
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -267,7 +326,18 @@ class AgentRunner:
                     config=graph_config,
                     arguments=arguments,
                 ):
-                    await ex_logger.log_message(msg)
+                    log_id = await ex_logger.log_message(msg)
+
+                    if event_bus is not None:
+                        event_type = _classify_event_type(msg)
+                        event_data = _build_event_data(msg, event_type, config.name)
+                        await event_bus.publish(
+                            execution_id,
+                            {"type": event_type, "seq": log_id, "data": event_data},
+                        )
+
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise LimitExceeded("cancelled", "Execution cancelled by user")
 
                     # Accumulate token usage from every AI message
                     usage = getattr(msg, "usage_metadata", None)
@@ -328,11 +398,18 @@ class AgentRunner:
             # 5. Extract final output
             output = ""
             if last_ai_msg:
-                from agent_md.core.execution_logger import _extract_text
-
                 raw_content = getattr(last_ai_msg, "content", None)
                 output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
-                await ex_logger.mark_final_answer(last_ai_msg)
+                log_id = await ex_logger.mark_final_answer(last_ai_msg)
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {
+                            "type": "final_answer",
+                            "seq": log_id,
+                            "data": {"content": output, "agent_name": config.name},
+                        },
+                    )
 
             # 6. Persist success
             result = await self._finish_execution(
@@ -349,6 +426,21 @@ class AgentRunner:
                 f"Execution complete: {config.name} — success in {duration_ms}ms "
                 f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
             )
+            if event_bus is not None:
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
+                        },
+                    },
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
@@ -366,6 +458,21 @@ class AgentRunner:
                 error=error_msg,
                 cost_usd=cost_usd,
             )
+            if event_bus is not None:
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
+                        },
+                    },
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
@@ -383,6 +490,21 @@ class AgentRunner:
                 error=error_msg,
                 cost_usd=cost_usd,
             )
+            if event_bus is not None:
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
+                        },
+                    },
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
@@ -400,6 +522,21 @@ class AgentRunner:
                 error=error_msg,
                 cost_usd=cost_usd,
             )
+            if event_bus is not None:
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
+                        },
+                    },
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result

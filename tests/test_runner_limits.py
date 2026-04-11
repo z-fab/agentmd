@@ -1,6 +1,9 @@
 """Tests for execution limits and LimitExceeded."""
 
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 from agent_md.core.models import SettingsConfig
+from agent_md.core.runner import AgentRunner, LimitExceeded
 
 
 def test_settings_defaults():
@@ -28,9 +31,6 @@ def test_settings_null_disables():
     assert s.max_execution_tokens is None
 
 
-from agent_md.core.runner import LimitExceeded
-
-
 def test_limit_exceeded_str():
     e = LimitExceeded("max_tool_calls", "50 calls reached")
     assert str(e) == "max_tool_calls: 50 calls reached"
@@ -43,12 +43,6 @@ def test_limit_exceeded_no_detail():
     assert str(e) == "max_execution_tokens"
     assert e.reason == "max_execution_tokens"
     assert e.detail == ""
-
-
-import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from agent_md.core.runner import AgentRunner, LimitExceeded
 
 
 def _make_config(
@@ -142,9 +136,11 @@ async def test_max_tool_calls_aborts():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)
@@ -175,9 +171,11 @@ async def test_max_execution_tokens_aborts():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)
@@ -210,9 +208,11 @@ async def test_max_cost_usd_aborts():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)
@@ -239,9 +239,11 @@ async def test_cost_warning_unknown_model():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)
@@ -269,9 +271,11 @@ async def test_null_limits_no_abort():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)

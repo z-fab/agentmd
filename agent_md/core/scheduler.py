@@ -43,6 +43,7 @@ class AgentScheduler:
         self.observer = Observer()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._watch_handlers: dict[str, list] = {}  # agent_name -> list of (handler, watch_id)
+        self._paused = False
 
     def schedule_agent(self, config: AgentConfig) -> None:
         """Schedule an agent based on its trigger config."""
@@ -162,6 +163,34 @@ class AgentScheduler:
 
         # 4. Start observer once (all handlers already registered)
         self.observer.start()
+
+    def get_next_run(self, agent_name: str) -> str | None:
+        """Return ISO timestamp of next scheduled run for *agent_name*, or None."""
+        job = self.scheduler.get_job(agent_name)
+        if job and job.next_run_time:
+            return job.next_run_time.isoformat()
+        return None
+
+    def get_jobs(self) -> list[dict]:
+        """Return list of scheduled jobs with next_run times."""
+        jobs = []
+        for job in self.scheduler.get_jobs():
+            jobs.append({
+                "agent_name": job.id,
+                "trigger_type": "schedule",
+                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            })
+        return jobs
+
+    def pause(self) -> None:
+        """Pause the scheduler (does not cancel running jobs)."""
+        self.scheduler.pause()
+        self._paused = True
+
+    def resume(self) -> None:
+        """Resume the scheduler."""
+        self.scheduler.resume()
+        self._paused = False
 
     def stop(self) -> None:
         """Stop scheduler and watcher gracefully."""

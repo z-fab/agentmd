@@ -3,6 +3,42 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0] — 2026-04-11
+
+### Breaking Changes
+- **Backend replaces daemon** — `agentmd start` now runs a FastAPI HTTP backend over Unix socket
+- Old daemon (`daemon.py`) removed entirely
+- `agentmd start` default is now foreground (use `-d`/`--daemon` for background)
+
+### Added
+- HTTP API with 15 endpoints for agents, executions, scheduler, and health
+- SSE streaming for real-time execution events (`GET /executions/{id}/stream`) with DB catchup + live dedup
+- Execution cancellation via `DELETE /executions/{id}` and Ctrl+C in CLI
+- EventBus — in-memory pub/sub for execution events between runner and SSE clients
+- CLI auto-spawn — `agentmd run` and `agentmd chat` start the backend automatically if not running
+- Lifecycle manager with idle timeout (5min default, `--keep-alive` to disable)
+- API key authentication for TCP transport (`--port` + `--api-key`)
+- DB WAL mode for concurrent reader/writer access
+- `POST /agents/reload` — re-parse agent files from disk without restart
+- Scheduler pause/resume via `POST /scheduler/pause` and `/resume`
+- `GET /agents/{name}` includes `next_run` for scheduled agents
+- `POST /agents/{name}/run` accepts optional `message` field — chat is just repeated runs with user messages
+- Chat mode in CLI — discrete display with accumulated session stats (turns, time, tokens, cost)
+- "No final response" indicator when agent completes without a text response
+- OpenAPI docs available at `/docs` (Swagger) and `/redoc` while backend is running
+
+### Changed
+- CLI `run` streams events via SSE with structured output (tool calls with `>>`, results with `<<`, final answer with `✅`)
+- CLI `chat` shows only the response text, with tools and thinking in dim gray
+- CLI `start`/`stop`/`status` are now thin HTTP clients
+- `list`, `logs`, `validate` remain static (read-only DB, no backend needed)
+- DB opened in read-only mode for static CLI commands
+- Backend is the sole DB writer (eliminates SQLite lock contention)
+
+### Fixed
+- Ghost processes no longer possible (backend owns all executions)
+- Cold start eliminated for subsequent runs (backend keeps state warm)
+
 ## [0.7.1] — 2026-04-10
 
 ### Added

@@ -92,16 +92,14 @@ agentmd run hello-world
 **Output:**
 
 ```
-  ▶ Running hello-world
-    google / gemini-2.5-flash
+Execution 1 started
+  🔧 >> file_write ({'path': 'greeting.txt', 'content': 'Hello! ...'})
+  📎 << file_write → Created greeting.txt (42 chars, 1 lines)
+  🤖 I created a friendly greeting for you!
 
-  11:32:04  🤖 I'll create a friendly greeting...
-  11:32:05  🔧 file_write → greeting.txt
-  11:32:05  ✅ Done!
+✅ I created a friendly greeting and saved it to greeting.txt.
 
-  ✓ hello-world completed in 1.8s
-    Tokens: 42 in / 118 out / 160 total
-    Execution #1
+success  |  1.8s  |  160 tokens  |  $0.0001
 ```
 
 ### Or Chat with It
@@ -113,20 +111,20 @@ agentmd chat hello-world
 ```
 
 ```
-  Chat with hello-world
-    google / gemini-2.5-flash
-    Type /exit or Ctrl+C to end session
+Chat with hello-world (google/gemini-2.5-flash)
+Type /exit to end the session
 
-  > Write me a greeting in Portuguese
-  11:33:01  🤖 Olá! Que seu dia seja cheio de...
-  11:33:02  ✅ Done!
+> Write me a greeting in Portuguese
+  file_write...
+Olá! Que seu dia seja cheio de alegria e boas surpresas!
 
-  > Now save it to greeting-pt.txt
-  11:33:10  🔧 file_write → greeting-pt.txt
-  11:33:10  ✅ Saved!
+> Now save it to greeting-pt.txt
+  file_write...
+Done! Saved to greeting-pt.txt.
 
-  Session ended: 2 turns, 280 tokens (84 in / 196 out), 12.3s
-  Execution #2
+> /exit
+
+3 turns  |  12.3s  |  580 tokens  |  $0.0002
 ```
 
 That's it! 🎉
@@ -222,8 +220,33 @@ Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://
 - [Providers](https://z-fab.github.io/agentmd/providers)
 - [Triggers](https://z-fab.github.io/agentmd/triggers)
 - [Tools Documentation](https://z-fab.github.io/agentmd/tools/)
+- [REST API](https://z-fab.github.io/agentmd/api)
 - [Examples](https://z-fab.github.io/agentmd/examples)
 - [Security Best Practices](https://z-fab.github.io/agentmd/guides/security-best-practices)
+
+---
+
+## 🌐 HTTP Backend
+
+As of v0.8.0, `agentmd start` runs a FastAPI HTTP backend over a Unix domain socket. The CLI communicates with it automatically — no manual API calls needed for normal use.
+
+```bash
+agentmd start          # foreground (Ctrl+C to stop)
+agentmd start -d       # background daemon
+agentmd status         # check backend status
+agentmd stop           # graceful shutdown
+```
+
+The backend exposes a full REST API for integrations. When `--port` and `--api-key` are provided, it also binds to TCP:
+
+```bash
+agentmd start --port 4100 --api-key YOUR_KEY
+curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
+```
+
+Interactive API docs are available at `/docs` (Swagger) and `/redoc` while the backend is running.
+
+**[→ REST API Reference](https://z-fab.github.io/agentmd/api)**
 
 ---
 
@@ -234,6 +257,8 @@ Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://
 | Runtime | Python 3.13+ |
 | Agent Framework | [LangGraph](https://github.com/langchain-ai/langgraph) |
 | LLM Providers | Google, OpenAI, Anthropic, Ollama, Local |
+| HTTP Backend | [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) |
+| HTTP Client | [HTTPX](https://www.python-httpx.org/) |
 | CLI | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) |
 | Database | SQLite (async via [aiosqlite](https://github.com/omnilib/aiosqlite)) |
 | Scheduling | [APScheduler](https://apscheduler.readthedocs.io/) |

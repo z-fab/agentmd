@@ -1,7 +1,6 @@
 # tests/test_pricing.py
 """Tests for the pricing registry."""
 
-import pytest
 from unittest.mock import patch
 
 

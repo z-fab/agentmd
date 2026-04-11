@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Annotated, Optional
 
 import typer
 
@@ -16,18 +17,10 @@ from agent_md.cli.theme import (
     format_relative_time,
     format_tokens,
     format_trigger,
-    make_panel,
     make_table,
-    print_agent_complete,
-    print_agent_event,
-    print_agent_start,
-    print_banner,
-    print_chat_header,
     print_check,
-    print_chat_summary,
     print_error,
     print_kv,
-    print_markdown,
     print_success,
     print_warning,
     select_agent,
@@ -365,89 +358,93 @@ def new(
 
 @app.command()
 def start(
-    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
-    daemon: bool = typer.Option(False, "--daemon", "-d", help="Run in background"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress output except errors"),
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    daemon: Annotated[bool, typer.Option("--daemon", "-d")] = False,
+    keep_alive: Annotated[bool, typer.Option("--keep-alive")] = False,
+    port: Annotated[Optional[int], typer.Option("--port")] = None,
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    api_key: Annotated[Optional[str], typer.Option("--api-key")] = None,
+    internal_backend: Annotated[bool, typer.Option("--internal-backend", hidden=True)] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ):
-    """Start the Agent.md runtime (scheduler + watcher)."""
-    ws = _resolve_workspace(workspace)
+    """Start the AgentMD backend."""
+    from rich.console import Console
 
-    if daemon:
-        from agent_md.cli.daemon import is_running, start_daemon, get_log_file
+    console = Console()
+    ws = Path(workspace) if workspace else None
 
-        running, pid = is_running(ws)
-        if running:
-            print_error(f"agentmd is already running (pid {pid}).", "Use 'agentmd stop' first.")
-            raise typer.Exit(1)
+    if daemon and not internal_backend:
+        from agent_md.cli.spawn import _spawn_backend
+        from agent_md.cli.client import BackendClient, get_log_path
 
-        pid = start_daemon(ws)
-        console.print(f"  agentmd started (pid {pid})")
-        console.print(f"  Log: {get_log_file(ws)}")
-        console.print("  [dim]Use 'agentmd status' to check, 'agentmd stop' to stop.[/dim]")
+        client = BackendClient()
+        if client.health_check():
+            console.print("[yellow]Backend is already running.[/yellow]")
+            return
+
+        pid = _spawn_backend(ws)
+        console.print(f"[green]Backend started[/green] (PID {pid})")
+        console.print(f"  Logs: {get_log_path()}")
         return
 
-    # Foreground mode
-    on_event = print_agent_event if not quiet else None
-    asyncio.run(_start_foreground(ws, on_event=on_event, quiet=quiet))
+    if not quiet and not internal_backend:
+        console.print("[bold]AgentMD Backend[/bold]")
+
+    asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
 
 
-async def _start_foreground(workspace: Path, on_event=None, quiet: bool = False) -> None:
-    from agent_md import __version__
-    from agent_md.core.bootstrap import bootstrap
+async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
+    """Run the FastAPI backend with uvicorn."""
+    import uvicorn
+    from agent_md.api.app import create_app
+    from agent_md.cli.client import get_socket_path, get_state_dir
 
-    on_start = print_agent_start if on_event else None
-    on_complete = print_agent_complete if on_event else None
-    runtime = await bootstrap(
-        workspace, start_scheduler=True, on_event=on_event, on_complete=on_complete, on_start=on_start
-    )
+    app = create_app(workspace=workspace, start_scheduler=True)
+    app.state.keep_alive = keep_alive
 
-    agents = runtime.registry.all()
-    enabled = [a for a in agents if a.enabled]
-    scheduled = [a for a in enabled if a.trigger.type != "manual"]
+    socket_path = get_socket_path()
+    state_dir = get_state_dir()
+    state_dir.mkdir(parents=True, exist_ok=True)
 
-    if not quiet:
-        console.print()
-        print_banner(__version__)
-        console.print()
+    if socket_path.exists():
+        socket_path.unlink()
 
-        # Runtime info panel
-        from rich.table import Table
+    if api_key and port:
+        from agent_md.api.auth import ApiKeyMiddleware
 
-        info = Table(show_header=False, box=None, padding=(0, 2))
-        info.add_column("Key", style="bold")
-        info.add_column("Value")
-        info.add_row("Workspace", str(runtime.path_context.workspace_root))
-        info.add_row("Agents", f"{len(agents)} loaded, {len(scheduled)} scheduled")
-        console.print(make_panel(info, title="Runtime"))
-        console.print()
+        app.add_middleware(ApiKeyMiddleware, api_key=api_key)
 
-        # Agent table with next-run
-        if agents:
-            table = make_table(
-                ("Name", {"style": "cyan"}),
-                ("Trigger", {}),
-                ("Next Run", {"style": "dim"}),
-            )
-            for a in agents:
-                next_run = "\u2014"
-                if runtime.scheduler and a.trigger.type != "manual":
-                    job = runtime.scheduler.scheduler.get_job(f"agent_{a.name}")
-                    if job and job.next_run_time:
-                        next_run = job.next_run_time.strftime("%H:%M:%S")
-                table.add_row(a.name, format_trigger(a), next_run)
-            console.print(table)
-            console.print()
+    config = uvicorn.Config(app, uds=str(socket_path), log_level="warning" if quiet else "info")
+    server = uvicorn.Server(config)
 
-        console.print("  [dim]Listening... Press Ctrl+C to stop[/dim]")
-        console.print()
+    async def _set_socket_perms():
+        while not socket_path.exists():
+            await asyncio.sleep(0.1)
+        socket_path.chmod(0o600)
 
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        console.print("\n  [yellow]Shutting down...[/yellow]")
-        await runtime.aclose()
-        print_success("agentmd stopped.")
+    async def _watch_shutdown():
+        while not hasattr(app.state, "shutdown_event"):
+            await asyncio.sleep(0.1)
+        await app.state.shutdown_event.wait()
+        server.should_exit = True
+
+    asyncio.create_task(_set_socket_perms())
+    asyncio.create_task(_watch_shutdown())
+
+    if port:
+        tcp_config = uvicorn.Config(app, host=host, port=port, log_level="warning" if quiet else "info")
+        tcp_server = uvicorn.Server(tcp_config)
+
+        async def _watch_shutdown_tcp():
+            while not hasattr(app.state, "shutdown_event"):
+                await asyncio.sleep(0.1)
+            await app.state.shutdown_event.wait()
+            tcp_server.should_exit = True
+
+        asyncio.create_task(_watch_shutdown_tcp())
+        await asyncio.gather(server.serve(), tcp_server.serve())
+    else:
+        await server.serve()
 
 
 # ---------------------------------------------------------------------------
@@ -455,41 +452,210 @@ async def _start_foreground(workspace: Path, on_event=None, quiet: bool = False)
 # ---------------------------------------------------------------------------
 
 
-@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+@app.command(context_settings={"allow_extra_args": True})
 def run(
     ctx: typer.Context,
-    agent: str = typer.Argument(None, help="Agent name (interactive picker if omitted)"),
-    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress output except result"),
+    agent: Annotated[Optional[str], typer.Argument()] = None,
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ):
-    """Execute a single agent manually (one-shot).
+    """Execute a single agent."""
+    from rich.console import Console
+    from agent_md.cli.spawn import ensure_backend
 
-    Pass extra positional arguments to substitute $ARGUMENTS / $0..$9 in the prompt:
-        agentmd run my-agent -- arg1 arg2
-    """
-    from agent_md.core.services import AgentNotFoundError, run_agent
+    console = Console()
 
-    agent_name = _pick_or_resolve_agent(agent, workspace)
-    arguments = " ".join(ctx.args) if ctx.args else ""
-
-    on_event = print_agent_event if not quiet else None
-    on_start = print_agent_start if not quiet else None
-    on_complete = print_agent_complete if not quiet else None
+    if not agent:
+        ws = Path(workspace) if workspace else None
+        agent = _pick_or_resolve_agent(None, ws)
+        if not agent:
+            return
 
     try:
-        _, result = asyncio.run(
-            run_agent(
-                agent_name,
-                workspace,
-                on_event=on_event,
-                on_start=on_start,
-                on_complete=on_complete,
-                arguments=arguments,
-            )
-        )
-    except AgentNotFoundError:
-        print_error(f"Agent '{agent_name}' not found in workspace.", "Run 'agentmd list' to see available agents.")
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+
+    arguments = ctx.args
+    body = {"args": arguments} if arguments else {}
+    resp = client.post(f"/agents/{agent}/run", json=body)
+    if resp.status_code == 404:
+        console.print(f"[red]Agent '{agent}' not found.[/red]")
+        raise typer.Exit(1)
+    if resp.status_code != 200:
+        console.print(f"[red]Error: {resp.text}[/red]")
+        raise typer.Exit(1)
+
+    execution_id = resp.json()["execution_id"]
+    if not quiet:
+        console.print(f"[dim]Execution {execution_id} started[/dim]")
+
+    try:
+        _stream_execution(client, execution_id, console, quiet)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelling...[/yellow]")
+        client.delete(f"/executions/{execution_id}")
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming helpers
+# ---------------------------------------------------------------------------
+
+
+def _stream_execution(client, execution_id: int, console, quiet: bool):
+    """Stream SSE events from an execution and print them."""
+    import json
+
+    with client.stream_sse(f"/executions/{execution_id}/stream") as response:
+        event_type = None
+        data_buffer = ""
+        got_final_answer = False
+
+        for line in response.iter_lines():
+            if line.startswith("event:"):
+                event_type = line[6:].strip()
+            elif line.startswith("data:"):
+                data_buffer = line[5:].strip()
+            elif line == "" and data_buffer:
+                try:
+                    data = json.loads(data_buffer)
+                except json.JSONDecodeError:
+                    data = {"raw": data_buffer}
+
+                if event_type == "complete":
+                    if not quiet:
+                        status = data.get("status", "unknown")
+                        error = data.get("error")
+                        tokens = data.get("total_tokens")
+                        cost = data.get("cost_usd")
+                        duration_ms = data.get("duration_ms")
+
+                        # Error/abort message
+                        if status in ("aborted", "error", "timeout", "cancelled") and error:
+                            console.print(f"\n\u274c {error}")
+                        elif not got_final_answer and status == "success":
+                            console.print("\n[dim]\u2014 No final response[/dim]")
+
+                        # Summary line — always shown
+                        style = "red" if status in ("aborted", "error", "timeout", "cancelled") else "green"
+                        parts = [f"[bold {style}]{status}[/bold {style}]"]
+                        if duration_ms:
+                            secs = duration_ms / 1000
+                            parts.append(f"{secs:.1f}s")
+                        if tokens:
+                            parts.append(f"{tokens} tokens")
+                        if cost:
+                            parts.append(f"${cost:.4f}")
+                        console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
+                    break
+                elif event_type == "final_answer":
+                    got_final_answer = True
+                    if not quiet:
+                        _print_event(console, event_type, data)
+                elif not quiet:
+                    _print_event(console, event_type, data)
+
+                data_buffer = ""
+                event_type = None
+
+
+def _stream_chat_turn(client, execution_id: int, console) -> dict:
+    """Stream a single chat turn — discrete display, return stats.
+
+    Shows tools and thinking in dim gray; only the final answer is prominent.
+    Returns the complete event data dict for stats accumulation.
+    """
+    import json
+
+    stats: dict = {}
+    got_final = False
+    last_ai_content = ""
+    with client.stream_sse(f"/executions/{execution_id}/stream") as response:
+        event_type = None
+        data_buffer = ""
+
+        for line in response.iter_lines():
+            if line.startswith("event:"):
+                event_type = line[6:].strip()
+            elif line.startswith("data:"):
+                data_buffer = line[5:].strip()
+            elif line == "" and data_buffer:
+                try:
+                    data = json.loads(data_buffer)
+                except json.JSONDecodeError:
+                    data = {"raw": data_buffer}
+
+                if event_type == "complete":
+                    stats = data
+                    # If no final_answer arrived, show the last AI message as the response
+                    if not got_final and last_ai_content:
+                        console.print(last_ai_content)
+                    error = data.get("error")
+                    status = data.get("status", "unknown")
+                    if status in ("aborted", "error", "timeout", "cancelled") and error:
+                        console.print(f"  [red]{error}[/red]")
+                    break
+                elif event_type == "final_answer":
+                    content = str(data.get("content", data.get("message", "")))
+                    if content:
+                        console.print(content)
+                    got_final = True
+                elif event_type == "tool_call":
+                    tools = data.get("tools", [])
+                    if tools:
+                        names = ", ".join(t.get("name", "?") for t in tools)
+                        console.print(f"  [dim]{names}...[/dim]")
+                    else:
+                        msg = str(data.get("content", data.get("message", "")))[:60]
+                        if msg:
+                            console.print(f"  [dim]{msg}...[/dim]")
+                elif event_type == "ai":
+                    # Buffer AI content — only show if no final_answer follows
+                    last_ai_content = str(data.get("content", data.get("message", "")))
+                # tool_result, system, human, meta — silent in chat mode
+
+                data_buffer = ""
+                event_type = None
+
+    return stats
+
+
+def _print_event(console, event_type: str, data: dict):
+    """Format and print a single SSE event to the console.
+
+    Handles both live event format (from EventBus) and DB replay format
+    (from execution logs). Live events have structured fields like ``tools``;
+    DB replay events have a ``message`` string.
+    """
+    content = str(data.get("content", data.get("message", "")))
+
+    if event_type == "tool_call":
+        tools = data.get("tools", [])
+        if tools:
+            # Live event format
+            for tool in tools:
+                name = tool.get("name", "unknown")
+                args = tool.get("args", "")[:80]
+                console.print(f"  [cyan]\U0001f527 >> {name}[/cyan] [dim]({args})[/dim]")
+        elif content:
+            # DB replay format: "file_write — args: {'path': '...'}"
+            console.print(f"  [cyan]\U0001f527 >> {content[:120]}[/cyan]")
+    elif event_type in ("tool_result", "tool_response"):
+        tool_name = data.get("tool_name", "")
+        result = content[:120].replace("\n", " ")
+        if tool_name:
+            console.print(f"  [dim]\U0001f4ce << {tool_name} \u2192 {result}[/dim]")
+        else:
+            # DB replay format: "file_write — Updated ..."
+            console.print(f"  [dim]\U0001f4ce << {result}[/dim]")
+    elif event_type == "ai":
+        if content:
+            console.print(f"  [white]\U0001f916 {content[:200]}[/white]")
+    elif event_type == "final_answer":
+        console.print(f"\n\u2705 {content}")
+    elif event_type in ("system", "human", "meta"):
+        pass  # silently ignore
 
 
 # ---------------------------------------------------------------------------
@@ -499,72 +665,82 @@ def run(
 
 @app.command()
 def chat(
-    agent: str = typer.Argument(None, help="Agent name (interactive picker if omitted)"),
-    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
+    agent: Annotated[Optional[str], typer.Argument()] = None,
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
     """Start an interactive chat session with an agent."""
-    agent_name = _pick_or_resolve_agent(agent, workspace)
+    from rich.console import Console
+    from agent_md.cli.spawn import ensure_backend
+
+    console = Console()
+
+    if not agent:
+        ws = Path(workspace) if workspace else None
+        agent = _pick_or_resolve_agent(None, ws)
+        if not agent:
+            return
 
     try:
-        asyncio.run(_chat_loop(agent_name, workspace))
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    resp = client.get(f"/agents/{agent}")
+    if resp.status_code == 404:
+        console.print(f"[red]Agent '{agent}' not found.[/red]")
+        raise typer.Exit(1)
+    agent_info = resp.json()
+    model_info = f"{agent_info.get('model_provider', '')}/{agent_info.get('model_name', '')}"
+    console.print(f"[bold]Chat with {agent}[/bold] [dim]({model_info})[/dim]")
+    console.print("[dim]Type /exit to end the session[/dim]\n")
+
+    turns = 0
+    total_tokens = 0
+    total_cost = 0.0
+    total_duration_ms = 0
+
+    try:
+        while True:
+            try:
+                user_input = console.input("[bold green]> [/bold green]")
+            except EOFError:
+                break
+
+            if user_input.strip().lower() in ("/exit", "/quit"):
+                break
+            if not user_input.strip():
+                continue
+
+            resp = client.post(f"/agents/{agent}/run", json={"message": user_input})
+            if resp.status_code != 200:
+                console.print(f"[red]Error: {resp.text}[/red]")
+                break
+
+            execution_id = resp.json()["execution_id"]
+            turns += 1
+
+            try:
+                turn_stats = _stream_chat_turn(client, execution_id, console)
+                total_tokens += turn_stats.get("total_tokens") or 0
+                total_cost += turn_stats.get("cost_usd") or 0
+                total_duration_ms += turn_stats.get("duration_ms") or 0
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Cancelling...[/yellow]")
+                client.delete(f"/executions/{execution_id}")
+
+            console.print()
     except KeyboardInterrupt:
         pass
-
-
-async def _chat_loop(agent_name: str, workspace: Path | None) -> None:
-    import time
-
-    from agent_md.core.services import AgentNotFoundError, chat_session
-
-    from functools import partial
-
-    on_event = partial(print_agent_event, include_final_answer=False)
-
-    try:
-        async with chat_session(agent_name, workspace, on_event=on_event) as session:
-            config = session.config
-            model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
-            print_chat_header(config.name, model_info)
-
-            loop = asyncio.get_running_loop()
-            start_time = time.monotonic()
-
-            while True:
-                try:
-                    user_input = await loop.run_in_executor(None, lambda: input("  > "))
-                except EOFError:
-                    break
-                except KeyboardInterrupt:
-                    break
-
-                stripped = user_input.strip()
-                if not stripped:
-                    continue
-                if stripped.lower() in ("/exit", "/quit"):
-                    break
-
-                console.print()
-
-                try:
-                    response = await session.send(stripped)
-                    if response:
-                        print_markdown(response)
-                except asyncio.TimeoutError:
-                    print_error(f"Timeout after {config.settings.timeout}s")
-                except Exception as e:
-                    print_error(f"{type(e).__name__}: {e}")
-
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-            print_chat_summary(
-                session.turns,
-                session.total_input_tokens,
-                session.total_output_tokens,
-                duration_ms,
-                session.execution_id,
-            )
-
-    except AgentNotFoundError:
-        print_error(f"Agent '{agent_name}' not found in workspace.", "Run 'agentmd list' to see available agents.")
+    finally:
+        parts = [f"{turns} turns"]
+        if total_duration_ms:
+            parts.append(f"{total_duration_ms / 1000:.1f}s")
+        if total_tokens:
+            parts.append(f"{total_tokens} tokens")
+        if total_cost:
+            parts.append(f"${total_cost:.4f}")
+        console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -743,17 +919,16 @@ def _show_execution_detail(execution_id: int, workspace: Path | None) -> None:
 
 
 def _follow_logs(workspace: Path | None) -> None:
-    """Tail the daemon log file in real-time."""
-    from agent_md.cli.daemon import is_running, get_log_file
+    """Tail the backend log file in real-time."""
+    from agent_md.cli.client import BackendClient, get_log_path
 
-    ws = _resolve_workspace(workspace)
-    running, _ = is_running(ws)
-    if not running:
-        print_warning("agentmd is not running.")
-        console.print("  [dim]Start with: agentmd start -d[/dim]")
+    client = BackendClient()
+    if not client.health_check():
+        print_warning("Backend is not running.")
+        console.print("  [dim]Start with: agentmd start[/dim]")
         return
 
-    log_file = get_log_file(ws)
+    log_file = get_log_path()
     if not log_file.exists():
         print_warning(f"Log file not found: {log_file}")
         return
@@ -903,37 +1078,47 @@ def validate(
 
 @app.command()
 def status(
-    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Check if the agentmd runtime is running."""
-    from agent_md.cli.daemon import is_running, get_daemon_uptime, get_daemon_start_time, get_log_file
+    """Check the AgentMD backend status."""
+    from rich.console import Console
+    from rich.table import Table
+    from agent_md.cli.client import BackendClient, get_log_path
 
-    ws = _resolve_workspace(workspace)
-    running, pid = is_running(ws)
+    console = Console()
+    client = BackendClient()
 
-    console.print()
-    if running:
-        uptime = get_daemon_uptime(ws) or "unknown"
-        start_time = get_daemon_start_time(ws) or "unknown"
-        if start_time != "unknown":
-            from datetime import datetime
+    if not client.health_check():
+        console.print("[dim]Backend is not running.[/dim]")
+        console.print("  Start with: [bold]agentmd start[/bold]")
+        return
 
-            try:
-                dt = datetime.fromisoformat(start_time)
-                start_time = dt.strftime("%Y-%m-%d %H:%M:%S")
-            except (ValueError, TypeError):
-                pass
+    try:
+        resp = client.get("/info")
+        info = resp.json()
 
-        console.print(f"  [green]agentmd is running[/green] (pid {pid})")
-        console.print()
-        print_kv("Uptime", uptime)
-        print_kv("Workspace", str(ws))
-        print_kv("Log file", str(get_log_file(ws)))
-        print_kv("Started", start_time)
-    else:
-        console.print("  agentmd is not running.")
-        console.print("  [dim]Start with: agentmd start -d[/dim]")
-    console.print()
+        table = Table(show_header=False, box=None, padding=(0, 2))
+        table.add_column(style="dim")
+        table.add_column()
+
+        table.add_row("Status", "[green]running[/green]")
+        table.add_row("PID", str(info["pid"]))
+
+        secs = int(info["uptime_seconds"])
+        hours, remainder = divmod(secs, 3600)
+        minutes, secs = divmod(remainder, 60)
+        uptime = f"{hours}h {minutes}m {secs}s" if hours else f"{minutes}m {secs}s"
+        table.add_row("Uptime", uptime)
+        table.add_row("Version", info["version"])
+        table.add_row("Agents", f"{info['agents_enabled']} enabled / {info['agents_loaded']} loaded")
+        table.add_row("Scheduler", info["scheduler_status"])
+        table.add_row("Active executions", str(info["active_executions"]))
+        table.add_row("SSE streams", str(info["active_streams"]))
+        table.add_row("Log file", str(get_log_path()))
+
+        console.print(table)
+    except Exception as e:
+        console.print(f"[red]Error getting status: {e}[/red]")
 
 
 # ---------------------------------------------------------------------------
@@ -943,22 +1128,24 @@ def status(
 
 @app.command()
 def stop(
-    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Stop the background agentmd runtime."""
-    from agent_md.cli.daemon import is_running, stop_daemon
+    """Stop the AgentMD backend."""
+    from rich.console import Console
+    from agent_md.cli.client import BackendClient
 
-    ws = _resolve_workspace(workspace)
-    running, pid = is_running(ws)
+    console = Console()
+    client = BackendClient()
 
-    if not running:
-        print_warning("agentmd is not running.")
+    if not client.health_check():
+        console.print("[yellow]Backend is not running.[/yellow]")
         return
 
-    stopped = stop_daemon(ws)
-    console.print()
-    if stopped:
-        console.print(f"  agentmd stopped (was pid {pid})")
-    else:
-        print_error("Failed to stop agentmd.")
-    console.print()
+    try:
+        resp = client.post("/shutdown")
+        if resp.status_code == 200:
+            console.print("[green]Backend is shutting down.[/green]")
+        else:
+            console.print(f"[red]Shutdown failed: {resp.text}[/red]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
