@@ -25,7 +25,7 @@ from agent_md.cli.theme import (
     print_warning,
     select_agent,
 )
-from agent_md.core.models import AgentConfig
+from agent_md.config.models import AgentConfig
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ from agent_md.core.models import AgentConfig
 
 def _resolve_workspace(workspace: Path | None) -> Path:
     """Resolve workspace path from CLI arg or settings."""
-    from agent_md.core.settings import settings
+    from agent_md.config.settings import settings
 
     if workspace:
         return workspace.resolve()
@@ -47,7 +47,7 @@ def _resolve_workspace(workspace: Path | None) -> Path:
 
 def _get_agents_for_picker(workspace: Path | None) -> list[AgentConfig]:
     """Bootstrap lightly to get agent list for interactive picker."""
-    from agent_md.core.services import list_agents as svc_list
+    from agent_md.workspace.services import list_agents as svc_list
 
     return asyncio.run(svc_list(workspace))
 
@@ -87,8 +87,8 @@ def _can_use_ai() -> tuple[bool, str, str]:
     """Check if AI generation is available. Returns (available, provider, model)."""
     import os
 
-    from agent_md.core.services import _PROVIDER_ENV_VARS
-    from agent_md.core.settings import settings
+    from agent_md.workspace.services import _PROVIDER_ENV_VARS
+    from agent_md.config.settings import settings
 
     provider = settings.defaults_provider
     model = settings.defaults_model
@@ -106,15 +106,7 @@ def _can_use_ai() -> tuple[bool, str, str]:
     return False, provider, model
 
 
-def _generate_agent_with_ai(agent_name: str, description: str, provider: str, model: str) -> str:
-    """Use the configured LLM to generate the agent .md content."""
-    from agent_md.providers.factory import create_chat_model
-
-    llm = create_chat_model(provider, model, {"temperature": 0.7, "max_tokens": 4096})
-
-    prompt = f"""You are an expert at creating AI agent definitions for the Agent.md framework.
-
-Generate the content of a markdown agent file for an agent named "{agent_name}" based on this description:
+GENERATE_PROMPT = """Generate the content of a markdown agent file for an agent named "{agent_name}" based on this description:
 {description}
 
 ## File format
@@ -127,46 +119,30 @@ Required:
 - name: {agent_name}
 
 Optional:
-- description: one-line summary of what the agent does
-- model: object with provider and name fields. Only include if the user specified a model.
-- trigger: execution trigger (see Trigger types below)
-- settings: object with temperature (float), max_tokens (int), timeout (int, seconds)
-- history: conversation memory across runs — "low" (10 msgs), "medium" (50), "high" (200), "off" (default)
-- paths: dict of named aliases for directories the agent can access. Each key is an alias name (lowercase, e.g. "vault", "output"), each value is a path string. Use `{{alias}}` syntax in prompts and tool calls.
+- description: one-line summary
+- model: object with provider and name (omit to use global default)
+- trigger: manual (default), schedule (every/cron), watch (paths)
+- settings: temperature, max_tokens, timeout
+- history: "low" (default, remembers last 10 messages), "medium" (50), "high" (200), "off"
+- paths: dict of alias: path pairs for directories the agent can access
 
-### Trigger types
-- manual (default): agent runs only when invoked via `agentmd run`
-- schedule: runs on a schedule. Fields: `every` (e.g. "30m", "2h", "24h") or `cron` (e.g. "0 9 * * *")
-- watch: runs when files change. Fields: `paths` (list of glob patterns to watch)
+## Agent capabilities
 
-## Built-in tools
+Agents have built-in tools for:
+- Reading, writing, and editing files within declared paths
+- Searching for files using glob patterns
+- Making HTTP requests
+- Persistent memory across runs (save, append, retrieve by section)
 
-These tools are always available to the agent. Do NOT list them in frontmatter.
-Choose the right tool for each use case — especially prefer memory tools over file_write for persistent knowledge.
-
-### Filesystem
-- file_read(path): Read a file. Only works within `paths`.
-- file_write(path, content): Write/create a file. Only works within `paths`. Creates parent dirs automatically.
-- file_glob(pattern): Find files matching a glob pattern (e.g. '**/*.py'). Only works within `paths`.
-
-### HTTP
-- http_request(url, method="GET", headers=None, body=None): Make HTTP requests. Returns status code and response body.
-
-### Long-term memory (persistent across runs)
-Use these when the agent needs to remember information between executions (e.g. tracking state, accumulating knowledge, storing preferences). Memory is stored in a dedicated `.memory.md` file per agent — do NOT use file_write for this purpose.
-- memory_save(section, content): Save/replace a named section in memory.
-- memory_append(section, content): Append to a named section (creates it if missing).
-- memory_retrieve(section): Read a named section from memory.
+Custom tools can be added in agents/_config/tools/.
 
 ## Rules
 
-- Write ONLY the file content. No explanations, no code fences.
-- Start with --- and end after the system prompt.
-- The system prompt must be clear, specific, and actionable — tell the agent exactly what to do, step by step.
-- If the agent needs to persist state or knowledge across runs, use memory tools (memory_save/memory_append/memory_retrieve), NOT file_write.
-- If the agent needs to remember previous conversations, set the `history` field.
-- Match the trigger type to the use case: use `watch` for file-change reactions, `schedule` for periodic tasks, `manual` for on-demand.
-- Only include frontmatter fields that are relevant. Omit fields that use defaults.
+- Write ONLY the file content (starts with ---, ends after the prompt)
+- System prompt must be clear, specific, and actionable
+- Use path aliases ({{alias}}) for file access, not hardcoded paths
+- Only include frontmatter fields that differ from defaults
+- If the agent needs to remember between runs, set history or use memory tools
 
 ## Example
 
@@ -184,12 +160,21 @@ paths:
 
 You are a summarization agent. Every day:
 
-1. Use `file_glob` to discover files in the logs directory (e.g. `file_glob('{{logs}}/**/*')`).
-2. Read each file using `file_read` with the `{{logs}}` alias.
-3. Generate a concise summary of the day's activity.
-4. Write the summary to `{{output}}/daily-summary-YYYY-MM-DD.md` using `file_write`.
-5. Use `memory_save` to store the latest summary date in the "last_run" section so you can avoid reprocessing.
+1. Use file_glob to discover today's files in {{logs}}.
+2. Read each file.
+3. Generate a concise summary.
+4. Write to {{output}}/summary-YYYY-MM-DD.md.
+5. Use memory_save to track the last processed date.
 """
+
+
+def _generate_agent_with_ai(agent_name: str, description: str, provider: str, model: str) -> str:
+    """Use the configured LLM to generate the agent .md content."""
+    from agent_md.providers.factory import create_chat_model
+
+    llm = create_chat_model(provider, model, {"temperature": 0.7, "max_tokens": 4096})
+
+    prompt = GENERATE_PROMPT.format(agent_name=agent_name, description=description)
 
     response = llm.invoke(prompt)
     raw = response.content
@@ -211,26 +196,16 @@ def _ask_agent_details(agent_name: str) -> str:
     from rich.prompt import Prompt
 
     console.print()
+    description = Prompt.ask("  [cyan]What should this agent do?[/cyan]")
 
-    description = Prompt.ask("  [cyan]Description[/cyan]", default="")
-
-    # Provider / model
-    provider = Prompt.ask(
-        "  [cyan]Provider[/cyan] [dim](google, openai, anthropic, ollama, local, or empty for default)[/dim]",
-        default="",
-    )
-    model_name = ""
-    if provider:
-        model_name = Prompt.ask("  [cyan]Model name[/cyan]", default="")
-
-    # Trigger
     trigger_type = Prompt.ask(
-        "  [cyan]Trigger[/cyan] [dim](manual, schedule, watch)[/dim]",
+        "  [cyan]Trigger[/cyan]",
+        choices=["manual", "schedule", "watch"],
         default="manual",
     )
     trigger_extra = ""
     if trigger_type == "schedule":
-        schedule_val = Prompt.ask("  [cyan]Schedule[/cyan] [dim](e.g. 30m, 2h, or cron: 0 9 * * *)[/dim]")
+        schedule_val = Prompt.ask("  [cyan]Schedule[/cyan] [dim](e.g. 30m, 2h, or cron expression)[/dim]")
         if schedule_val.strip():
             if " " in schedule_val.strip():
                 trigger_extra = f'  cron: "{schedule_val.strip()}"'
@@ -240,26 +215,17 @@ def _ask_agent_details(agent_name: str) -> str:
         watch_paths = Prompt.ask("  [cyan]Paths to watch[/cyan] [dim](comma-separated)[/dim]")
         if watch_paths.strip():
             paths = [p.strip() for p in watch_paths.split(",") if p.strip()]
-            trigger_extra = "\n".join(f"  - {p}" for p in paths)
-            trigger_extra = f"  paths:\n{trigger_extra}"
+            trigger_extra = "  paths:\n" + "\n".join(f"    - {p}" for p in paths)
 
-    # Paths (named aliases)
     agent_paths = Prompt.ask(
-        "  [cyan]Paths[/cyan] [dim](alias=path pairs, comma-separated, e.g. vault=/data,output=./out)[/dim]", default=""
+        "  [cyan]Paths[/cyan] [dim](alias=path, e.g. data=./data,output=./out)[/dim]",
+        default="",
     )
-
-    # System prompt
-    console.print()
-    system_prompt = Prompt.ask("  [cyan]System prompt[/cyan] [dim](what should this agent do?)[/dim]")
 
     # Build frontmatter
     lines = ["---", f"name: {agent_name}"]
     if description:
         lines.append(f"description: {description}")
-    if provider and model_name:
-        lines.append("model:")
-        lines.append(f"  provider: {provider}")
-        lines.append(f"  name: {model_name}")
     if trigger_type != "manual":
         lines.append("trigger:")
         lines.append(f"  type: {trigger_type}")
@@ -269,22 +235,13 @@ def _ask_agent_details(agent_name: str) -> str:
         lines.append("paths:")
         for pair in agent_paths.split(","):
             pair = pair.strip()
-            if not pair:
-                continue
             if "=" in pair:
                 alias, path = pair.split("=", 1)
                 lines.append(f"  {alias.strip()}: {path.strip()}")
-            else:
-                # No alias given — use basename as alias
-                from pathlib import Path as _P
-
-                alias = _P(pair).name or pair.replace("/", "_").strip("_") or "data"
-                lines.append(f"  {alias}: {pair}")
     lines.append("---")
     lines.append("")
-    lines.append(system_prompt or "You are a helpful assistant. Describe your agent's task here.")
+    lines.append(description or "You are a helpful assistant. Describe your task here.")
     lines.append("")
-
     return "\n".join(lines)
 
 
@@ -302,7 +259,7 @@ def new(
         raise typer.Exit(1)
 
     # 2. Resolve workspace and agents dir
-    from agent_md.core.services import _resolve_ws_and_agents_dir
+    from agent_md.workspace.services import _resolve_ws_and_agents_dir
 
     ws, agents_dir = _resolve_ws_and_agents_dir(workspace)
     agent_file = agents_dir / f"{agent_name}.md"
@@ -753,7 +710,7 @@ def list_agents(
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """List all agents in the workspace."""
-    from agent_md.core.services import _runtime
+    from agent_md.workspace.services import _runtime
 
     async def _list_with_last_runs():
         async with _runtime(workspace) as rt:
@@ -824,7 +781,7 @@ def logs(
         print_error("Agent name required for execution list.", "Usage: agentmd logs <agent-name>")
         raise typer.Exit(1)
 
-    from agent_md.core.services import get_agent_logs
+    from agent_md.workspace.services import get_agent_logs
 
     executions = asyncio.run(get_agent_logs(agent, last, workspace))
 
@@ -885,7 +842,7 @@ def logs(
 
 def _show_execution_detail(execution_id: int, workspace: Path | None) -> None:
     """Show detailed messages for a specific execution."""
-    from agent_md.core.services import get_execution_messages
+    from agent_md.workspace.services import get_execution_messages
 
     messages = asyncio.run(get_execution_messages(execution_id, workspace))
 
@@ -961,13 +918,9 @@ def validate(
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """Validate an agent file without executing it."""
-    from agent_md.core.services import validate_agent
+    from agent_md.workspace.services import validate_agent
 
-    # Backward compat: if arg contains / or ends in .md, treat as path
-    if agent and ("/" in agent or agent.endswith(".md")):
-        agent_ref = agent
-    else:
-        agent_ref = _pick_or_resolve_agent(agent, workspace)
+    agent_ref = _pick_or_resolve_agent(agent, workspace)
 
     try:
         result = validate_agent(agent_ref, workspace=workspace)
@@ -994,7 +947,7 @@ def validate(
 
     # History (session memory)
     if result.history_level != "off":
-        from agent_md.core.models import HISTORY_LIMITS
+        from agent_md.config.models import HISTORY_LIMITS
 
         limit = HISTORY_LIMITS[result.history_level]
         print_kv("History", f"{result.history_level} (last {limit} messages)")

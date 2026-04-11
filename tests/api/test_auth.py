@@ -8,7 +8,7 @@ from agent_md.api.auth import ApiKeyMiddleware
 
 @pytest.fixture
 async def secured_app(tmp_path):
-    application = create_app(workspace=tmp_path)
+    application = create_app(workspace=tmp_path, db_path=tmp_path / "test.db")
     application.add_middleware(ApiKeyMiddleware, api_key="test-secret-key")
     async with application.router.lifespan_context(application):
         yield application

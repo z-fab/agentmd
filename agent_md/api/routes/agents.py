@@ -63,7 +63,7 @@ async def get_agent(name: str, request: Request):
 @router.post("/reload", response_model=ReloadResponse)
 async def reload_agents(request: Request):
     rt = request.app.state.runtime
-    from agent_md.core.parser import parse_agent_file
+    from agent_md.workspace.parser import parse_agent_file
 
     agents_dir = rt.path_context.agents_dir
     count = 0

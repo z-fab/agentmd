@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from agent_md.core.models import AgentConfig
+from agent_md.config.models import AgentConfig
 
 
 def test_history_off_string_works():

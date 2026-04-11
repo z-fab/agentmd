@@ -39,6 +39,13 @@ defaults:
 
 Priority: **agent frontmatter > config.yaml > hardcoded defaults**.
 
+## Understanding token limits
+
+- **`max_tokens`** (default: 4096) — Maximum tokens for a single LLM response. This is the per-call output limit sent to the provider.
+- **`max_execution_tokens`** (default: 500,000) — Cumulative token budget for the entire execution. Counts all input + output tokens across every LLM call. When exceeded, the execution aborts.
+
+Example: An agent that makes 10 tool calls will invoke the LLM 10+ times. Each call respects `max_tokens` for its individual response, but `max_execution_tokens` caps the total across all calls.
+
 ## How Limits Work
 
 Limits are checked after every message in the execution stream:

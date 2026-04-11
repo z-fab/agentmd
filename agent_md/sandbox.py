@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_md.core.path_context import PathContext
+from agent_md.workspace.path_context import PathContext
 
 
 def validate_path(

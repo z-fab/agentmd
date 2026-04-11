@@ -1,7 +1,7 @@
 import pytest
 
-from agent_md.core.models import AgentConfig
-from agent_md.core.path_context import PathContext
+from agent_md.config.models import AgentConfig
+from agent_md.workspace.path_context import PathContext
 from agent_md.tools.files.glob import create_file_glob_tool
 from agent_md.tools.files.read import create_file_read_tool
 from agent_md.tools.files.write import create_file_write_tool

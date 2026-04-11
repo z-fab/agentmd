@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from agent_md.core.env import resolve_env_vars
+from agent_md.config.env import resolve_env_vars
 
 logger = logging.getLogger(__name__)
 

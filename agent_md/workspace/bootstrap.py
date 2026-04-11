@@ -5,12 +5,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_md.core.parser import is_agent_file, parse_agent_file
-from agent_md.core.path_context import PathContext
-from agent_md.core.registry import AgentRegistry
-from agent_md.core.runner import AgentRunner
-from agent_md.core.scheduler import AgentScheduler
-from agent_md.core.settings import settings
+from agent_md.workspace.parser import is_agent_file, parse_agent_file
+from agent_md.workspace.path_context import PathContext
+from agent_md.workspace.registry import AgentRegistry
+from agent_md.execution.runner import AgentRunner
+from agent_md.workspace.scheduler import AgentScheduler
+from agent_md.config.settings import settings
 from agent_md.db.database import Database
 from agent_md.mcp.config import load_mcp_config
 from agent_md.mcp.manager import MCPManager
@@ -115,15 +115,22 @@ async def bootstrap(
     agents_dir = agents_dir.resolve()
 
     if db_path is None:
-        db_path = _resolve_path(settings.db_path, workspace)
+        if settings.db_path:
+            db_path = _resolve_path(settings.db_path, workspace)
+        else:
+            from agent_md.config.settings import get_state_dir
+
+            state_dir = get_state_dir()
+            state_dir.mkdir(parents=True, exist_ok=True)
+            db_path = state_dir / "agentmd.db"
     db_path = db_path.resolve()
 
     if mcp_config is None:
         mcp_config = _resolve_path(settings.mcp_config, workspace)
     mcp_config = mcp_config.resolve()
 
-    tools_dir = (agents_dir / "tools").resolve()
-    skills_dir = (agents_dir / "skills").resolve()
+    tools_dir = _resolve_path(settings.tools_dir, workspace)
+    skills_dir = _resolve_path(settings.skills_dir, workspace)
 
     path_context = PathContext(
         workspace_root=workspace,

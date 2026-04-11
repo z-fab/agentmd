@@ -1,7 +1,7 @@
 """Tests for the in-memory event bus."""
 
 import pytest
-from agent_md.core.event_bus import EventBus
+from agent_md.execution.event_bus import EventBus
 
 
 @pytest.fixture

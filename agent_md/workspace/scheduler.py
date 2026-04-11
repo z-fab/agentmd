@@ -9,9 +9,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from agent_md.core.parser import is_agent_file, parse_agent_file
-from agent_md.core.registry import AgentConfig, AgentRegistry
-from agent_md.core.runner import AgentRunner
+from agent_md.workspace.parser import is_agent_file, parse_agent_file
+from agent_md.workspace.registry import AgentConfig, AgentRegistry
+from agent_md.execution.runner import AgentRunner
 
 logger = logging.getLogger(__name__)
 
@@ -175,11 +175,13 @@ class AgentScheduler:
         """Return list of scheduled jobs with next_run times."""
         jobs = []
         for job in self.scheduler.get_jobs():
-            jobs.append({
-                "agent_name": job.id,
-                "trigger_type": "schedule",
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-            })
+            jobs.append(
+                {
+                    "agent_name": job.id,
+                    "trigger_type": "schedule",
+                    "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                }
+            )
         return jobs
 
     def pause(self) -> None:

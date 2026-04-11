@@ -9,8 +9,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from agent_md.core.bootstrap import bootstrap
-from agent_md.core.event_bus import EventBus
+from agent_md.workspace.bootstrap import bootstrap
+from agent_md.execution.event_bus import EventBus
 
 
 @asynccontextmanager
@@ -20,6 +20,7 @@ async def _lifespan(app: FastAPI):
 
     rt = await bootstrap(
         workspace=state.workspace,
+        db_path=getattr(state, "db_path", None),
         start_scheduler=state.start_scheduler,
         on_event=state.on_event,
         on_start=state.on_start,
@@ -32,7 +33,7 @@ async def _lifespan(app: FastAPI):
     state.cancel_events: dict[int, asyncio.Event] = {}
 
     # Start lifecycle manager (idle timeout)
-    from agent_md.core.lifecycle import LifecycleManager
+    from agent_md.execution.lifecycle import LifecycleManager
 
     lifecycle = LifecycleManager(shutdown_event=state.shutdown_event)
     lifecycle.keep_alive = getattr(state, "keep_alive", False)
@@ -55,6 +56,7 @@ async def _lifespan(app: FastAPI):
 
 def create_app(
     workspace: Path | None = None,
+    db_path: Path | None = None,
     start_scheduler: bool = False,
     on_event=None,
     on_start=None,
@@ -70,6 +72,7 @@ def create_app(
     )
 
     app.state.workspace = workspace
+    app.state.db_path = db_path
     app.state.start_scheduler = start_scheduler
     app.state.on_event = on_event
     app.state.on_start = on_start

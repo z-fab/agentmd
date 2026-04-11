@@ -55,12 +55,6 @@ CREATE INDEX IF NOT EXISTS idx_logs_execution ON execution_logs(execution_id);
 # ---------------------------------------------------------------------------
 
 
-MIGRATIONS = [
-    "ALTER TABLE executions ADD COLUMN cost_usd REAL",
-    "ALTER TABLE executions ADD COLUMN pid INTEGER",
-]
-
-
 class Database:
     """Async SQLite database manager."""
 
@@ -81,12 +75,6 @@ class Database:
             await self._db.execute("PRAGMA journal_mode=WAL")
             await self._db.executescript(SCHEMA)
             await self._db.commit()
-            for migration in MIGRATIONS:
-                try:
-                    await self._db.execute(migration)
-                    await self._db.commit()
-                except Exception:
-                    pass  # Column already exists
         logger.info(f"Database connected: {self.db_path}")
 
     async def close(self) -> None:
@@ -138,7 +126,18 @@ class Database:
                 cost_usd = ?
             WHERE id = ?
             """,
-            (status, now, duration_ms, output_data, error, input_tokens, output_tokens, total_tokens, cost_usd, execution_id),
+            (
+                status,
+                now,
+                duration_ms,
+                output_data,
+                error,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                cost_usd,
+                execution_id,
+            ),
         )
         await self.db.commit()
 

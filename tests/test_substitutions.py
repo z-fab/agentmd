@@ -1,4 +1,4 @@
-from agent_md.core.substitutions import apply_substitutions
+from agent_md.config.substitutions import apply_substitutions
 
 
 def test_arguments_full():

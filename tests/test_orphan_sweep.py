@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 @pytest.mark.asyncio
 async def test_sweep_orphans_dead_pid():
     """Execution with a dead PID gets marked 'orphaned'."""
-    from agent_md.core.bootstrap import sweep_orphans
+    from agent_md.workspace.bootstrap import sweep_orphans
 
     dead_pid = 99999999
 
@@ -33,7 +33,7 @@ async def test_sweep_orphans_dead_pid():
 @pytest.mark.asyncio
 async def test_sweep_orphans_alive_pid():
     """Execution with a live PID is NOT touched."""
-    from agent_md.core.bootstrap import sweep_orphans
+    from agent_md.workspace.bootstrap import sweep_orphans
 
     row = MagicMock()
     row.id = 42
@@ -52,7 +52,7 @@ async def test_sweep_orphans_alive_pid():
 @pytest.mark.asyncio
 async def test_sweep_orphans_null_pid():
     """Execution with no PID (legacy) gets marked 'orphaned'."""
-    from agent_md.core.bootstrap import sweep_orphans
+    from agent_md.workspace.bootstrap import sweep_orphans
 
     row = MagicMock()
     row.id = 42

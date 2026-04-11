@@ -69,19 +69,24 @@ class TriggerConfig(BaseModel):
 
 
 def _get_global_limit_defaults() -> dict:
-    """Read limit defaults from config.yaml via the global Settings singleton."""
+    """Read global defaults from config.yaml via Settings singleton."""
     try:
-        from agent_md.core.settings import settings
+        from agent_md.config.settings import settings
 
         defaults = {}
-        if settings.defaults_max_tool_calls is not None:
-            defaults["max_tool_calls"] = settings.defaults_max_tool_calls
-        if settings.defaults_max_execution_tokens is not None:
-            defaults["max_execution_tokens"] = settings.defaults_max_execution_tokens
-        if settings.defaults_max_cost_usd is not None:
-            defaults["max_cost_usd"] = settings.defaults_max_cost_usd
-        if settings.defaults_loop_detection is not None:
-            defaults["loop_detection"] = settings.defaults_loop_detection
+        mapping = {
+            "defaults_max_tool_calls": "max_tool_calls",
+            "defaults_max_execution_tokens": "max_execution_tokens",
+            "defaults_max_cost_usd": "max_cost_usd",
+            "defaults_loop_detection": "loop_detection",
+            "defaults_temperature": "temperature",
+            "defaults_max_tokens": "max_tokens",
+            "defaults_timeout": "timeout",
+        }
+        for settings_key, config_key in mapping.items():
+            value = getattr(settings, settings_key, None)
+            if value is not None:
+                defaults[config_key] = value
         return defaults
     except Exception:
         return {}
@@ -188,6 +193,21 @@ class AgentConfig(BaseModel):
             data["custom_tools"] = data.pop("tools")
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def apply_global_agent_defaults(cls, data):
+        """Apply config.yaml agent defaults (frontmatter overrides)."""
+        if not isinstance(data, dict):
+            data = {}
+        try:
+            from agent_md.config.settings import settings
+
+            if "history" not in data and settings.defaults_history:
+                data["history"] = settings.defaults_history
+        except Exception:
+            pass
+        return data
+
     @field_validator("skills", mode="before")
     @classmethod
     def normalize_skills(cls, v):
@@ -203,12 +223,7 @@ class AgentConfig(BaseModel):
         if v is None:
             return {}
         if isinstance(v, list):
-            raise ValueError(
-                "paths must be a dict of named aliases (changed in v0.7.0).\n"
-                "Migrate from:\n  paths:\n    - /a\n    - /b\n"
-                "To:\n  paths:\n    alias_a: /a\n    alias_b: /b\n"
-                "See docs/path-model.md for details."
-            )
+            raise ValueError("paths must be a dict of alias: path pairs, not a list")
         if not isinstance(v, dict):
             raise ValueError(f"paths must be a dict, got {type(v).__name__}")
         for alias in v.keys():

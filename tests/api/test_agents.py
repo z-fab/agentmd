@@ -10,15 +10,9 @@ async def app_with_agents(tmp_path):
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
     (agents_dir / "test-agent.md").write_text(
-        "---\n"
-        "name: test-agent\n"
-        "model:\n"
-        "  provider: google\n"
-        "  name: gemini-2.5-flash\n"
-        "---\n"
-        "You are a test agent.\n"
+        "---\nname: test-agent\nmodel:\n  provider: google\n  name: gemini-2.5-flash\n---\nYou are a test agent.\n"
     )
-    application = create_app(workspace=tmp_path)
+    application = create_app(workspace=tmp_path, db_path=tmp_path / "test.db")
     async with application.router.lifespan_context(application):
         yield application
 

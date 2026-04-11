@@ -24,8 +24,7 @@ def ensure_backend(client: BackendClient | None = None, workspace: Path | None =
     """
     if os.environ.get("AGENTMD_NO_AUTOSPAWN") == "1":
         raise RuntimeError(
-            "Backend is not running and AGENTMD_NO_AUTOSPAWN=1 is set. "
-            "Start it manually with 'agentmd start'."
+            "Backend is not running and AGENTMD_NO_AUTOSPAWN=1 is set. Start it manually with 'agentmd start'."
         )
 
     client = client or BackendClient()
@@ -41,9 +40,7 @@ def ensure_backend(client: BackendClient | None = None, workspace: Path | None =
             return client
         time.sleep(0.2)
 
-    raise RuntimeError(
-        f"Backend failed to start within 10s. Check logs at {get_log_path()}"
-    )
+    raise RuntimeError(f"Backend failed to start within 10s. Check logs at {get_log_path()}")
 
 
 def _spawn_backend(workspace: Path | None = None) -> int:
@@ -66,9 +63,7 @@ def _spawn_backend(workspace: Path | None = None) -> int:
     }
 
     if sys.platform == "win32":
-        kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+        kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
 

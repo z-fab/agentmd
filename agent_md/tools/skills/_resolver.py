@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_md.skills.loader import apply_substitutions
+from agent_md.config.substitutions import apply_substitutions
 from agent_md.skills.parser import parse_skill_full
 from agent_md.tools.skills._validation import validate_skill_access
 
@@ -42,7 +42,8 @@ def resolve_skill_content(
     processed = apply_substitutions(
         definition.instructions,
         arguments=arguments,
-        skill_dir=definition.skill_dir,
+        cwd=definition.skill_dir or None,
+        extra_vars={"SKILL_DIR": definition.skill_dir} if definition.skill_dir else None,
     )
 
     parts = [f"# Skill: {definition.name}"]

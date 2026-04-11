@@ -47,7 +47,7 @@ agentmd setup
 ### Verify Installation
 ```bash
 agentmd --help
-agentmd config    # Show current configuration
+agentmd info    # Show current configuration
 ```
 
 ## 2. Configuration
@@ -266,7 +266,7 @@ Copy and customize from our library:
 - `agentmd validate [agent]` — Validate agent configuration
 - `agentmd status` — Check if runtime is running
 - `agentmd stop` — Stop background runtime
-- `agentmd config` — Show current configuration
+- `agentmd info` — Show current configuration
 - `agentmd setup` — Interactive setup wizard
 - `agentmd update` — Update to latest version
 
@@ -277,10 +277,10 @@ Copy and customize from our library:
 **"API key not found"**
 - Check `.env` exists in your workspace
 - Verify key name matches provider (e.g., `GOOGLE_API_KEY`)
-- Run `agentmd config` to see which files are being loaded
+- Run `agentmd info` to see which files are being loaded
 
 **"No agents found in workspace"**
-- Run `agentmd config` to check your workspace path
+- Run `agentmd info` to check your workspace path
 - Verify the `agents/` directory exists and contains `.md` files
 
 **"Provider requires langchain-..."**

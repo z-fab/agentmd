@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
-from agent_md.core.env import resolve_env_vars
-from agent_md.core.models import AgentConfig, ModelConfig
-from agent_md.core.settings import settings
+from agent_md.config.env import resolve_env_vars
+from agent_md.config.models import AgentConfig, ModelConfig
+from agent_md.config.settings import settings
 
 
 def is_agent_file(path: Path) -> bool:
