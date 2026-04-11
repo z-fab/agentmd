@@ -394,7 +394,11 @@ class AgentRunner:
             output = ""
             if last_ai_msg:
                 raw_content = getattr(last_ai_msg, "content", None)
+                logger.info(f"DEBUG final_answer raw_content type={type(raw_content).__name__} repr={raw_content!r:.200}")
                 output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
+                logger.info(f"DEBUG final_answer output={output!r:.200}")
+            else:
+                logger.info("DEBUG final_answer: last_ai_msg is None — no final answer to publish")
                 log_id = await ex_logger.mark_final_answer(last_ai_msg)
                 if event_bus is not None:
                     await event_bus.publish(

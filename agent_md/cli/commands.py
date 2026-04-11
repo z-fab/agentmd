@@ -554,26 +554,40 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
 
 
 def _print_event(console, event_type: str, data: dict):
-    """Format and print a single SSE event to the console."""
+    """Format and print a single SSE event to the console.
+
+    Handles both live event format (from EventBus) and DB replay format
+    (from execution logs). Live events have structured fields like ``tools``;
+    DB replay events have a ``message`` string.
+    """
     content = str(data.get("content", data.get("message", "")))
 
     if event_type == "tool_call":
         tools = data.get("tools", [])
-        for tool in tools:
-            name = tool.get("name", "unknown")
-            args = tool.get("args", "")[:80]
-            console.print(f"  [cyan]\U0001f527 >> {name}[/cyan] [dim]({args})[/dim]")
+        if tools:
+            # Live event format
+            for tool in tools:
+                name = tool.get("name", "unknown")
+                args = tool.get("args", "")[:80]
+                console.print(f"  [cyan]\U0001f527 >> {name}[/cyan] [dim]({args})[/dim]")
+        elif content:
+            # DB replay format: "file_write — args: {'path': '...'}"
+            console.print(f"  [cyan]\U0001f527 >> {content[:120]}[/cyan]")
     elif event_type in ("tool_result", "tool_response"):
         tool_name = data.get("tool_name", "")
         result = content[:120].replace("\n", " ")
-        console.print(f"  [dim]\U0001f4ce << {tool_name} \u2192 {result}[/dim]")
+        if tool_name:
+            console.print(f"  [dim]\U0001f4ce << {tool_name} \u2192 {result}[/dim]")
+        else:
+            # DB replay format: "file_write — Updated ..."
+            console.print(f"  [dim]\U0001f4ce << {result}[/dim]")
     elif event_type == "ai":
         if content:
             console.print(f"  [white]\U0001f916 {content[:200]}[/white]")
     elif event_type == "final_answer":
         console.print(f"\n\u2705 {content}")
-    elif event_type == "meta":
-        pass  # silently ignore skill meta messages
+    elif event_type in ("system", "human", "meta"):
+        pass  # silently ignore
 
 
 # ---------------------------------------------------------------------------
