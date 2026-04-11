@@ -70,6 +70,10 @@ desmembrado em subpacotes semânticos, e remoção de código legado.
 - `tools/` e `skills/` vão para `agents/_config/`
 - `output/` não é criado por default (agentes declaram seus paths)
 - Sandbox bloqueia `_config/` inteiro em vez de bloquear items individualmente
+- Documentação atualizada: `docs/limits.md` e `docs/agent-configuration.md`
+  devem explicar claramente a diferença entre `max_tokens` (per-call, tamanho
+  máximo de uma resposta do LLM) e `max_execution_tokens` (acumulado de toda
+  a execução, soma de todos os input+output tokens de todas as chamadas)
 
 **Precedência de `.env`:**
 
@@ -88,6 +92,7 @@ permanece no sandbox (já existe em `path_context.py`).
 ```yaml
 workspace: ~/agentmd
 agents_dir: agents
+log_level: INFO
 
 # Esses são os novos defaults — não precisam estar no yaml
 # db_path: removido (default: ~/.local/state/agentmd/agentmd.db)
@@ -98,10 +103,32 @@ agents_dir: agents
 defaults:
   provider: google
   model: gemini-2.5-flash
+
+  # LLM settings
+  temperature: 0.7
+  max_tokens: 4096          # max tokens per LLM call (single response size)
+
+  # Execution limits
+  timeout: 300              # seconds
   max_tool_calls: 50
-  max_cost_usd:
-  timeout: 300
+  max_execution_tokens: 500000
+  max_cost_usd:             # none = no cost limit
+  loop_detection: true
+
+  # Agent defaults
+  history: low              # low (10 msgs), medium (50), high (200), off
 ```
+
+**Novos defaults expostos:** `temperature`, `max_tokens`, `max_execution_tokens`,
+`loop_detection` e `history` passam a ser configuráveis via config.yaml.
+Hoje estão hardcoded em `SettingsConfig` e `AgentConfig` sem possibilidade
+de override global.
+
+O `_get_global_limit_defaults()` em `models.py` é expandido para ler
+todos esses campos do config.yaml (não só os limites de execução).
+
+O setup wizard (passo 4) expõe os mais relevantes: `max_tool_calls`,
+`max_cost_usd`, `timeout`. Os demais ficam para edição manual do yaml.
 
 ### 2. Reorganização do `agent_md/`
 
