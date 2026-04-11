@@ -92,16 +92,14 @@ agentmd run hello-world
 **Output:**
 
 ```
-  ▶ Running hello-world
-    google / gemini-2.5-flash
+Execution 1 started
+  🔧 >> file_write ({'path': 'greeting.txt', 'content': 'Hello! ...'})
+  📎 << file_write → Created greeting.txt (42 chars, 1 lines)
+  🤖 I created a friendly greeting for you!
 
-  11:32:04  🤖 I'll create a friendly greeting...
-  11:32:05  🔧 file_write → greeting.txt
-  11:32:05  ✅ Done!
+✅ I created a friendly greeting and saved it to greeting.txt.
 
-  ✓ hello-world completed in 1.8s
-    Tokens: 42 in / 118 out / 160 total
-    Execution #1
+success  |  1.8s  |  160 tokens  |  $0.0001
 ```
 
 ### Or Chat with It
@@ -113,20 +111,20 @@ agentmd chat hello-world
 ```
 
 ```
-  Chat with hello-world
-    google / gemini-2.5-flash
-    Type /exit or Ctrl+C to end session
+Chat with hello-world (google/gemini-2.5-flash)
+Type /exit to end the session
 
-  > Write me a greeting in Portuguese
-  11:33:01  🤖 Olá! Que seu dia seja cheio de...
-  11:33:02  ✅ Done!
+> Write me a greeting in Portuguese
+  file_write...
+Olá! Que seu dia seja cheio de alegria e boas surpresas!
 
-  > Now save it to greeting-pt.txt
-  11:33:10  🔧 file_write → greeting-pt.txt
-  11:33:10  ✅ Saved!
+> Now save it to greeting-pt.txt
+  file_write...
+Done! Saved to greeting-pt.txt.
 
-  Session ended: 2 turns, 280 tokens (84 in / 196 out), 12.3s
-  Execution #2
+> /exit
+
+3 turns  |  12.3s  |  580 tokens  |  $0.0002
 ```
 
 That's it! 🎉
@@ -222,6 +220,7 @@ Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://
 - [Providers](https://z-fab.github.io/agentmd/providers)
 - [Triggers](https://z-fab.github.io/agentmd/triggers)
 - [Tools Documentation](https://z-fab.github.io/agentmd/tools/)
+- [REST API](https://z-fab.github.io/agentmd/api)
 - [Examples](https://z-fab.github.io/agentmd/examples)
 - [Security Best Practices](https://z-fab.github.io/agentmd/guides/security-best-practices)
 
