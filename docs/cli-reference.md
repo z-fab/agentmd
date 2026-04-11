@@ -15,7 +15,7 @@ Complete reference for all Agent.md CLI commands, options, and examples.
 | `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD |
 | `agentmd status` | Check if runtime is running | Monitor daemon state |
 | `agentmd stop` | Stop background runtime | Gracefully stop daemon |
-| `agentmd config` | Show effective configuration | Verify paths, API keys, defaults |
+| `agentmd info` | Show effective configuration | Verify paths, API keys, defaults |
 | `agentmd setup` | Interactive setup wizard | First-time setup or reconfiguration |
 | `agentmd update` | Update to latest version | Self-update via uv or pip |
 
@@ -449,7 +449,7 @@ Show the current effective configuration.
 ### Usage
 
 ```bash
-agentmd config
+agentmd info
 ```
 
 Displays:
@@ -485,32 +485,22 @@ Interactive setup wizard for first-time configuration or reconfiguration.
 agentmd setup [OPTIONS]
 ```
 
-### Options
-
-| Option | Short | Description |
-|--------|-------|-------------|
-| `--reconfigure` | `-r` | Force reconfiguration even if already set up |
-
 ### What it does
 
-1. Asks for workspace directory (default: `~/agentmd`)
-2. Asks for LLM provider (google, openai, anthropic, ollama)
-3. Asks for default model name
+1. Detects existing config — asks if you want to reconfigure
+2. Asks for workspace directory (default: `~/agentmd`)
+3. Asks for LLM provider and model
 4. Asks for API key (masked input; skipped for ollama)
-5. Asks about auto-start on login
-6. Creates workspace structure (`agents/`, `agents/tools/`)
-7. Writes `~/.config/agentmd/config.yaml` (paths and defaults)
-8. Writes `.env` in workspace (API key only)
+5. Asks for execution defaults (temperature, max_tokens, timeout, limits, history)
+6. Creates workspace structure (`agents/`, `agents/_config/tools/`, `agents/_config/skills/`)
+7. Writes `~/.config/agentmd/config.yaml`
+8. Writes `.env` to `agents/_config/.env` and `~/.config/agentmd/.env`
 9. Creates sample `hello-world` agent
 
 ### Examples
 
 ```bash
-# First-time setup
 agentmd setup
-
-# Reconfigure existing installation
-agentmd setup --reconfigure
 ```
 
 ---

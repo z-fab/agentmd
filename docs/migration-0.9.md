@@ -56,7 +56,7 @@ defaults:
 ### How to upgrade
 
 1. Back up your agents: `cp ~/agentmd/agents/*.md /tmp/backup/`
-2. Run `agentmd setup --reconfigure`
+2. Run `agentmd setup`
 3. Copy agents back: `cp /tmp/backup/*.md ~/agentmd/agents/`
 4. Move custom tools: `cp -r /old/tools/ ~/agentmd/agents/_config/tools/`
 5. Move skills: `cp -r /old/skills/ ~/agentmd/agents/_config/skills/`

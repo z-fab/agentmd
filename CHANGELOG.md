@@ -9,14 +9,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Workspace restructured** — tools, skills, MCP config, and .env moved to `agents/_config/`
 - **Database moved** to `~/.local/state/agentmd/` (out of workspace)
 - **`agent_md.core` removed** — split into `agent_md.config`, `agent_md.execution`, `agent_md.workspace`
-- **Migration code removed** — users recreate workspace via `agentmd setup --reconfigure`
+- **Migration code removed** — users recreate workspace via `agentmd setup`
+- **`agentmd config` renamed to `agentmd info`**
+- **`--reconfigure` flag removed** from setup (auto-detects existing config)
 
 ### Added
-- All agent defaults configurable via `config.yaml` (temperature, max_tokens, timeout, history)
+- All agent defaults configurable via `config.yaml` (temperature, max_tokens, timeout, history, loop_detection, max_execution_tokens)
 - `.env` precedence: workspace (`agents/_config/.env`) overrides global (`~/.config/agentmd/.env`)
-- Setup wizard step 4: configure execution defaults (max_tool_calls, max_cost_usd, timeout)
+- Setup wizard asks all configurable defaults: LLM settings (temperature, max_tokens), execution limits (timeout, max_tool_calls, max_execution_tokens, max_cost_usd, loop_detection), and agent defaults (history)
 
 ### Changed
+- `agentmd config` → `agentmd info`
 - Setup wizard suggests `agentmd new` as next step instead of `agentmd start`
 - `agentmd new` AI prompt uses capability descriptions instead of tool signatures
 - `agentmd new --template` simplified to 3 questions (description, trigger, paths)
