@@ -57,12 +57,11 @@ class BackendClient:
         headers = kwargs.pop("headers", {})
         if self._api_key:
             headers["X-API-Key"] = self._api_key
-        transport = self._transport
+        kwargs.setdefault("timeout", 10.0)
         return httpx.Client(
             base_url=self.base_url,
-            transport=transport,
+            transport=self._transport,
             headers=headers,
-            timeout=10.0,
             **kwargs,
         )
 
@@ -71,11 +70,11 @@ class BackendClient:
         if self._api_key:
             headers["X-API-Key"] = self._api_key
         transport = httpx.AsyncHTTPTransport(uds=str(self._socket_path)) if self._socket_path else None
+        kwargs.setdefault("timeout", 10.0)
         return httpx.AsyncClient(
             base_url=self.base_url,
             transport=transport,
             headers=headers,
-            timeout=10.0,
             **kwargs,
         )
 
