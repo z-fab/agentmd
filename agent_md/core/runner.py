@@ -66,7 +66,11 @@ def _is_final_ai_message(msg) -> bool:
 
 
 def _classify_event_type(msg) -> str:
-    """Map a LangChain message to an SSE event type."""
+    """Map a LangChain message to an SSE event type.
+
+    Returns one of: ai, tool_call, tool_result, meta, human, system.
+    These match the event types used by _print_event in the CLI.
+    """
     meta_type = getattr(msg, "additional_kwargs", {}).get("meta_type")
     if meta_type:
         return "meta"
@@ -75,7 +79,8 @@ def _classify_event_type(msg) -> str:
         return "tool_call"
     if msg_type == "tool":
         return "tool_result"
-    return "message"
+    # Preserve original type (ai, human, system) for correct CLI display
+    return msg_type
 
 
 def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
@@ -312,7 +317,6 @@ class AgentRunner:
                     cost_usd, \
                     _pricing_warned, \
                     last_errors
-                msg_count = 0
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -322,14 +326,6 @@ class AgentRunner:
                     config=graph_config,
                     arguments=arguments,
                 ):
-                    msg_count += 1
-                    msg_type = getattr(msg, "type", "unknown")
-                    has_tool_calls = bool(hasattr(msg, "tool_calls") and msg.tool_calls)
-                    content_preview = _extract_text(getattr(msg, "content", ""))[:100]
-                    logger.info(
-                        f"DEBUG stream msg #{msg_count}: type={msg_type} "
-                        f"tool_calls={has_tool_calls} content={content_preview!r}"
-                    )
                     log_id = await ex_logger.log_message(msg)
 
                     if event_bus is not None:
@@ -403,11 +399,7 @@ class AgentRunner:
             output = ""
             if last_ai_msg:
                 raw_content = getattr(last_ai_msg, "content", None)
-                logger.info(f"DEBUG final_answer raw_content type={type(raw_content).__name__} repr={raw_content!r:.200}")
                 output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
-                logger.info(f"DEBUG final_answer output={output!r:.200}")
-            else:
-                logger.info("DEBUG final_answer: last_ai_msg is None — no final answer to publish")
                 log_id = await ex_logger.mark_final_answer(last_ai_msg)
                 if event_bus is not None:
                     await event_bus.publish(

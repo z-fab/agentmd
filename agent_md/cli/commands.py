@@ -510,6 +510,7 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
     with client.stream_sse(f"/executions/{execution_id}/stream") as response:
         event_type = None
         data_buffer = ""
+        got_final_answer = False
 
         for line in response.iter_lines():
             if line.startswith("event:"):
@@ -530,9 +531,11 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                         cost = data.get("cost_usd")
                         duration_ms = data.get("duration_ms")
 
-                        # Error/abort message (like final_answer but for failures)
+                        # Error/abort message
                         if status in ("aborted", "error", "timeout", "cancelled") and error:
                             console.print(f"\n\u274c {error}")
+                        elif not got_final_answer and status == "success":
+                            console.print("\n[dim]\u2014 No final response[/dim]")
 
                         # Summary line — always shown
                         style = "red" if status in ("aborted", "error", "timeout", "cancelled") else "green"
@@ -546,6 +549,10 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                             parts.append(f"${cost:.4f}")
                         console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
                     break
+                elif event_type == "final_answer":
+                    got_final_answer = True
+                    if not quiet:
+                        _print_event(console, event_type, data)
                 elif not quiet:
                     _print_event(console, event_type, data)
 

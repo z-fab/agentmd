@@ -20,7 +20,7 @@ async def test_classify_event_type_ai_no_tools():
     msg.type = "ai"
     msg.tool_calls = []
     msg.additional_kwargs = {}
-    assert _classify_event_type(msg) == "message"
+    assert _classify_event_type(msg) == "ai"
 
 
 @pytest.mark.asyncio
@@ -44,4 +44,4 @@ async def test_classify_event_type_human():
     msg = MagicMock()
     msg.type = "human"
     msg.additional_kwargs = {}
-    assert _classify_event_type(msg) == "message"
+    assert _classify_event_type(msg) == "human"

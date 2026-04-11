@@ -100,19 +100,14 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
     if not e:
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    import logging
-    _log = logging.getLogger(__name__)
-
     # Subscribe BEFORE replay to avoid missing live events
     queue = event_bus.subscribe(exec_id)
     try:
         # Replay historical logs from DB
         seen_seq = -1
         logs = await db.get_logs(exec_id, limit=10000)
-        _log.info(f"DEBUG SSE stream exec_id={exec_id}: replaying {len(logs)} logs from DB")
         for log in logs:
             seen_seq = log.id
-            _log.info(f"DEBUG SSE replay: seq={log.id} type={log.event_type}")
             yield ServerSentEvent(
                 data={
                     "event_type": log.event_type,
@@ -125,9 +120,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
 
         # Check if already finished
         execution = await db.get_execution(exec_id)
-        _log.info(f"DEBUG SSE: execution status={execution.status if execution else 'None'}")
         if execution and execution.status not in ("running", "pending"):
-            _log.info("DEBUG SSE: execution already finished, emitting complete")
             yield ServerSentEvent(
                 data={"status": execution.status},
                 event="complete",
