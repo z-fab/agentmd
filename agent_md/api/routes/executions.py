@@ -7,7 +7,7 @@ import json
 from collections.abc import AsyncIterable
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.sse import EventSourceResponse, ServerSentEvent
+from fastapi.sse import EventSourceResponse, ServerSentEvent  # noqa: F401 - EventSourceResponse used in response_class
 
 from agent_md.api.schemas import (
     CancelResponse,
@@ -96,66 +96,68 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
     db = request.app.state.db
     event_bus = request.app.state.event_bus
 
+    # Validate before first yield — HTTPException propagates normally
     e = await db.get_execution(exec_id)
     if not e:
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    async def event_generator() -> AsyncIterable[ServerSentEvent]:
-        queue = event_bus.subscribe(exec_id)
-        try:
-            seen_seq = -1
-            logs = await db.get_logs(exec_id, limit=10000)
-            for log in logs:
-                seen_seq = log.id
-                yield ServerSentEvent(
-                    data=json.dumps(
-                        {
-                            "event_type": log.event_type,
-                            "message": log.message,
-                            "timestamp": log.timestamp,
-                        }
-                    ),
-                    event=log.event_type,
-                    id=str(seen_seq),
-                )
+    # Subscribe BEFORE replay to avoid missing live events
+    queue = event_bus.subscribe(exec_id)
+    try:
+        # Replay historical logs from DB
+        seen_seq = -1
+        logs = await db.get_logs(exec_id, limit=10000)
+        for log in logs:
+            seen_seq = log.id
+            yield ServerSentEvent(
+                data=json.dumps(
+                    {
+                        "event_type": log.event_type,
+                        "message": log.message,
+                        "timestamp": log.timestamp,
+                    }
+                ),
+                event=log.event_type,
+                id=str(seen_seq),
+            )
 
-            execution = await db.get_execution(exec_id)
-            if execution and execution.status not in ("running", "pending"):
-                yield ServerSentEvent(
-                    data=json.dumps({"status": execution.status}),
-                    event="complete",
-                )
-                return
+        # Check if already finished
+        execution = await db.get_execution(exec_id)
+        if execution and execution.status not in ("running", "pending"):
+            yield ServerSentEvent(
+                data=json.dumps({"status": execution.status}),
+                event="complete",
+            )
+            return
 
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    execution = await db.get_execution(exec_id)
-                    if not execution or execution.status not in ("running", "pending"):
-                        yield ServerSentEvent(
-                            data=json.dumps({"status": execution.status if execution else "unknown"}),
-                            event="complete",
-                        )
-                        return
-                    continue
+        # Drain live events (dedup against replay)
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                execution = await db.get_execution(exec_id)
+                if not execution or execution.status not in ("running", "pending"):
+                    yield ServerSentEvent(
+                        data=json.dumps({"status": execution.status if execution else "unknown"}),
+                        event="complete",
+                    )
+                    return
+                continue
 
-                seq = event.get("seq", 0)
-                if seq <= seen_seq:
-                    continue
-                seen_seq = seq
+            seq = event.get("seq", 0)
+            if seq <= seen_seq:
+                continue
+            seen_seq = seq
 
-                yield ServerSentEvent(
-                    data=json.dumps(event["data"]),
-                    event=event["type"],
-                    id=str(seq),
-                )
-                if event["type"] == "complete":
-                    break
-        finally:
-            event_bus.unsubscribe(exec_id, queue)
-
-    return EventSourceResponse(event_generator())
+            yield ServerSentEvent(
+                data=json.dumps(event["data"]),
+                event=event["type"],
+                id=str(seq),
+            )
+            if event["type"] == "complete":
+                break
+    finally:
+        event_bus.unsubscribe(exec_id, queue)
 
 
 @router.delete("/{exec_id}", response_model=CancelResponse)
