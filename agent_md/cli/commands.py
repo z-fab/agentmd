@@ -569,6 +569,8 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
     import json
 
     stats: dict = {}
+    got_final = False
+    last_ai_content = ""
     with client.stream_sse(f"/executions/{execution_id}/stream") as response:
         event_type = None
         data_buffer = ""
@@ -586,6 +588,9 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
 
                 if event_type == "complete":
                     stats = data
+                    # If no final_answer arrived, show the last AI message as the response
+                    if not got_final and last_ai_content:
+                        console.print(last_ai_content)
                     error = data.get("error")
                     status = data.get("status", "unknown")
                     if status in ("aborted", "error", "timeout", "cancelled") and error:
@@ -595,6 +600,7 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
                     content = str(data.get("content", data.get("message", "")))
                     if content:
                         console.print(content)
+                    got_final = True
                 elif event_type == "tool_call":
                     tools = data.get("tools", [])
                     if tools:
@@ -605,10 +611,8 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
                         if msg:
                             console.print(f"  [dim]{msg}...[/dim]")
                 elif event_type == "ai":
-                    # Show thinking only if there's no final_answer yet
-                    content = str(data.get("content", data.get("message", "")))
-                    if content:
-                        console.print(f"  [dim]{content[:120]}[/dim]")
+                    # Buffer AI content — only show if no final_answer follows
+                    last_ai_content = str(data.get("content", data.get("message", "")))
                 # tool_result, system, human, meta — silent in chat mode
 
                 data_buffer = ""
