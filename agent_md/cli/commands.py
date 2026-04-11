@@ -528,18 +528,23 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                         error = data.get("error")
                         tokens = data.get("total_tokens")
                         cost = data.get("cost_usd")
+                        duration_ms = data.get("duration_ms")
 
-                        if status in ("aborted", "error", "timeout", "cancelled"):
-                            console.print(f"\n\u274c [bold red]{status}[/bold red]")
-                            if error:
-                                console.print(f"  [red]{error}[/red]")
-                        else:
-                            parts = [f"[bold green]{status}[/bold green]"]
-                            if tokens:
-                                parts.append(f"{tokens} tokens")
-                            if cost:
-                                parts.append(f"${cost:.4f}")
-                            console.print(f"\n{'  |  '.join(parts)}")
+                        # Error/abort message (like final_answer but for failures)
+                        if status in ("aborted", "error", "timeout", "cancelled") and error:
+                            console.print(f"\n\u274c {error}")
+
+                        # Summary line — always shown
+                        style = "red" if status in ("aborted", "error", "timeout", "cancelled") else "green"
+                        parts = [f"[bold {style}]{status}[/bold {style}]"]
+                        if duration_ms:
+                            secs = duration_ms / 1000
+                            parts.append(f"{secs:.1f}s")
+                        if tokens:
+                            parts.append(f"{tokens} tokens")
+                        if cost:
+                            parts.append(f"${cost:.4f}")
+                        console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
                     break
                 elif not quiet:
                     _print_event(console, event_type, data)
