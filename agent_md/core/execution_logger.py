@@ -111,12 +111,12 @@ class ExecutionLogger:
 
         return log_id
 
-    async def mark_final_answer(self, msg) -> None:
-        """Persist the last AI message as a final_answer event."""
+    async def mark_final_answer(self, msg) -> int:
+        """Persist the last AI message as a final_answer event. Returns the log entry ID."""
         content = _extract_text(getattr(msg, "content", ""))
         logger.info(f"[{self.agent_name}] ✅ {content[:200]}")
         self._emit("final_answer", {"content": content, "agent_name": self.agent_name})
-        await self._persist("final_answer", content[:500])
+        return await self._persist("final_answer", content[:500])
 
     async def log_messages(self, messages: list) -> None:
         """Process all messages from a completed execution.

@@ -1,7 +1,6 @@
 """Tests for database methods needed by the HTTP API."""
 
 import pytest
-from pathlib import Path
 from agent_md.db.database import Database
 
 
