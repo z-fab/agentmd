@@ -91,16 +91,12 @@ async def run_agent(name: str, request: Request, body: RunRequest | None = None)
     arguments = " ".join(body.args) if body.args else ""
 
     cancel_event = asyncio.Event()
-    execution_id = await rt.db.create_execution(
-        agent_id=config.name, trigger="manual", status="running"
-    )
+    execution_id = await rt.db.create_execution(agent_id=config.name, trigger="manual", status="running")
     state.cancel_events[execution_id] = cancel_event
 
     model_info = f"{config.model.provider}/{config.model.name}" if config.model else None
 
-    asyncio.create_task(
-        _run_in_background(rt, config, execution_id, state, arguments, body.message, cancel_event)
-    )
+    asyncio.create_task(_run_in_background(rt, config, execution_id, state, arguments, body.message, cancel_event))
     return RunResponse(execution_id=execution_id, model=model_info)
 
 
@@ -129,11 +125,18 @@ async def agent_runs(name: str, request: Request, limit: int = 10):
     execs = await rt.db.get_executions(name, limit=limit)
     return [
         ExecutionSummary(
-            id=e.id, agent_id=e.agent_id, status=e.status, trigger=e.trigger,
-            started_at=e.started_at, finished_at=e.finished_at,
-            duration_ms=e.duration_ms, input_tokens=e.input_tokens,
-            output_tokens=e.output_tokens, total_tokens=e.total_tokens,
-            cost_usd=e.cost_usd, error=e.error,
+            id=e.id,
+            agent_id=e.agent_id,
+            status=e.status,
+            trigger=e.trigger,
+            started_at=e.started_at,
+            finished_at=e.finished_at,
+            duration_ms=e.duration_ms,
+            input_tokens=e.input_tokens,
+            output_tokens=e.output_tokens,
+            total_tokens=e.total_tokens,
+            cost_usd=e.cost_usd,
+            error=e.error,
         )
         for e in execs
     ]

@@ -452,7 +452,7 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
 # ---------------------------------------------------------------------------
 
 
-@app.command(context_settings={"allow_extra_args": True, "allow_interspersed_args": False})
+@app.command(context_settings={"allow_extra_args": True})
 def run(
     ctx: typer.Context,
     agent: Annotated[Optional[str], typer.Argument()] = None,
@@ -543,21 +543,25 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
 
 def _print_event(console, event_type: str, data: dict):
     """Format and print a single SSE event to the console."""
-    content = data.get("content", data.get("message", ""))
+    content = str(data.get("content", data.get("message", "")))
+
     if event_type == "tool_call":
-        tool = data.get("tool_name", "")
-        console.print(f"  [cyan]>> {tool}[/cyan]")
+        tools = data.get("tools", [])
+        for tool in tools:
+            name = tool.get("name", "unknown")
+            args = tool.get("args", "")[:80]
+            console.print(f"  [cyan]\U0001f527 {name}[/cyan] [dim]({args})[/dim]")
     elif event_type in ("tool_result", "tool_response"):
-        tool = data.get("tool_name", "")
-        result = content[:100]
-        console.print(f"  [dim]<< {tool}: {result}[/dim]")
+        tool_name = data.get("tool_name", "")
+        result = content[:120].replace("\n", " ")
+        console.print(f"  [dim]\U0001f4ce {tool_name} \u2192 {result}[/dim]")
     elif event_type == "ai":
         if content:
-            console.print(f"  [white]{content[:300]}[/white]")
+            console.print(f"  [white]\U0001f916 {content[:200]}[/white]")
     elif event_type == "final_answer":
-        console.print(f"\n{content}")
+        console.print(f"\n\u2705 {content}")
     elif event_type == "meta":
-        pass
+        pass  # silently ignore skill meta messages
 
 
 # ---------------------------------------------------------------------------

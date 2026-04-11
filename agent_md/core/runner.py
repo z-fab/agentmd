@@ -78,6 +78,30 @@ def _classify_event_type(msg) -> str:
     return "message"
 
 
+def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
+    """Build structured event data for the EventBus, including tool details."""
+    content = _extract_text(getattr(msg, "content", ""))[:500]
+    data: dict = {"event_type": event_type, "agent_name": agent_name}
+
+    if event_type == "tool_call" and hasattr(msg, "tool_calls") and msg.tool_calls:
+        tools = []
+        for tc in msg.tool_calls:
+            tools.append({
+                "name": tc.get("name", "unknown"),
+                "args": str(tc.get("args", {}))[:200],
+            })
+        data["tools"] = tools
+        if content:
+            data["content"] = content
+    elif event_type == "tool_result":
+        data["tool_name"] = getattr(msg, "name", "unknown")
+        data["content"] = content[:200]
+    else:
+        data["content"] = content
+
+    return data
+
+
 class AgentRunner:
     """Executes agents and persists results to the database."""
 
@@ -301,18 +325,10 @@ class AgentRunner:
 
                     if event_bus is not None:
                         event_type = _classify_event_type(msg)
-                        content = _extract_text(getattr(msg, "content", ""))[:500]
+                        event_data = _build_event_data(msg, event_type, config.name)
                         await event_bus.publish(
                             execution_id,
-                            {
-                                "type": event_type,
-                                "seq": log_id,
-                                "data": {
-                                    "event_type": event_type,
-                                    "content": content,
-                                    "agent_name": config.name,
-                                },
-                            },
+                            {"type": event_type, "seq": log_id, "data": event_data},
                         )
 
                     if cancel_event is not None and cancel_event.is_set():
