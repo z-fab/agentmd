@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterable
 
 from fastapi import APIRouter, HTTPException, Request
@@ -110,13 +109,11 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
         for log in logs:
             seen_seq = log.id
             yield ServerSentEvent(
-                data=json.dumps(
-                    {
-                        "event_type": log.event_type,
-                        "message": log.message,
-                        "timestamp": log.timestamp,
-                    }
-                ),
+                data={
+                    "event_type": log.event_type,
+                    "message": log.message,
+                    "timestamp": log.timestamp,
+                },
                 event=log.event_type,
                 id=str(seen_seq),
             )
@@ -125,7 +122,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
         execution = await db.get_execution(exec_id)
         if execution and execution.status not in ("running", "pending"):
             yield ServerSentEvent(
-                data=json.dumps({"status": execution.status}),
+                data={"status": execution.status},
                 event="complete",
             )
             return
@@ -138,7 +135,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 execution = await db.get_execution(exec_id)
                 if not execution or execution.status not in ("running", "pending"):
                     yield ServerSentEvent(
-                        data=json.dumps({"status": execution.status if execution else "unknown"}),
+                        data={"status": execution.status if execution else "unknown"},
                         event="complete",
                     )
                     return
@@ -150,7 +147,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             seen_seq = seq
 
             yield ServerSentEvent(
-                data=json.dumps(event["data"]),
+                data=event["data"],
                 event=event["type"],
                 id=str(seq),
             )
