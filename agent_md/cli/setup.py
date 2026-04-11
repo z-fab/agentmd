@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
-import textwrap
 from pathlib import Path
 
 import yaml
@@ -25,44 +23,6 @@ PROVIDERS = {
     "ollama": {"env_var": None, "default_model": "llama3"},
 }
 
-SYSTEMD_UNIT_TEMPLATE = """\
-[Unit]
-Description=Agent.md Runtime
-After=network.target
-
-[Service]
-Type=simple
-ExecStart={agentmd_path} start
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-"""
-
-LAUNCHD_PLIST_TEMPLATE = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>me.zfab.agentmd</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{agentmd_path}</string>
-        <string>start</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
-</dict>
-</plist>
-"""
-
 
 def _default_workspace() -> Path:
     """Return default workspace path (always ~/agentmd)."""
@@ -76,25 +36,27 @@ def _get_config_dir() -> Path:
     return config_dir
 
 
-def _write_config_yaml(workspace: Path, provider: str, model: str):
+def _write_config_yaml(workspace: Path, provider: str, model: str, defaults: dict | None = None):
     """Write config.yaml to ~/.config/agentmd/config.yaml."""
     config = {
         "workspace": str(workspace),
         "agents_dir": "agents",
-        "db_path": "data/agentmd.db",
-        "mcp_config": "agents/mcp-servers.json",
         "defaults": {
             "provider": provider,
             "model": model,
         },
         "log_level": "INFO",
     }
+    if defaults:
+        config["defaults"].update(defaults)
+
     config_path = _get_config_dir() / "config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
 
 
-def _write_env_file(path: Path, api_key: str | None, env_var: str | None):
-    """Write .env with API keys only."""
+def _build_env_content(api_key: str | None, env_var: str | None) -> str:
+    """Build .env file content."""
     lines = ["# Agent.md — API Keys"]
     if api_key and env_var:
         lines.append(f"{env_var}={api_key}")
@@ -102,95 +64,55 @@ def _write_env_file(path: Path, api_key: str | None, env_var: str | None):
         lines.append("# GOOGLE_API_KEY=...")
         lines.append("# OPENAI_API_KEY=sk-...")
         lines.append("# ANTHROPIC_API_KEY=sk-ant-...")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    return "\n".join(lines) + "\n"
+
+
+def _write_env_file(workspace: Path, api_key: str | None, env_var: str | None):
+    """Write .env to both workspace _config and global config dir."""
+    content = _build_env_content(api_key, env_var)
+
+    # Workspace-specific
+    ws_env = workspace / "agents" / "_config" / ".env"
+    ws_env.parent.mkdir(parents=True, exist_ok=True)
+    ws_env.write_text(content)
+
+    # Global fallback
+    global_env = _get_config_dir() / ".env"
+    global_env.write_text(content)
+
+    return ws_env, global_env
 
 
 def _create_workspace(workspace: Path, provider: str, model: str):
     """Create workspace directory structure, hello-world agent, and MCP config."""
     agents_dir = workspace / "agents"
-    tools_dir = agents_dir / "tools"
-    data_dir = workspace / "data"
+    config_dir = agents_dir / "_config"
+    tools_dir = config_dir / "tools"
+    skills_dir = config_dir / "skills"
 
-    for d in (agents_dir, tools_dir, data_dir):
+    for d in (agents_dir, config_dir, tools_dir, skills_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    # Hello-world agent (no model — uses default from config.yaml)
-    hello_world = agents_dir / "hello-world.md"
-    if not hello_world.exists():
-        hello_world.write_text(
-            textwrap.dedent("""\
-                ---
-                name: hello-world
-                ---
-
-                You are a friendly assistant. When asked to execute your task,
-                write a creative greeting and save it to 'greeting.txt'.
-            """)
+    # Hello-world agent
+    hello = agents_dir / "hello-world.md"
+    if not hello.exists():
+        hello.write_text(
+            "---\n"
+            "name: hello-world\n"
+            "description: A friendly greeting agent\n"
+            "paths:\n"
+            "  output: output\n"
+            "---\n"
+            "\n"
+            "You are a friendly assistant. Write a creative greeting\n"
+            "and save it to {output}/greeting.txt using file_write.\n"
         )
 
-    # Empty MCP servers config
-    mcp_config = agents_dir / "mcp-servers.json"
-    if not mcp_config.exists():
-        mcp_config.write_text("{}\n")
+    # Empty MCP config
+    mcp = config_dir / "mcp-servers.json"
+    if not mcp.exists():
+        mcp.write_text("{}\n")
 
-
-def _setup_autostart() -> bool:
-    """Configure auto-start based on platform. Returns True if configured."""
-    agentmd_path = shutil.which("agentmd")
-    if not agentmd_path:
-        console.print("  [yellow]Could not find agentmd in PATH, skipping auto-start.[/]")
-        return False
-
-    system = platform.system()
-
-    if system == "Linux":
-        systemd_dir = Path.home() / ".config" / "systemd" / "user"
-        if not Path("/run/systemd/system").exists():
-            console.print("  [yellow]systemd not available, skipping auto-start.[/]")
-            return False
-
-        systemd_dir.mkdir(parents=True, exist_ok=True)
-        unit_path = systemd_dir / "agentmd.service"
-        unit_path.write_text(SYSTEMD_UNIT_TEMPLATE.format(agentmd_path=agentmd_path))
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, capture_output=True)
-        subprocess.run(["systemctl", "--user", "enable", "agentmd.service"], check=True, capture_output=True)
-        console.print("  Created and enabled systemd user service")
-        return True
-
-    elif system == "Darwin":
-        plist_dir = Path.home() / "Library" / "LaunchAgents"
-        plist_dir.mkdir(parents=True, exist_ok=True)
-        plist_path = plist_dir / "me.zfab.agentmd.plist"
-        plist_path.write_text(LAUNCHD_PLIST_TEMPLATE.format(agentmd_path=agentmd_path))
-        console.print(f"  Created Launch Agent at {plist_path}")
-        return True
-
-    elif system == "Windows":
-        try:
-            subprocess.run(
-                [
-                    "schtasks",
-                    "/create",
-                    "/tn",
-                    "AgentMD",
-                    "/tr",
-                    f'"{agentmd_path}" start',
-                    "/sc",
-                    "onlogon",
-                    "/f",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            console.print("  Created Windows scheduled task 'AgentMD'")
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            console.print("  [yellow]Could not create scheduled task, skipping auto-start.[/]")
-            return False
-
-    console.print("  [yellow]Auto-start not supported on this platform.[/]")
-    return False
 
 
 def _build_config_panel():
@@ -267,40 +189,65 @@ def setup(
             raise typer.Exit()
 
     # 1. Workspace
+    console.print("\n  [bold]1/4 · Workspace[/bold]")
     default_ws = _default_workspace()
-    workspace_input = Prompt.ask("\nWorkspace directory", default=str(default_ws))
+    workspace_input = Prompt.ask("  Workspace directory", default=str(default_ws))
     workspace = Path(workspace_input).expanduser().resolve()
 
-    # 2. Provider
+    # 2. Provider + Model
+    console.print("\n  [bold]2/4 · Model[/bold]")
     provider = Prompt.ask(
-        "\nLLM Provider",
+        "  LLM Provider",
         choices=list(PROVIDERS.keys()),
         default="google",
     )
 
-    # 3. Model
     default_model = PROVIDERS[provider]["default_model"]
-    model = Prompt.ask("\nModel", default=default_model)
+    model = Prompt.ask("  Model", default=default_model)
 
-    # 4. API Key
+    # 3. API Key
+    console.print("\n  [bold]3/4 · API Key[/bold]")
     api_key = None
     env_var = PROVIDERS[provider]["env_var"]
     if env_var:
         existing_key = os.environ.get(env_var, "")
         if existing_key:
             masked = existing_key[:4] + "..." + existing_key[-4:] if len(existing_key) > 8 else "****"
-            console.print(f"\nFound existing {env_var}: {masked}")
-            if not Confirm.ask("Use this key?", default=True):
-                api_key = Prompt.ask(f"\n{env_var}", password=True)
+            console.print(f"  Found existing {env_var}: {masked}")
+            if not Confirm.ask("  Use this key?", default=True):
+                api_key = Prompt.ask(f"  {env_var}", password=True)
             else:
                 api_key = existing_key
         else:
-            api_key = Prompt.ask(f"\n{env_var}", password=True)
+            api_key = Prompt.ask(f"  {env_var}", password=True)
     else:
-        console.print("\nNo API key needed for ollama")
+        console.print("  No API key needed for ollama")
 
-    # 5. Auto-start
-    autostart = Confirm.ask("\nEnable auto-start on login?", default=False)
+    # 4. Defaults (optional)
+    console.print("\n  [bold]4/4 · Defaults[/bold] [dim](press Enter to keep defaults)[/dim]")
+
+    max_tool_calls_str = Prompt.ask("  Max tool calls per run", default="50")
+    max_cost_str = Prompt.ask("  Max cost per run in USD", default="")
+    timeout_str = Prompt.ask("  Timeout in seconds", default="300")
+
+    extra_defaults = {}
+    try:
+        val = int(max_tool_calls_str)
+        if val != 50:
+            extra_defaults["max_tool_calls"] = val
+    except ValueError:
+        pass
+    if max_cost_str.strip():
+        try:
+            extra_defaults["max_cost_usd"] = float(max_cost_str)
+        except ValueError:
+            pass
+    try:
+        val = int(timeout_str)
+        if val != 300:
+            extra_defaults["timeout"] = val
+    except ValueError:
+        pass
 
     # --- Apply configuration ---
     console.print("\n[bold]Applying configuration...[/]\n")
@@ -310,18 +257,13 @@ def setup(
     console.print(f"  Workspace created at {workspace}")
 
     # Write config.yaml
-    _write_config_yaml(workspace, provider, model)
+    _write_config_yaml(workspace, provider, model, extra_defaults or None)
     config_path = _get_config_dir() / "config.yaml"
     console.print(f"  Config written to {config_path}")
 
-    # Write .env (secrets only)
-    env_path = workspace / ".env"
-    _write_env_file(env_path, api_key, env_var)
-    console.print(f"  Secrets written to {env_path}")
-
-    # Auto-start
-    if autostart:
-        _setup_autostart()
+    # Write .env (secrets to both locations)
+    ws_env, global_env = _write_env_file(workspace, api_key, env_var)
+    console.print(f"  Secrets written to {ws_env}")
 
     # Summary
     console.print(
@@ -332,13 +274,12 @@ def setup(
                     f"[bold]Provider:[/]      {provider}",
                     f"[bold]Model:[/]         {model}",
                     f"[bold]Config:[/]        {config_path}",
-                    f"[bold]Secrets:[/]       {env_path}",
-                    f"[bold]Auto-start:[/]    {'enabled' if autostart else 'disabled'}",
+                    f"[bold]Secrets:[/]       {ws_env}",
                     "",
                     "[bold]Next steps:[/]",
-                    "  agentmd start           — Start the runtime",
-                    "  agentmd run hello-world — Run the sample agent",
-                    "  agentmd config          — Show current configuration",
+                    "  agentmd new my-first-agent  — Create your first agent",
+                    "  agentmd start               — Start the backend",
+                    "  agentmd config              — Show current configuration",
                 ]
             ),
             title="Setup Complete",
