@@ -164,9 +164,7 @@ def info():
 
 
 @app.command()
-def setup(
-    reconfigure: bool = typer.Option(False, "--reconfigure", "-r", help="Force reconfiguration even if already set up"),
-):
+def setup():
     """Interactive setup wizard for Agent.md."""
     from agent_md import __version__
     from agent_md.config.settings import _get_config_path
@@ -180,8 +178,7 @@ def setup(
     )
 
     # Check for existing setup
-    existing_config = _get_config_path().exists()
-    if existing_config and not reconfigure:
+    if _get_config_path().exists():
         console.print(f"\n[green]Existing configuration found:[/] {_get_config_path()}")
         if not Confirm.ask("Do you want to reconfigure?", default=False):
             console.print("\n[green]Setup complete![/] Your configuration is already in place.")

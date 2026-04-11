@@ -7,7 +7,7 @@ from agent_md.api.app import create_app
 
 @pytest.fixture
 async def app(tmp_path):
-    application = create_app(workspace=tmp_path, start_scheduler=False)
+    application = create_app(workspace=tmp_path, db_path=tmp_path / "test.db", start_scheduler=False)
     async with application.router.lifespan_context(application):
         yield application
 

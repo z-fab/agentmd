@@ -9,7 +9,7 @@ from agent_md.api.app import create_app
 async def app(tmp_path):
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
-    application = create_app(workspace=tmp_path)
+    application = create_app(workspace=tmp_path, db_path=tmp_path / "test.db")
     async with application.router.lifespan_context(application):
         yield application
 
