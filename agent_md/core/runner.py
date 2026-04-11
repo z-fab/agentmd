@@ -432,6 +432,7 @@ class AgentRunner:
                             "duration_ms": result.get("duration_ms"),
                             "total_tokens": result.get("total_tokens"),
                             "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
                         },
                     },
                 )
@@ -463,6 +464,7 @@ class AgentRunner:
                             "duration_ms": result.get("duration_ms"),
                             "total_tokens": result.get("total_tokens"),
                             "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
                         },
                     },
                 )
@@ -494,6 +496,7 @@ class AgentRunner:
                             "duration_ms": result.get("duration_ms"),
                             "total_tokens": result.get("total_tokens"),
                             "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
                         },
                     },
                 )
@@ -525,6 +528,7 @@ class AgentRunner:
                             "duration_ms": result.get("duration_ms"),
                             "total_tokens": result.get("total_tokens"),
                             "cost_usd": result.get("cost_usd"),
+                            "error": result.get("error"),
                         },
                     },
                 )

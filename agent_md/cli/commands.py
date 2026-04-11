@@ -525,14 +525,21 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                 if event_type == "complete":
                     if not quiet:
                         status = data.get("status", "unknown")
+                        error = data.get("error")
                         tokens = data.get("total_tokens")
                         cost = data.get("cost_usd")
-                        parts = [f"[bold]{status}[/bold]"]
-                        if tokens:
-                            parts.append(f"{tokens} tokens")
-                        if cost:
-                            parts.append(f"${cost:.4f}")
-                        console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
+
+                        if status in ("aborted", "error", "timeout", "cancelled"):
+                            console.print(f"\n\u274c [bold red]{status}[/bold red]")
+                            if error:
+                                console.print(f"  [red]{error}[/red]")
+                        else:
+                            parts = [f"[bold green]{status}[/bold green]"]
+                            if tokens:
+                                parts.append(f"{tokens} tokens")
+                            if cost:
+                                parts.append(f"${cost:.4f}")
+                            console.print(f"\n{'  |  '.join(parts)}")
                     break
                 elif not quiet:
                     _print_event(console, event_type, data)
