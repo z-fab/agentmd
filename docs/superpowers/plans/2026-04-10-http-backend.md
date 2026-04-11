@@ -42,6 +42,7 @@
 | `tests/test_lifecycle.py` | Lifecycle manager tests |
 | `tests/test_runner_events.py` | Runner event publishing tests |
 | `tests/test_cli_client.py` | CLI client tests |
+| `tests/api/test_chat.py` | Chat endpoint tests |
 | `docs/api.md` | REST API reference |
 | `docs/migration-0.8.md` | Breaking changes guide |
 
@@ -827,6 +828,19 @@ class ReloadResponse(BaseModel):
 class CancelResponse(BaseModel):
     status: str
     execution_id: int
+
+
+class ChatCreateResponse(BaseModel):
+    execution_id: int
+    model: str
+
+
+class ChatMessageRequest(BaseModel):
+    content: str
+
+
+class ChatMessageResponse(BaseModel):
+    status: str = "ok"
 
 
 class ErrorResponse(BaseModel):
@@ -2574,9 +2588,9 @@ def _print_event(console, event_type: str, data: dict):
         pass  # Silently ignore meta messages in CLI
 ```
 
-- [ ] **Step 2: Rewrite the chat command**
+- [ ] **Step 2: Rewrite the chat command as thin client**
 
-Replace the existing `chat` command:
+Replace the existing `chat` command. The flow is: create a chat session via POST, open the SSE stream in a background thread, then loop reading user input and sending messages via POST. The checkpointer already handles conversation state persistence — the backend just needs to keep the compiled graph warm per session.
 
 ```python
 @app.command()
@@ -2585,9 +2599,12 @@ def chat(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
     """Start an interactive chat session with an agent."""
-    import asyncio
+    import json
+    import threading
     from pathlib import Path
     from rich.console import Console
+    from agent_md.cli.client import BackendClient
+    from agent_md.cli.spawn import ensure_backend
 
     console = Console()
 
@@ -2597,14 +2614,104 @@ def chat(
         if not agent:
             return
 
-    # Chat still uses the direct runtime — it needs stateful
-    # multi-turn conversation which isn't easily mapped to HTTP yet.
-    # This will be migrated to HTTP in a future iteration.
-    ws = Path(workspace) if workspace else None
-    asyncio.run(_chat_loop(agent, ws, console))
-```
+    try:
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
-Note: The chat command remains direct-runtime for now because multi-turn stateful chat over HTTP requires additional protocol design (maintaining conversation state server-side). This can be addressed in a follow-up.
+    # Create chat session
+    resp = client.post(f"/agents/{agent}/chat")
+    if resp.status_code == 404:
+        console.print(f"[red]Agent '{agent}' not found.[/red]")
+        raise typer.Exit(1)
+    if resp.status_code != 200:
+        console.print(f"[red]Error: {resp.text}[/red]")
+        raise typer.Exit(1)
+
+    data = resp.json()
+    execution_id = data["execution_id"]
+    model_info = data.get("model", "")
+    console.print(f"[bold]Chat with {agent}[/bold] [dim]({model_info})[/dim]")
+    console.print("[dim]Type /exit to end the session[/dim]\n")
+
+    # Background SSE stream to print agent responses
+    stop_event = threading.Event()
+
+    def _stream_background():
+        """Read SSE events and print them."""
+        try:
+            with client.stream_sse(f"/executions/{execution_id}/stream") as response:
+                event_type = None
+                data_buffer = ""
+                for line in response.iter_lines():
+                    if stop_event.is_set():
+                        break
+                    if line.startswith("event:"):
+                        event_type = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data_buffer = line[5:].strip()
+                    elif line == "" and data_buffer:
+                        try:
+                            evt_data = json.loads(data_buffer)
+                        except json.JSONDecodeError:
+                            evt_data = {"raw": data_buffer}
+                        if event_type == "complete":
+                            break
+                        elif event_type == "turn_complete":
+                            pass  # Signal that agent is done, prompt for input
+                        elif event_type not in ("system", "human", "meta"):
+                            _print_event(console, event_type, evt_data)
+                        data_buffer = ""
+                        event_type = None
+        except Exception:
+            pass
+
+    stream_thread = threading.Thread(target=_stream_background, daemon=True)
+    stream_thread.start()
+
+    # Chat loop
+    try:
+        while True:
+            try:
+                user_input = console.input("[bold green]> [/bold green]")
+            except EOFError:
+                break
+
+            if user_input.strip().lower() in ("/exit", "/quit"):
+                break
+            if not user_input.strip():
+                continue
+
+            # Send message
+            resp = client.post(
+                f"/executions/{execution_id}/message",
+                json={"content": user_input},
+            )
+            if resp.status_code != 200:
+                console.print(f"[red]Error: {resp.text}[/red]")
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        console.print("\n[dim]Ending chat session...[/dim]")
+        stop_event.set()
+        client.delete(f"/executions/{execution_id}")
+
+        # Print summary
+        resp = client.get(f"/executions/{execution_id}")
+        if resp.status_code == 200:
+            detail = resp.json()
+            tokens = detail.get("total_tokens")
+            cost = detail.get("cost_usd")
+            parts = []
+            if tokens:
+                parts.append(f"{tokens} tokens")
+            if cost:
+                parts.append(f"${cost:.4f}")
+            if parts:
+                console.print(f"[dim]{'  |  '.join(parts)}[/dim]")
+```
 
 - [ ] **Step 3: Run tests to check for regressions**
 
@@ -2992,6 +3099,7 @@ curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
 | GET | `/agents/{name}` | Agent detail (config + last_run + next_run) |
 | POST | `/agents/{name}/run` | Start execution, returns `{execution_id}` |
 | GET | `/agents/{name}/runs` | Execution history for agent |
+| POST | `/agents/{name}/chat` | Create chat session, returns `{execution_id, model}` |
 | POST | `/agents/reload` | Re-parse agent files from disk |
 
 **Run request body:**
@@ -3006,10 +3114,11 @@ curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
 | GET | `/executions` | List executions (filters: `status`, `agent`, `limit`, `offset`) |
 | GET | `/executions/{id}` | Execution detail |
 | GET | `/executions/{id}/messages` | Full message log |
-| GET | `/executions/{id}/stream` | SSE stream (catchup + live) |
-| DELETE | `/executions/{id}` | Cancel running execution |
+| GET | `/executions/{id}/stream` | SSE stream (catchup + live) — also used for chat |
+| POST | `/executions/{id}/message` | Send message in a chat session |
+| DELETE | `/executions/{id}` | Cancel running execution or end chat session |
 
-**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`
+**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `turn_complete`, `complete`
 
 ### Scheduler
 
@@ -3083,7 +3192,7 @@ Add v0.8.0 entry at the top:
 - `agentmd start` default changed to foreground (use `-d` for background)
 
 ### Added
-- HTTP API with 15 endpoints (agents, executions, scheduler, health)
+- HTTP API with 17 endpoints (agents, executions, chat, scheduler, health)
 - SSE streaming for real-time execution events (`/executions/{id}/stream`)
 - Execution cancellation via `DELETE /executions/{id}`
 - EventBus for in-memory pub/sub of execution events
@@ -3094,6 +3203,8 @@ Add v0.8.0 entry at the top:
 - `POST /agents/reload` to re-parse agent files
 - Scheduler pause/resume via API
 - `GET /agents/{name}` includes `next_run` for scheduled agents
+- Interactive chat over HTTP (`POST /agents/{name}/chat` + `POST /executions/{id}/message`)
+- Chat sessions use existing SSE stream and LangGraph checkpointer
 
 ### Changed
 - CLI `run` command now streams via SSE instead of direct execution
@@ -3143,6 +3254,295 @@ git commit -m "docs: API reference, migration guide, changelog for v0.8.0"
 
 ---
 
+## Task 17: Chat over HTTP
+
+**Files:**
+- Modify: `agent_md/api/routes/agents.py` (add `POST /agents/{name}/chat`)
+- Modify: `agent_md/api/routes/executions.py` (add `POST /executions/{id}/message`)
+- Modify: `agent_md/core/runner.py` (add `chat_turn` event bus support)
+- Create: `tests/api/test_chat.py`
+
+The chat session leverages the existing LangGraph checkpointer for state persistence. The backend keeps compiled graphs warm in `app.state.chat_sessions`. Each chat turn publishes events to the EventBus, so the existing SSE stream (`GET /executions/{id}/stream`) delivers responses in real-time. No new SSE infrastructure needed.
+
+**Session state stored in `app.state.chat_sessions`:**
+```python
+@dataclass
+class ChatSessionState:
+    config: AgentConfig
+    graph: Any  # compiled LangGraph
+    messages: list  # accumulated messages
+    ex_logger: ExecutionLogger
+    timeout: float
+    graph_config: dict | None
+```
+
+- [ ] **Step 1: Write tests for chat endpoints**
+
+```python
+# tests/api/test_chat.py
+"""Tests for chat session endpoints."""
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from agent_md.api.app import create_app
+
+
+@pytest.fixture
+async def app(tmp_path):
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "chat-agent.md").write_text(
+        "---\n"
+        "model:\n"
+        "  provider: google\n"
+        "  name: gemini-2.5-flash\n"
+        "history: low\n"
+        "---\n"
+        "You are a helpful assistant.\n"
+    )
+    application = create_app(workspace=tmp_path)
+    async with application.router.lifespan_context(application):
+        yield application
+
+
+@pytest.fixture
+async def client(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
+@pytest.mark.asyncio
+async def test_create_chat_session(client):
+    resp = await client.post("/agents/chat-agent/chat")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "execution_id" in data
+    assert "model" in data
+
+
+@pytest.mark.asyncio
+async def test_create_chat_not_found(client):
+    resp = await client.post("/agents/nonexistent/chat")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_send_message_no_session(client):
+    resp = await client.post("/executions/9999/message", json={"content": "hello"})
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_chat_creates_execution(app, client):
+    resp = await client.post("/agents/chat-agent/chat")
+    execution_id = resp.json()["execution_id"]
+    # Verify execution exists in DB
+    rt = app.state.runtime
+    execution = await rt.db.get_execution(execution_id)
+    assert execution is not None
+    assert execution.trigger == "chat"
+    assert execution.status == "running"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python -m pytest tests/api/test_chat.py -v`
+Expected: FAIL — endpoints not implemented
+
+- [ ] **Step 3: Add chat_sessions state to app lifespan**
+
+In `agent_md/api/app.py`, inside the `_lifespan` function, after `state.cancel_events`, add:
+
+```python
+    state.chat_sessions: dict[int, object] = {}
+```
+
+- [ ] **Step 4: Add POST /agents/{name}/chat endpoint**
+
+In `agent_md/api/routes/agents.py`, add the chat creation endpoint:
+
+```python
+from agent_md.api.schemas import ChatCreateResponse
+
+
+@router.post("/{name}/chat", response_model=ChatCreateResponse)
+async def create_chat(name: str, request: Request):
+    """Create a new interactive chat session for an agent.
+
+    Returns an execution_id. Open GET /executions/{id}/stream to receive
+    events, then send messages via POST /executions/{id}/message.
+    """
+    rt = request.app.state.runtime
+    state = request.app.state
+    config = rt.registry.get(name)
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+    from agent_md.core.execution_logger import ExecutionLogger
+    from agent_md.graph.builder import build_system_message
+
+    # Create execution record
+    execution_id = await rt.db.create_execution(
+        agent_id=config.name, trigger="chat", status="running"
+    )
+
+    # Build graph and seed conversation
+    graph = await rt.runner.prepare_agent(config)
+    system_msg = build_system_message(config.system_prompt, config, rt.path_context)
+    ex_logger = ExecutionLogger(rt.db, execution_id, config.name)
+    await ex_logger.log_message(system_msg)
+
+    graph_config = (
+        {"configurable": {"thread_id": config.name}}
+        if config.history != "off"
+        else None
+    )
+
+    cancel_event = asyncio.Event()
+    state.cancel_events[execution_id] = cancel_event
+
+    # Store session state
+    state.chat_sessions[execution_id] = {
+        "config": config,
+        "graph": graph,
+        "messages": [system_msg],
+        "ex_logger": ex_logger,
+        "timeout": config.settings.timeout,
+        "graph_config": graph_config,
+    }
+
+    model_info = f"{config.model.provider}/{config.model.name}" if config.model else ""
+    return ChatCreateResponse(execution_id=execution_id, model=model_info)
+```
+
+- [ ] **Step 5: Add POST /executions/{id}/message endpoint**
+
+In `agent_md/api/routes/executions.py`, add the message endpoint:
+
+```python
+from agent_md.api.schemas import ChatMessageRequest, ChatMessageResponse
+
+
+@router.post("/{exec_id}/message", response_model=ChatMessageResponse)
+async def send_message(exec_id: int, body: ChatMessageRequest, request: Request):
+    """Send a user message in a chat session and trigger one agent turn.
+
+    The agent's response is delivered via the SSE stream
+    (GET /executions/{id}/stream). This endpoint returns immediately
+    after the turn completes.
+    """
+    state = request.app.state
+    session = state.chat_sessions.get(exec_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    from langchain_core.messages import HumanMessage
+    from agent_md.core.execution_logger import _extract_text
+    from agent_md.core.runner import _classify_event_type, _is_final_ai_message
+
+    # Add user message
+    human_msg = HumanMessage(content=body.content)
+    session["messages"].append(human_msg)
+    log_id = await session["ex_logger"].log_message(human_msg)
+
+    # Publish user message to event bus
+    event_bus = state.event_bus
+    await event_bus.publish(exec_id, {
+        "type": "message",
+        "seq": log_id,
+        "data": {
+            "event_type": "human",
+            "content": body.content[:500],
+            "agent_name": session["config"].name,
+        },
+    })
+
+    # Run one chat turn
+    rt = state.runtime
+    new_msgs, in_tok, out_tok = await rt.runner.chat_turn(
+        session["graph"],
+        session["messages"],
+        session["ex_logger"],
+        session["timeout"],
+        graph_config=session["graph_config"],
+    )
+
+    session["messages"].extend(new_msgs)
+
+    # Publish each new message to event bus
+    for msg in new_msgs:
+        event_type = _classify_event_type(msg)
+        content = _extract_text(getattr(msg, "content", ""))[:500]
+        log_id = await session["ex_logger"].log_message(msg)
+        await event_bus.publish(exec_id, {
+            "type": event_type,
+            "seq": log_id,
+            "data": {
+                "event_type": event_type,
+                "content": content,
+                "agent_name": session["config"].name,
+            },
+        })
+
+    # Signal turn complete
+    await event_bus.publish(exec_id, {
+        "type": "turn_complete",
+        "seq": log_id + 1,
+        "data": {
+            "input_tokens": in_tok,
+            "output_tokens": out_tok,
+        },
+    })
+
+    return ChatMessageResponse()
+```
+
+- [ ] **Step 6: Clean up chat session on DELETE /executions/{id}**
+
+In `agent_md/api/routes/executions.py`, update the `cancel_execution` handler to also clean up chat sessions:
+
+Add after `cancel_event.set()`:
+
+```python
+    # Clean up chat session if this was a chat execution
+    session = state.chat_sessions.pop(exec_id, None)
+    if session:
+        # Finalize the chat execution
+        from agent_md.core.runner import AgentRunner
+        duration_ms = 0  # TODO: track actual duration from session start
+        await state.db.update_execution(
+            exec_id, status="success",
+            output_data="Chat session ended",
+        )
+        # Publish complete event
+        await state.event_bus.publish(exec_id, {
+            "type": "complete",
+            "seq": 0,
+            "data": {"status": "success"},
+        })
+        return CancelResponse(status="ended", execution_id=exec_id)
+```
+
+- [ ] **Step 7: Run tests to verify they pass**
+
+Run: `python -m pytest tests/api/test_chat.py -v`
+Expected: All 4 tests PASS.
+
+- [ ] **Step 8: Run all tests**
+
+Run: `python -m pytest tests/ -v`
+Expected: All tests PASS.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add agent_md/api/routes/agents.py agent_md/api/routes/executions.py agent_md/api/schemas.py agent_md/api/app.py tests/api/test_chat.py
+git commit -m "feat: chat over HTTP with session management and SSE streaming"
+```
+
+---
+
 ## Summary
 
 | Task | Description | Key files |
@@ -3163,3 +3563,4 @@ git commit -m "docs: API reference, migration guide, changelog for v0.8.0"
 | 14 | Lifecycle manager | `lifecycle.py` |
 | 15 | DB read-only + daemon removal | `database.py`, `services.py`, `daemon.py` |
 | 16 | Documentation + release prep | `docs/`, `CHANGELOG.md`, `README.md` |
+| 17 | Chat over HTTP | `api/routes/agents.py`, `api/routes/executions.py` |
