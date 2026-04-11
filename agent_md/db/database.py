@@ -73,6 +73,7 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self.db_path))
         self._db.row_factory = aiosqlite.Row
+        await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.executescript(SCHEMA)
         await self._db.commit()
         for migration in MIGRATIONS:
@@ -161,6 +162,40 @@ class Database:
         results = await self.get_executions(agent_id, limit=1)
         return results[0] if results else None
 
+    async def get_execution(self, execution_id: int) -> Optional[ExecutionRecord]:
+        """Get a single execution by ID."""
+        cursor = await self.db.execute(
+            "SELECT * FROM executions WHERE id = ?",
+            (execution_id,),
+        )
+        row = await cursor.fetchone()
+        return ExecutionRecord(**dict(row)) if row else None
+
+    async def list_executions(
+        self,
+        agent_id: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ExecutionRecord]:
+        """List executions with optional filters."""
+        conditions = []
+        params: list = []
+        if agent_id:
+            conditions.append("agent_id = ?")
+            params.append(agent_id)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+        cursor = await self.db.execute(
+            f"SELECT * FROM executions {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            params,
+        )
+        rows = await cursor.fetchall()
+        return [ExecutionRecord(**dict(row)) for row in rows]
+
     # --- Logs ---
 
     async def add_log(
@@ -169,10 +204,10 @@ class Database:
         event_type: str,
         message: str,
         metadata: Optional[dict] = None,
-    ) -> None:
-        """Add a log entry for an execution."""
+    ) -> int:
+        """Add a log entry for an execution. Returns the log entry ID."""
         meta_json = json.dumps(metadata) if metadata else None
-        await self.db.execute(
+        cursor = await self.db.execute(
             """
             INSERT INTO execution_logs (execution_id, event_type, message, metadata)
             VALUES (?, ?, ?, ?)
@@ -180,6 +215,7 @@ class Database:
             (execution_id, event_type, message, meta_json),
         )
         await self.db.commit()
+        return cursor.lastrowid
 
     async def get_logs(self, execution_id: int, limit: int = 100) -> list[LogRecord]:
         """Get logs for an execution."""

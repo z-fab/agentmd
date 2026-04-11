@@ -54,8 +54,10 @@ class ExecutionLogger:
         if self.on_event is not None:
             self.on_event(event_type, data)
 
-    async def log_message(self, msg) -> None:
+    async def log_message(self, msg) -> int:
         """Classify a single LangChain message and persist it.
+
+        Returns the log entry ID of the last persisted entry.
 
         Event types:
             system        — SystemMessage
@@ -66,6 +68,7 @@ class ExecutionLogger:
             final_answer  — Last AI message (no tool calls)
         """
         msg_type = getattr(msg, "type", "unknown")
+        log_id = 0
 
         # --- AI message with tool calls ---
         if msg_type == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -73,7 +76,7 @@ class ExecutionLogger:
             if reasoning:
                 logger.info(f"[{self.agent_name}] 🤖 {reasoning[:200]}")
                 self._emit("ai", {"content": reasoning[:200], "agent_name": self.agent_name})
-                await self._persist("ai", reasoning[:500])
+                log_id = await self._persist("ai", reasoning[:500])
 
             for tc in msg.tool_calls:
                 tool_name = tc.get("name", "unknown")
@@ -82,7 +85,7 @@ class ExecutionLogger:
                 self._emit(
                     "tool_call", {"tool_name": tool_name, "tool_args": tool_args[:80], "agent_name": self.agent_name}
                 )
-                await self._persist("tool_call", f"{tool_name} — args: {tool_args}")
+                log_id = await self._persist("tool_call", f"{tool_name} — args: {tool_args}")
 
         # --- Tool response ---
         elif msg_type == "tool":
@@ -92,19 +95,21 @@ class ExecutionLogger:
             self._emit(
                 "tool_response", {"tool_name": tool_name, "content": tool_content[:100], "agent_name": self.agent_name}
             )
-            await self._persist("tool_response", f"{tool_name} — {tool_content}")
+            log_id = await self._persist("tool_response", f"{tool_name} — {tool_content}")
 
         # --- AI without tool calls (reasoning or final answer) ---
         elif msg_type == "ai":
             content = _extract_text(getattr(msg, "content", ""))[:500]
             logger.info(f"[{self.agent_name}] 🤖 {content[:200]}")
             self._emit("ai", {"content": content[:200], "agent_name": self.agent_name})
-            await self._persist("ai", content)
+            log_id = await self._persist("ai", content)
 
         # --- System / Human / other ---
         else:
             content = _extract_text(getattr(msg, "content", ""))[:500]
-            await self._persist(msg_type, content)
+            log_id = await self._persist(msg_type, content)
+
+        return log_id
 
     async def mark_final_answer(self, msg) -> None:
         """Persist the last AI message as a final_answer event."""
@@ -130,9 +135,9 @@ class ExecutionLogger:
             else:
                 await self.log_message(msg)
 
-    async def _persist(self, event_type: str, message: str) -> None:
-        """Write a log entry to the database."""
-        await self.db.add_log(
+    async def _persist(self, event_type: str, message: str) -> int:
+        """Write a log entry to the database. Returns the log entry ID."""
+        return await self.db.add_log(
             execution_id=self.execution_id,
             event_type=event_type,
             message=message,
