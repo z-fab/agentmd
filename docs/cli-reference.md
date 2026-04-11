@@ -442,7 +442,7 @@ Sends SIGTERM for graceful shutdown. Falls back to SIGKILL after 5 seconds if ne
 
 ---
 
-## agentmd config
+## agentmd info
 
 Show the current effective configuration.
 

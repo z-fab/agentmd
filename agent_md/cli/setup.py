@@ -150,8 +150,8 @@ def _build_config_panel():
     return make_panel(table, title="Agent.md Configuration")
 
 
-@app.command()
-def config():
+@app.command(name="info")
+def info():
     """Show current effective configuration."""
     from agent_md import __version__
     from agent_md.cli.theme import print_banner
@@ -225,28 +225,47 @@ def setup(
     # 4. Defaults (optional)
     console.print("\n  [bold]4/4 · Defaults[/bold] [dim](press Enter to keep defaults)[/dim]")
 
+    console.print("  [dim]LLM settings[/dim]")
+    temperature_str = Prompt.ask("  Temperature", default="0.7")
+    max_tokens_str = Prompt.ask("  Max tokens per response", default="4096")
+
+    console.print("  [dim]Execution limits[/dim]")
+    timeout_str = Prompt.ask("  Timeout (seconds)", default="300")
     max_tool_calls_str = Prompt.ask("  Max tool calls per run", default="50")
-    max_cost_str = Prompt.ask("  Max cost per run in USD", default="")
-    timeout_str = Prompt.ask("  Timeout in seconds", default="300")
+    max_exec_tokens_str = Prompt.ask("  Max total tokens per run", default="500000")
+    max_cost_str = Prompt.ask("  Max cost per run (USD, empty=no limit)", default="")
+    loop_detection_str = Prompt.ask("  Loop detection", choices=["true", "false"], default="true")
+
+    console.print("  [dim]Agent defaults[/dim]")
+    history_str = Prompt.ask("  History level", choices=["low", "medium", "high", "off"], default="low")
 
     extra_defaults = {}
-    try:
-        val = int(max_tool_calls_str)
-        if val != 50:
-            extra_defaults["max_tool_calls"] = val
-    except ValueError:
-        pass
+
+    def _set_if_changed(key, value_str, default, converter=int):
+        try:
+            val = converter(value_str)
+            if val != default:
+                extra_defaults[key] = val
+        except (ValueError, TypeError):
+            pass
+
+    _set_if_changed("temperature", temperature_str, 0.7, float)
+    _set_if_changed("max_tokens", max_tokens_str, 4096, int)
+    _set_if_changed("timeout", timeout_str, 300, int)
+    _set_if_changed("max_tool_calls", max_tool_calls_str, 50, int)
+    _set_if_changed("max_execution_tokens", max_exec_tokens_str, 500_000, int)
+
     if max_cost_str.strip():
         try:
             extra_defaults["max_cost_usd"] = float(max_cost_str)
         except ValueError:
             pass
-    try:
-        val = int(timeout_str)
-        if val != 300:
-            extra_defaults["timeout"] = val
-    except ValueError:
-        pass
+
+    if loop_detection_str == "false":
+        extra_defaults["loop_detection"] = False
+
+    if history_str != "low":
+        extra_defaults["history"] = history_str
 
     # --- Apply configuration ---
     console.print("\n[bold]Applying configuration...[/]\n")
@@ -278,7 +297,7 @@ def setup(
                     "[bold]Next steps:[/]",
                     "  agentmd new my-first-agent  — Create your first agent",
                     "  agentmd start               — Start the backend",
-                    "  agentmd config              — Show current configuration",
+                    "  agentmd info                — Show current configuration",
                 ]
             ),
             title="Setup Complete",

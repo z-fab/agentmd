@@ -157,7 +157,7 @@ defaults:
 GOOGLE_API_KEY=your-key-here
 ```
 
-Run `agentmd config` to see the current effective configuration.
+Run `agentmd info` to see the current effective configuration.
 
 ---
 
