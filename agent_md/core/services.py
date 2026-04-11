@@ -14,9 +14,9 @@ from agent_md.core.parser import parse_agent_file
 
 
 @asynccontextmanager
-async def _runtime(workspace: Path | None = None, **kwargs):
+async def _runtime(workspace: Path | None = None, readonly: bool = False, **kwargs):
     """Async context manager that bootstraps and auto-closes a Runtime."""
-    rt = await bootstrap(workspace, **kwargs)
+    rt = await bootstrap(workspace, readonly=readonly, **kwargs)
     try:
         yield rt
     finally:
@@ -25,7 +25,7 @@ async def _runtime(workspace: Path | None = None, **kwargs):
 
 async def list_agents(workspace: Path | None = None) -> list[AgentConfig]:
     """Return every agent found in *workspace*."""
-    async with _runtime(workspace) as rt:
+    async with _runtime(workspace, readonly=True) as rt:
         return rt.registry.all()
 
 
@@ -232,7 +232,7 @@ async def get_agent_logs(
     workspace: Path | None = None,
 ) -> list:
     """Return the *n* most recent executions for *agent_name*."""
-    async with _runtime(workspace) as rt:
+    async with _runtime(workspace, readonly=True) as rt:
         return await rt.db.get_executions(agent_name, limit=n)
 
 
@@ -241,7 +241,7 @@ async def get_execution_messages(
     workspace: Path | None = None,
 ) -> list:
     """Return the step-by-step log messages for a specific execution."""
-    async with _runtime(workspace) as rt:
+    async with _runtime(workspace, readonly=True) as rt:
         return await rt.db.get_logs(execution_id)
 
 
@@ -250,7 +250,7 @@ async def get_last_execution(
     workspace: Path | None = None,
 ) -> object | None:
     """Return the most recent execution for an agent, or None."""
-    async with _runtime(workspace) as rt:
+    async with _runtime(workspace, readonly=True) as rt:
         return await rt.db.get_last_execution(agent_name)
 
 

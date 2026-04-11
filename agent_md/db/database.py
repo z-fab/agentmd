@@ -68,20 +68,25 @@ class Database:
         self.db_path = db_path
         self._db: Optional[aiosqlite.Connection] = None
 
-    async def connect(self) -> None:
+    async def connect(self, readonly: bool = False) -> None:
         """Open the database connection and create tables."""
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(str(self.db_path))
-        self._db.row_factory = aiosqlite.Row
-        await self._db.execute("PRAGMA journal_mode=WAL")
-        await self._db.executescript(SCHEMA)
-        await self._db.commit()
-        for migration in MIGRATIONS:
-            try:
-                await self._db.execute(migration)
-                await self._db.commit()
-            except Exception:
-                pass  # Column already exists
+        if readonly:
+            uri = f"file:{self.db_path}?mode=ro"
+            self._db = await aiosqlite.connect(uri, uri=True)
+            self._db.row_factory = aiosqlite.Row
+        else:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._db = await aiosqlite.connect(str(self.db_path))
+            self._db.row_factory = aiosqlite.Row
+            await self._db.execute("PRAGMA journal_mode=WAL")
+            await self._db.executescript(SCHEMA)
+            await self._db.commit()
+            for migration in MIGRATIONS:
+                try:
+                    await self._db.execute(migration)
+                    await self._db.commit()
+                except Exception:
+                    pass  # Column already exists
         logger.info(f"Database connected: {self.db_path}")
 
     async def close(self) -> None:

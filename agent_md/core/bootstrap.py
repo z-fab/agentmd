@@ -86,6 +86,7 @@ async def bootstrap(
     on_event=None,
     on_complete=None,
     on_start=None,
+    readonly: bool = False,
 ) -> Runtime:
     """Initialize all components and load agents from workspace.
 
@@ -141,12 +142,13 @@ async def bootstrap(
 
     # Initialize database
     db = Database(db_path)
-    await db.connect()
+    await db.connect(readonly=readonly)
 
-    # Sweep orphaned executions from previous crashes
-    cleaned = await sweep_orphans(db)
-    if cleaned:
-        logger.info(f"Cleaned {cleaned} orphaned execution(s)")
+    # Sweep orphaned executions from previous crashes (skip in read-only mode)
+    if not readonly:
+        cleaned = await sweep_orphans(db)
+        if cleaned:
+            logger.info(f"Cleaned {cleaned} orphaned execution(s)")
 
     # Load MCP server configuration
     mcp_servers = load_mcp_config(mcp_config)
