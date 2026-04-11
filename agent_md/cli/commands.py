@@ -560,6 +560,63 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                 event_type = None
 
 
+def _stream_chat_turn(client, execution_id: int, console) -> dict:
+    """Stream a single chat turn — discrete display, return stats.
+
+    Shows tools and thinking in dim gray; only the final answer is prominent.
+    Returns the complete event data dict for stats accumulation.
+    """
+    import json
+
+    stats: dict = {}
+    with client.stream_sse(f"/executions/{execution_id}/stream") as response:
+        event_type = None
+        data_buffer = ""
+
+        for line in response.iter_lines():
+            if line.startswith("event:"):
+                event_type = line[6:].strip()
+            elif line.startswith("data:"):
+                data_buffer = line[5:].strip()
+            elif line == "" and data_buffer:
+                try:
+                    data = json.loads(data_buffer)
+                except json.JSONDecodeError:
+                    data = {"raw": data_buffer}
+
+                if event_type == "complete":
+                    stats = data
+                    error = data.get("error")
+                    status = data.get("status", "unknown")
+                    if status in ("aborted", "error", "timeout", "cancelled") and error:
+                        console.print(f"  [red]{error}[/red]")
+                    break
+                elif event_type == "final_answer":
+                    content = str(data.get("content", data.get("message", "")))
+                    if content:
+                        console.print(content)
+                elif event_type == "tool_call":
+                    tools = data.get("tools", [])
+                    if tools:
+                        names = ", ".join(t.get("name", "?") for t in tools)
+                        console.print(f"  [dim]{names}...[/dim]")
+                    else:
+                        msg = str(data.get("content", data.get("message", "")))[:60]
+                        if msg:
+                            console.print(f"  [dim]{msg}...[/dim]")
+                elif event_type == "ai":
+                    # Show thinking only if there's no final_answer yet
+                    content = str(data.get("content", data.get("message", "")))
+                    if content:
+                        console.print(f"  [dim]{content[:120]}[/dim]")
+                # tool_result, system, human, meta — silent in chat mode
+
+                data_buffer = ""
+                event_type = None
+
+    return stats
+
+
 def _print_event(console, event_type: str, data: dict):
     """Format and print a single SSE event to the console.
 
@@ -635,6 +692,9 @@ def chat(
     console.print("[dim]Type /exit to end the session[/dim]\n")
 
     turns = 0
+    total_tokens = 0
+    total_cost = 0.0
+    total_duration_ms = 0
 
     try:
         while True:
@@ -657,16 +717,26 @@ def chat(
             turns += 1
 
             try:
-                _stream_execution(client, execution_id, console, quiet=False)
+                turn_stats = _stream_chat_turn(client, execution_id, console)
+                total_tokens += turn_stats.get("total_tokens") or 0
+                total_cost += turn_stats.get("cost_usd") or 0
+                total_duration_ms += turn_stats.get("duration_ms") or 0
             except KeyboardInterrupt:
-                console.print("\n[yellow]Cancelling turn...[/yellow]")
+                console.print("\n[yellow]Cancelling...[/yellow]")
                 client.delete(f"/executions/{execution_id}")
 
             console.print()
     except KeyboardInterrupt:
         pass
     finally:
-        console.print(f"\n[dim]Chat ended -- {turns} turns[/dim]")
+        parts = [f"{turns} turns"]
+        if total_duration_ms:
+            parts.append(f"{total_duration_ms / 1000:.1f}s")
+        if total_tokens:
+            parts.append(f"{total_tokens} tokens")
+        if total_cost:
+            parts.append(f"${total_cost:.4f}")
+        console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
 
 
 # ---------------------------------------------------------------------------
