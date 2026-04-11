@@ -11,7 +11,8 @@ def test_get_socket_path():
 
 def test_client_default_socket():
     client = BackendClient()
-    assert client.base_url.startswith("http+unix://")
+    assert client.base_url == "http://agentmd-backend"
+    assert client._transport is not None
 
 
 def test_client_tcp():

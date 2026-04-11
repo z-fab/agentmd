@@ -6,7 +6,6 @@ Supports Unix domain socket (default) and TCP connections.
 from __future__ import annotations
 
 import os
-import urllib.parse
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -49,8 +48,9 @@ class BackendClient:
         else:
             sock = socket_path or get_socket_path()
             self._socket_path = sock
-            encoded = urllib.parse.quote(str(sock), safe="")
-            self.base_url = f"http+unix://{encoded}"
+            # httpx needs a normal http:// base_url — the UDS transport
+            # handles routing to the socket file transparently
+            self.base_url = "http://agentmd-backend"
             self._transport = httpx.HTTPTransport(uds=str(sock))
 
     def _client(self, **kwargs) -> httpx.Client:
