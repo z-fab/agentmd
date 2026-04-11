@@ -31,8 +31,25 @@ async def _lifespan(app: FastAPI):
     state.shutdown_event = asyncio.Event()
     state.cancel_events: dict[int, asyncio.Event] = {}
 
+    # Start lifecycle manager (idle timeout)
+    from agent_md.core.lifecycle import LifecycleManager
+
+    lifecycle = LifecycleManager(shutdown_event=state.shutdown_event)
+    lifecycle.keep_alive = getattr(state, "keep_alive", False)
+    lifecycle.has_scheduled_agents = lambda: bool(rt.scheduler and rt.scheduler.get_jobs())
+    lifecycle.has_running_executions = lambda: bool(state.cancel_events)
+    lifecycle.has_active_streams = lambda: state.event_bus.stream_count > 0
+    state.lifecycle = lifecycle
+
+    lifecycle_task = asyncio.create_task(lifecycle.run())
+
     yield
 
+    lifecycle_task.cancel()
+    try:
+        await lifecycle_task
+    except asyncio.CancelledError:
+        pass
     await rt.aclose()
 
 

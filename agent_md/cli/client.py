@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import urllib.parse
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -44,8 +45,10 @@ class BackendClient:
         if host and port:
             self.base_url = f"http://{host}:{port}"
             self._transport = None
+            self._socket_path: Path | None = None
         else:
             sock = socket_path or get_socket_path()
+            self._socket_path = sock
             encoded = urllib.parse.quote(str(sock), safe="")
             self.base_url = f"http+unix://{encoded}"
             self._transport = httpx.HTTPTransport(uds=str(sock))
@@ -67,7 +70,7 @@ class BackendClient:
         headers = kwargs.pop("headers", {})
         if self._api_key:
             headers["X-API-Key"] = self._api_key
-        transport = httpx.AsyncHTTPTransport(uds=str(get_socket_path())) if self._transport else None
+        transport = httpx.AsyncHTTPTransport(uds=str(self._socket_path)) if self._socket_path else None
         return httpx.AsyncClient(
             base_url=self.base_url,
             transport=transport,
@@ -97,7 +100,17 @@ class BackendClient:
         with self._client() as c:
             return c.delete(path, **kwargs)
 
+    @contextmanager
     def stream_sse(self, path: str):
-        """Open an SSE stream. Returns an httpx response to iterate over."""
+        """Open an SSE stream. Yields an httpx response to iterate over.
+
+        Usage::
+
+            with client.stream_sse("/executions/1/stream") as response:
+                for line in response.iter_lines():
+                    ...
+        """
         client = self._client(timeout=httpx.Timeout(None))
-        return client.stream("GET", path)
+        with client:
+            with client.stream("GET", path) as response:
+                yield response

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import time
 
 from agent_md.core.execution_logger import ExecutionLogger, _extract_text
@@ -17,6 +18,8 @@ from agent_md.graph.post_tool_processor import create_post_tool_processor
 from agent_md.tools.registry import resolve_builtin_tools
 
 logger = logging.getLogger(__name__)
+
+_COMPLETE_SEQ = sys.maxsize  # ensures complete event is never filtered by SSE dedup
 
 
 class LimitExceeded(Exception):
@@ -277,7 +280,14 @@ class AgentRunner:
             graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
             async def _stream():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, _pricing_warned, last_errors
+                nonlocal \
+                    last_ai_msg, \
+                    total_input_tokens, \
+                    total_output_tokens, \
+                    tool_call_count, \
+                    cost_usd, \
+                    _pricing_warned, \
+                    last_errors
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -292,15 +302,18 @@ class AgentRunner:
                     if event_bus is not None:
                         event_type = _classify_event_type(msg)
                         content = _extract_text(getattr(msg, "content", ""))[:500]
-                        await event_bus.publish(execution_id, {
-                            "type": event_type,
-                            "seq": log_id,
-                            "data": {
-                                "event_type": event_type,
-                                "content": content,
-                                "agent_name": config.name,
+                        await event_bus.publish(
+                            execution_id,
+                            {
+                                "type": event_type,
+                                "seq": log_id,
+                                "data": {
+                                    "event_type": event_type,
+                                    "content": content,
+                                    "agent_name": config.name,
+                                },
                             },
-                        })
+                        )
 
                     if cancel_event is not None and cancel_event.is_set():
                         raise LimitExceeded("cancelled", "Execution cancelled by user")
@@ -384,16 +397,19 @@ class AgentRunner:
                 f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
             )
             if event_bus is not None:
-                await event_bus.publish(execution_id, {
-                    "type": "complete",
-                    "seq": 0,
-                    "data": {
-                        "status": result["status"],
-                        "duration_ms": result.get("duration_ms"),
-                        "total_tokens": result.get("total_tokens"),
-                        "cost_usd": result.get("cost_usd"),
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                        },
                     },
-                })
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
@@ -412,16 +428,19 @@ class AgentRunner:
                 cost_usd=cost_usd,
             )
             if event_bus is not None:
-                await event_bus.publish(execution_id, {
-                    "type": "complete",
-                    "seq": 0,
-                    "data": {
-                        "status": result["status"],
-                        "duration_ms": result.get("duration_ms"),
-                        "total_tokens": result.get("total_tokens"),
-                        "cost_usd": result.get("cost_usd"),
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                        },
                     },
-                })
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
@@ -440,16 +459,19 @@ class AgentRunner:
                 cost_usd=cost_usd,
             )
             if event_bus is not None:
-                await event_bus.publish(execution_id, {
-                    "type": "complete",
-                    "seq": 0,
-                    "data": {
-                        "status": result["status"],
-                        "duration_ms": result.get("duration_ms"),
-                        "total_tokens": result.get("total_tokens"),
-                        "cost_usd": result.get("cost_usd"),
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                        },
                     },
-                })
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
@@ -468,16 +490,19 @@ class AgentRunner:
                 cost_usd=cost_usd,
             )
             if event_bus is not None:
-                await event_bus.publish(execution_id, {
-                    "type": "complete",
-                    "seq": 0,
-                    "data": {
-                        "status": result["status"],
-                        "duration_ms": result.get("duration_ms"),
-                        "total_tokens": result.get("total_tokens"),
-                        "cost_usd": result.get("cost_usd"),
+                await event_bus.publish(
+                    execution_id,
+                    {
+                        "type": "complete",
+                        "seq": _COMPLETE_SEQ,
+                        "data": {
+                            "status": result["status"],
+                            "duration_ms": result.get("duration_ms"),
+                            "total_tokens": result.get("total_tokens"),
+                            "cost_usd": result.get("cost_usd"),
+                        },
                     },
-                })
+                )
             if on_complete is not None:
                 on_complete(config.name, result)
             return result
