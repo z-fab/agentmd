@@ -24,7 +24,7 @@ class EventBus:
             try:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
-                pass
+                pass  # slow client — drop event; client reconnects via replay
 
     def subscribe(self, execution_id: int) -> asyncio.Queue:
         """Create a new subscriber queue for *execution_id*."""
