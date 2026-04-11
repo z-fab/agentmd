@@ -1,7 +1,6 @@
 """Tests for _config/ directory blocking in sandbox."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 from agent_md.workspace.path_context import PathContext
 

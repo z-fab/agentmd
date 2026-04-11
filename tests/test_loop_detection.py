@@ -83,9 +83,11 @@ async def test_loop_detection_same_error_3x():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)
@@ -118,9 +120,11 @@ async def test_loop_detection_different_errors_no_abort():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)
@@ -152,9 +156,11 @@ async def test_loop_detection_disabled():
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
+
             async def fake_stream(*args, **kwargs):
                 for m in messages:
                     yield m
+
             mock_stream.return_value = fake_stream()
 
             result = await runner.run(config)

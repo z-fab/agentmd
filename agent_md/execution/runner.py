@@ -91,10 +91,12 @@ def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
     if event_type == "tool_call" and hasattr(msg, "tool_calls") and msg.tool_calls:
         tools = []
         for tc in msg.tool_calls:
-            tools.append({
-                "name": tc.get("name", "unknown"),
-                "args": str(tc.get("args", {}))[:200],
-            })
+            tools.append(
+                {
+                    "name": tc.get("name", "unknown"),
+                    "args": str(tc.get("args", {}))[:200],
+                }
+            )
         data["tools"] = tools
         if content:
             data["content"] = content

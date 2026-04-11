@@ -106,9 +106,7 @@ def test_classify_unknown_type():
 
 def test_build_event_data_ai_with_tools():
     """AI message with tools should include 'tools' list with name and args."""
-    msg = _make_ai_msg(
-        tool_calls=[{"name": "file_read", "args": {"path": "/tmp/test.txt"}}]
-    )
+    msg = _make_ai_msg(tool_calls=[{"name": "file_read", "args": {"path": "/tmp/test.txt"}}])
     data = _build_event_data(msg, "tool_call", "my-agent")
     assert "tools" in data
     assert data["tools"][0]["name"] == "file_read"

@@ -16,10 +16,7 @@ async def scheduler_status(request: Request):
         return SchedulerStatus(status="off", jobs=[])
 
     status = "paused" if getattr(rt.scheduler, "_paused", False) else "running"
-    jobs = [
-        SchedulerJob(**j)
-        for j in rt.scheduler.get_jobs()
-    ]
+    jobs = [SchedulerJob(**j) for j in rt.scheduler.get_jobs()]
     return SchedulerStatus(status=status, jobs=jobs)
 
 

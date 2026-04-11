@@ -175,11 +175,13 @@ class AgentScheduler:
         """Return list of scheduled jobs with next_run times."""
         jobs = []
         for job in self.scheduler.get_jobs():
-            jobs.append({
-                "agent_name": job.id,
-                "trigger_type": "schedule",
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
-            })
+            jobs.append(
+                {
+                    "agent_name": job.id,
+                    "trigger_type": "schedule",
+                    "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+                }
+            )
         return jobs
 
     def pause(self) -> None:

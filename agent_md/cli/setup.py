@@ -114,7 +114,6 @@ def _create_workspace(workspace: Path, provider: str, model: str):
         mcp.write_text("{}\n")
 
 
-
 def _build_config_panel():
     """Build a Rich Panel showing the current effective configuration."""
     from agent_md.config.settings import Settings, _ensure_default_config, _find_env_files

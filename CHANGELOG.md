@@ -3,6 +3,32 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.0] — 2026-04-11
+
+### Breaking Changes
+- **Workspace restructured** — tools, skills, MCP config, and .env moved to `agents/_config/`
+- **Database moved** to `~/.local/state/agentmd/` (out of workspace)
+- **`agent_md.core` removed** — split into `agent_md.config`, `agent_md.execution`, `agent_md.workspace`
+- **Migration code removed** — users recreate workspace via `agentmd setup --reconfigure`
+
+### Added
+- All agent defaults configurable via `config.yaml` (temperature, max_tokens, timeout, history)
+- `.env` precedence: workspace (`agents/_config/.env`) overrides global (`~/.config/agentmd/.env`)
+- Setup wizard step 4: configure execution defaults (max_tool_calls, max_cost_usd, timeout)
+
+### Changed
+- Setup wizard suggests `agentmd new` as next step instead of `agentmd start`
+- `agentmd new` AI prompt uses capability descriptions instead of tool signatures
+- `agentmd new --template` simplified to 3 questions (description, trigger, paths)
+- Sandbox blocks `agents/_config/` instead of entire `agents/` directory
+- Auto-start on login removed from setup wizard
+
+### Removed
+- `agent_md/core/` package (split into 3 subpackages)
+- `workspace/` directory from git repository
+- DB migration code (ALTER TABLE statements)
+- Backward-compatibility shims in skills loader and CLI
+
 ## [0.8.0] — 2026-04-11
 
 ### Breaking Changes

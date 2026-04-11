@@ -48,13 +48,7 @@ def test_validate_no_warn_when_no_cost_limit(tmp_path):
     """No warning when max_cost_usd is not set (even with unknown model)."""
     agent_file = tmp_path / "test-agent.md"
     agent_file.write_text(
-        "---\n"
-        "name: test-agent\n"
-        "model:\n"
-        "  provider: google\n"
-        "  name: unknown-model-xyz\n"
-        "---\n"
-        "You are a test agent.\n"
+        "---\nname: test-agent\nmodel:\n  provider: google\n  name: unknown-model-xyz\n---\nYou are a test agent.\n"
     )
 
     result = validate_agent(agent_file)

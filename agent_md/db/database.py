@@ -126,7 +126,18 @@ class Database:
                 cost_usd = ?
             WHERE id = ?
             """,
-            (status, now, duration_ms, output_data, error, input_tokens, output_tokens, total_tokens, cost_usd, execution_id),
+            (
+                status,
+                now,
+                duration_ms,
+                output_data,
+                error,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                cost_usd,
+                execution_id,
+            ),
         )
         await self.db.commit()
 

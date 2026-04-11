@@ -55,10 +55,7 @@ class LifecycleManager:
 
                 elapsed = time.monotonic() - self._idle_since
                 if elapsed >= self.idle_timeout:
-                    logger.info(
-                        f"Idle for {elapsed:.0f}s (timeout={self.idle_timeout}s), "
-                        "triggering shutdown"
-                    )
+                    logger.info(f"Idle for {elapsed:.0f}s (timeout={self.idle_timeout}s), triggering shutdown")
                     self.shutdown_event.set()
                     return
             else:

@@ -1,7 +1,6 @@
 """Tests for .env loading and new default paths."""
 
 import os
-from pathlib import Path
 from unittest.mock import patch
 
 from agent_md.config.settings import get_state_dir
