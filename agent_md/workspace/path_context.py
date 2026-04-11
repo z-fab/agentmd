@@ -106,12 +106,18 @@ class PathContext:
         return p.resolve()
 
     def _check_security(self, resolved: Path) -> str | None:
-        if self._is_within(resolved, self.agents_dir):
-            return "Access denied: cannot access agents directory"
-        if self._is_within(resolved, self.db_path.parent):
-            return "Access denied: cannot access data directory"
+        """Check security constraints on a resolved path."""
+        # Block _config directory (tools, skills, .env, mcp-servers.json)
+        config_dir = self.agents_dir / "_config"
+        if self._is_within(resolved, config_dir):
+            return "Access denied: cannot access _config directory"
+        # Block agent definition files (.md in agents dir)
+        if self._is_within(resolved, self.agents_dir) and resolved.suffix == ".md":
+            return "Access denied: cannot access agent definition files"
+        # Block .env files anywhere (safety net)
         if resolved.name.startswith(".env"):
             return "Access denied: cannot access .env files"
+        # Block .db files anywhere
         if resolved.suffix == ".db":
             return "Access denied: cannot access .db files"
         return None
