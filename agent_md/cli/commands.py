@@ -25,7 +25,7 @@ from agent_md.cli.theme import (
     print_warning,
     select_agent,
 )
-from agent_md.core.models import AgentConfig
+from agent_md.config.models import AgentConfig
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ from agent_md.core.models import AgentConfig
 
 def _resolve_workspace(workspace: Path | None) -> Path:
     """Resolve workspace path from CLI arg or settings."""
-    from agent_md.core.settings import settings
+    from agent_md.config.settings import settings
 
     if workspace:
         return workspace.resolve()
@@ -47,7 +47,7 @@ def _resolve_workspace(workspace: Path | None) -> Path:
 
 def _get_agents_for_picker(workspace: Path | None) -> list[AgentConfig]:
     """Bootstrap lightly to get agent list for interactive picker."""
-    from agent_md.core.services import list_agents as svc_list
+    from agent_md.workspace.services import list_agents as svc_list
 
     return asyncio.run(svc_list(workspace))
 
@@ -87,8 +87,8 @@ def _can_use_ai() -> tuple[bool, str, str]:
     """Check if AI generation is available. Returns (available, provider, model)."""
     import os
 
-    from agent_md.core.services import _PROVIDER_ENV_VARS
-    from agent_md.core.settings import settings
+    from agent_md.workspace.services import _PROVIDER_ENV_VARS
+    from agent_md.config.settings import settings
 
     provider = settings.defaults_provider
     model = settings.defaults_model
@@ -302,7 +302,7 @@ def new(
         raise typer.Exit(1)
 
     # 2. Resolve workspace and agents dir
-    from agent_md.core.services import _resolve_ws_and_agents_dir
+    from agent_md.workspace.services import _resolve_ws_and_agents_dir
 
     ws, agents_dir = _resolve_ws_and_agents_dir(workspace)
     agent_file = agents_dir / f"{agent_name}.md"
@@ -753,7 +753,7 @@ def list_agents(
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """List all agents in the workspace."""
-    from agent_md.core.services import _runtime
+    from agent_md.workspace.services import _runtime
 
     async def _list_with_last_runs():
         async with _runtime(workspace) as rt:
@@ -824,7 +824,7 @@ def logs(
         print_error("Agent name required for execution list.", "Usage: agentmd logs <agent-name>")
         raise typer.Exit(1)
 
-    from agent_md.core.services import get_agent_logs
+    from agent_md.workspace.services import get_agent_logs
 
     executions = asyncio.run(get_agent_logs(agent, last, workspace))
 
@@ -885,7 +885,7 @@ def logs(
 
 def _show_execution_detail(execution_id: int, workspace: Path | None) -> None:
     """Show detailed messages for a specific execution."""
-    from agent_md.core.services import get_execution_messages
+    from agent_md.workspace.services import get_execution_messages
 
     messages = asyncio.run(get_execution_messages(execution_id, workspace))
 
@@ -961,7 +961,7 @@ def validate(
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """Validate an agent file without executing it."""
-    from agent_md.core.services import validate_agent
+    from agent_md.workspace.services import validate_agent
 
     # Backward compat: if arg contains / or ends in .md, treat as path
     if agent and ("/" in agent or agent.endswith(".md")):
@@ -994,7 +994,7 @@ def validate(
 
     # History (session memory)
     if result.history_level != "off":
-        from agent_md.core.models import HISTORY_LIMITS
+        from agent_md.config.models import HISTORY_LIMITS
 
         limit = HISTORY_LIMITS[result.history_level]
         print_kv("History", f"{result.history_level} (last {limit} messages)")

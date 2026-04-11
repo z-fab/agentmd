@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from agent_md.core.event_bus import EventBus
+from agent_md.execution.event_bus import EventBus
 from agent_md.db.database import Database
 
 

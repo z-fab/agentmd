@@ -9,9 +9,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from agent_md.core.parser import is_agent_file, parse_agent_file
-from agent_md.core.registry import AgentConfig, AgentRegistry
-from agent_md.core.runner import AgentRunner
+from agent_md.workspace.parser import is_agent_file, parse_agent_file
+from agent_md.workspace.registry import AgentConfig, AgentRegistry
+from agent_md.execution.runner import AgentRunner
 
 logger = logging.getLogger(__name__)
 

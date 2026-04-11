@@ -10,8 +10,8 @@ import re
 
 from rich.console import Console
 
-from agent_md.core.runner import _classify_event_type, _build_event_data
-from agent_md.core.event_bus import EventBus
+from agent_md.execution.runner import _classify_event_type, _build_event_data
+from agent_md.execution.event_bus import EventBus
 from agent_md.cli.commands import _print_event
 
 

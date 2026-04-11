@@ -3,7 +3,7 @@
 import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from agent_md.core.runner import AgentRunner
+from agent_md.execution.runner import AgentRunner
 
 
 def _make_config(timeout=2):
@@ -59,7 +59,7 @@ async def test_timeout_interrupts_execution():
     start = time.monotonic()
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
-        with patch("agent_md.core.runner.stream_agent_graph", side_effect=slow_stream):
+        with patch("agent_md.execution.runner.stream_agent_graph", side_effect=slow_stream):
             result = await runner.run(config)
 
     elapsed = time.monotonic() - start

@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from agent_md.core.lifecycle import LifecycleManager
+from agent_md.execution.lifecycle import LifecycleManager
 
 
 @pytest.fixture

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from agent_md.core.models import AgentConfig, PathEntry
+from agent_md.config.models import AgentConfig, PathEntry
 
 
 def _make(paths):

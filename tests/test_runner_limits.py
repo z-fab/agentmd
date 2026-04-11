@@ -2,8 +2,8 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from agent_md.core.models import SettingsConfig
-from agent_md.core.runner import AgentRunner, LimitExceeded
+from agent_md.config.models import SettingsConfig
+from agent_md.execution.runner import AgentRunner, LimitExceeded
 
 
 def test_settings_defaults():
@@ -135,7 +135,7 @@ async def test_max_tool_calls_aborts():
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
-        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+        with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
                 for m in messages:
@@ -170,7 +170,7 @@ async def test_max_execution_tokens_aborts():
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
-        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+        with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
                 for m in messages:
@@ -207,7 +207,7 @@ async def test_max_cost_usd_aborts():
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
-        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+        with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
                 for m in messages:
@@ -238,7 +238,7 @@ async def test_cost_warning_unknown_model():
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
-        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+        with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
                 for m in messages:
@@ -270,7 +270,7 @@ async def test_null_limits_no_abort():
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
     with patch.object(runner, "_build_graph", new_callable=AsyncMock):
-        with patch("agent_md.core.runner.stream_agent_graph") as mock_stream:
+        with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
                 for m in messages:

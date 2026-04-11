@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from agent_md.core.models import AgentConfig
+from agent_md.config.models import AgentConfig
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 if TYPE_CHECKING:
-    from agent_md.core.models import AgentConfig
+    from agent_md.config.models import AgentConfig
 
 console = Console()
 

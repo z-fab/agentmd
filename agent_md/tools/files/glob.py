@@ -6,7 +6,7 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
-from agent_md.core.path_context import ALIAS_REF
+from agent_md.workspace.path_context import ALIAS_REF
 
 MAX_RESULTS = 100
 

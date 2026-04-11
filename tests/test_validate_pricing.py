@@ -1,6 +1,6 @@
 """Tests for pricing warnings in validate."""
 
-from agent_md.core.services import validate_agent
+from agent_md.workspace.services import validate_agent
 
 
 def test_validate_warns_cost_limit_no_pricing(tmp_path):

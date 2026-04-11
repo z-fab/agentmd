@@ -8,9 +8,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent_md.core.bootstrap import bootstrap
-from agent_md.core.models import AgentConfig
-from agent_md.core.parser import parse_agent_file
+from agent_md.workspace.bootstrap import bootstrap
+from agent_md.config.models import AgentConfig
+from agent_md.workspace.parser import parse_agent_file
 
 
 @asynccontextmanager
@@ -92,7 +92,7 @@ def _resolve_relative(path: str, workspace: Path) -> Path:
 
 def _resolve_ws_and_agents_dir(workspace: Path | None) -> tuple[Path, Path]:
     """Resolve workspace and agents_dir from settings, deduplicating the pattern."""
-    from agent_md.core.settings import settings
+    from agent_md.config.settings import settings
 
     ws = workspace
     if ws is None:
@@ -107,7 +107,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
 
     Accepts an agent name (resolved via workspace) or a direct file path.
     """
-    from agent_md.core.settings import settings
+    from agent_md.config.settings import settings
     from agent_md.tools.registry import list_builtin_tools
 
     ws, agents_dir = _resolve_ws_and_agents_dir(workspace)
@@ -200,7 +200,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
 
     # Check pricing availability when cost limit is set
     if config.settings.max_cost_usd is not None and config.model:
-        from agent_md.core.pricing import estimate_cost
+        from agent_md.config.pricing import estimate_cost
 
         test_cost = estimate_cost(config.model.provider, config.model.name, 1000, 1000)
         if test_cost is None:
@@ -289,8 +289,8 @@ class ChatSession:
         """Send a user message and return the agent's text response."""
         from langchain_core.messages import HumanMessage
 
-        from agent_md.core.execution_logger import _extract_text
-        from agent_md.core.runner import _is_final_ai_message
+        from agent_md.execution.logger import _extract_text
+        from agent_md.execution.runner import _is_final_ai_message
 
         human_msg = HumanMessage(content=user_input)
         self._messages.append(human_msg)
@@ -330,7 +330,7 @@ async def chat_session(
     """
     import time
 
-    from agent_md.core.execution_logger import ExecutionLogger
+    from agent_md.execution.logger import ExecutionLogger
     from agent_md.graph.builder import build_system_message
 
     async with _runtime(workspace) as rt:

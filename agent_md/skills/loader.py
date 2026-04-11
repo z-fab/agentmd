@@ -6,7 +6,7 @@ imports `agent_md.skills.loader.apply_substitutions`.
 
 from __future__ import annotations
 
-from agent_md.core.substitutions import apply_substitutions as _apply
+from agent_md.config.substitutions import apply_substitutions as _apply
 
 
 def apply_substitutions(content: str, arguments: str = "", skill_dir: str = "") -> str:

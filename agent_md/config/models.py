@@ -71,7 +71,7 @@ class TriggerConfig(BaseModel):
 def _get_global_limit_defaults() -> dict:
     """Read limit defaults from config.yaml via the global Settings singleton."""
     try:
-        from agent_md.core.settings import settings
+        from agent_md.config.settings import settings
 
         defaults = {}
         if settings.defaults_max_tool_calls is not None:

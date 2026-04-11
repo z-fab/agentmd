@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from agent_md.core.runner import _classify_event_type
+from agent_md.execution.runner import _classify_event_type
 
 
 @pytest.mark.asyncio

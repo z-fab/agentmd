@@ -9,8 +9,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from agent_md.core.bootstrap import bootstrap
-from agent_md.core.event_bus import EventBus
+from agent_md.workspace.bootstrap import bootstrap
+from agent_md.execution.event_bus import EventBus
 
 
 @asynccontextmanager
@@ -32,7 +32,7 @@ async def _lifespan(app: FastAPI):
     state.cancel_events: dict[int, asyncio.Event] = {}
 
     # Start lifecycle manager (idle timeout)
-    from agent_md.core.lifecycle import LifecycleManager
+    from agent_md.execution.lifecycle import LifecycleManager
 
     lifecycle = LifecycleManager(shutdown_event=state.shutdown_event)
     lifecycle.keep_alive = getattr(state, "keep_alive", False)

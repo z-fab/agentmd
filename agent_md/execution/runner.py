@@ -5,10 +5,10 @@ import logging
 import sys
 import time
 
-from agent_md.core.execution_logger import ExecutionLogger, _extract_text
-from agent_md.core.path_context import PathContext
-from agent_md.core.pricing import estimate_cost
-from agent_md.core.registry import AgentConfig
+from agent_md.execution.logger import ExecutionLogger, _extract_text
+from agent_md.workspace.path_context import PathContext
+from agent_md.config.pricing import estimate_cost
+from agent_md.workspace.registry import AgentConfig
 from agent_md.db.database import Database
 from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn
 from agent_md.mcp.manager import MCPManager
@@ -194,7 +194,7 @@ class AgentRunner:
 
     async def _build_graph(self, config: AgentConfig):
         """Create model, resolve tools, and compile the graph."""
-        from agent_md.core.models import HISTORY_LIMITS
+        from agent_md.config.models import HISTORY_LIMITS
 
         chat_model = create_chat_model(
             provider=config.model.provider,

@@ -88,7 +88,7 @@ def build_system_message(
     arguments: str = "",
 ) -> SystemMessage:
     """Build the system message for an agent, shared by run and chat modes."""
-    from agent_md.core.substitutions import apply_substitutions
+    from agent_md.config.substitutions import apply_substitutions
 
     now = datetime.now()
     extra_info = f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
