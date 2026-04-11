@@ -271,10 +271,6 @@ $RECYCLE.BIN/
 
 # Agent.md
 config.yaml
-workspace/output/
-workspace/config.yaml
-workspace/agents/*
-!workspace/agents/hello-world.md
 CLAUDE.md
 .claude
 docs/superpowers/
