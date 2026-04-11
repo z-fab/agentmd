@@ -195,10 +195,11 @@ def _setup_autostart() -> bool:
 
 def _build_config_panel():
     """Build a Rich Panel showing the current effective configuration."""
-    from agent_md.config.settings import Settings, _ensure_default_config, _find_env_file
+    from agent_md.config.settings import Settings, _ensure_default_config, _find_env_files
 
     config_yaml = _ensure_default_config()
-    env_file = _find_env_file()
+    env_files = _find_env_files()
+    env_file = env_files[-1] if env_files else None
 
     # Reload settings fresh
     current = Settings()

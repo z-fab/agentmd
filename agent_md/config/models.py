@@ -69,19 +69,24 @@ class TriggerConfig(BaseModel):
 
 
 def _get_global_limit_defaults() -> dict:
-    """Read limit defaults from config.yaml via the global Settings singleton."""
+    """Read global defaults from config.yaml via Settings singleton."""
     try:
         from agent_md.config.settings import settings
 
         defaults = {}
-        if settings.defaults_max_tool_calls is not None:
-            defaults["max_tool_calls"] = settings.defaults_max_tool_calls
-        if settings.defaults_max_execution_tokens is not None:
-            defaults["max_execution_tokens"] = settings.defaults_max_execution_tokens
-        if settings.defaults_max_cost_usd is not None:
-            defaults["max_cost_usd"] = settings.defaults_max_cost_usd
-        if settings.defaults_loop_detection is not None:
-            defaults["loop_detection"] = settings.defaults_loop_detection
+        mapping = {
+            "defaults_max_tool_calls": "max_tool_calls",
+            "defaults_max_execution_tokens": "max_execution_tokens",
+            "defaults_max_cost_usd": "max_cost_usd",
+            "defaults_loop_detection": "loop_detection",
+            "defaults_temperature": "temperature",
+            "defaults_max_tokens": "max_tokens",
+            "defaults_timeout": "timeout",
+        }
+        for settings_key, config_key in mapping.items():
+            value = getattr(settings, settings_key, None)
+            if value is not None:
+                defaults[config_key] = value
         return defaults
     except Exception:
         return {}
@@ -186,6 +191,21 @@ class AgentConfig(BaseModel):
         """Accept 'tools' in YAML frontmatter as alias for 'custom_tools'."""
         if isinstance(data, dict) and "tools" in data and "custom_tools" not in data:
             data["custom_tools"] = data.pop("tools")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_global_agent_defaults(cls, data):
+        """Apply config.yaml agent defaults (frontmatter overrides)."""
+        if not isinstance(data, dict):
+            data = {}
+        try:
+            from agent_md.config.settings import settings
+
+            if "history" not in data and settings.defaults_history:
+                data["history"] = settings.defaults_history
+        except Exception:
+            pass
         return data
 
     @field_validator("skills", mode="before")

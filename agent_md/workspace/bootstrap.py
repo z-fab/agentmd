@@ -115,15 +115,22 @@ async def bootstrap(
     agents_dir = agents_dir.resolve()
 
     if db_path is None:
-        db_path = _resolve_path(settings.db_path, workspace)
+        if settings.db_path:
+            db_path = _resolve_path(settings.db_path, workspace)
+        else:
+            from agent_md.config.settings import get_state_dir
+
+            state_dir = get_state_dir()
+            state_dir.mkdir(parents=True, exist_ok=True)
+            db_path = state_dir / "agentmd.db"
     db_path = db_path.resolve()
 
     if mcp_config is None:
         mcp_config = _resolve_path(settings.mcp_config, workspace)
     mcp_config = mcp_config.resolve()
 
-    tools_dir = (agents_dir / "tools").resolve()
-    skills_dir = (agents_dir / "skills").resolve()
+    tools_dir = _resolve_path(settings.tools_dir, workspace)
+    skills_dir = _resolve_path(settings.skills_dir, workspace)
 
     path_context = PathContext(
         workspace_root=workspace,
