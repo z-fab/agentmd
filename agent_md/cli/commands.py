@@ -963,11 +963,7 @@ def validate(
     """Validate an agent file without executing it."""
     from agent_md.workspace.services import validate_agent
 
-    # Backward compat: if arg contains / or ends in .md, treat as path
-    if agent and ("/" in agent or agent.endswith(".md")):
-        agent_ref = agent
-    else:
-        agent_ref = _pick_or_resolve_agent(agent, workspace)
+    agent_ref = _pick_or_resolve_agent(agent, workspace)
 
     try:
         result = validate_agent(agent_ref, workspace=workspace)

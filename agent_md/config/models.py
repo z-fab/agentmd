@@ -203,12 +203,7 @@ class AgentConfig(BaseModel):
         if v is None:
             return {}
         if isinstance(v, list):
-            raise ValueError(
-                "paths must be a dict of named aliases (changed in v0.7.0).\n"
-                "Migrate from:\n  paths:\n    - /a\n    - /b\n"
-                "To:\n  paths:\n    alias_a: /a\n    alias_b: /b\n"
-                "See docs/path-model.md for details."
-            )
+            raise ValueError("paths must be a dict of alias: path pairs, not a list")
         if not isinstance(v, dict):
             raise ValueError(f"paths must be a dict, got {type(v).__name__}")
         for alias in v.keys():
