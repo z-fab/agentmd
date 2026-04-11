@@ -395,7 +395,16 @@ class AgentRunner:
             if last_ai_msg:
                 raw_content = getattr(last_ai_msg, "content", None)
                 output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
-                await ex_logger.mark_final_answer(last_ai_msg)
+                log_id = await ex_logger.mark_final_answer(last_ai_msg)
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {
+                            "type": "final_answer",
+                            "seq": log_id,
+                            "data": {"content": output, "agent_name": config.name},
+                        },
+                    )
 
             # 6. Persist success
             result = await self._finish_execution(

@@ -550,11 +550,11 @@ def _print_event(console, event_type: str, data: dict):
         for tool in tools:
             name = tool.get("name", "unknown")
             args = tool.get("args", "")[:80]
-            console.print(f"  [cyan]\U0001f527 {name}[/cyan] [dim]({args})[/dim]")
+            console.print(f"  [cyan]\U0001f527 >> {name}[/cyan] [dim]({args})[/dim]")
     elif event_type in ("tool_result", "tool_response"):
         tool_name = data.get("tool_name", "")
         result = content[:120].replace("\n", " ")
-        console.print(f"  [dim]\U0001f4ce {tool_name} \u2192 {result}[/dim]")
+        console.print(f"  [dim]\U0001f4ce << {tool_name} \u2192 {result}[/dim]")
     elif event_type == "ai":
         if content:
             console.print(f"  [white]\U0001f916 {content[:200]}[/white]")
