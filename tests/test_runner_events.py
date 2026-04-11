@@ -1,8 +1,7 @@
 """Tests for runner event publishing and cancellation."""
 
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 from agent_md.core.runner import _classify_event_type
 
 

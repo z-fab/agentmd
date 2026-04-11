@@ -28,16 +28,21 @@ async def list_executions(
     offset: int = 0,
 ):
     db = request.app.state.db
-    execs = await db.list_executions(
-        agent_id=agent, status=status, limit=limit, offset=offset
-    )
+    execs = await db.list_executions(agent_id=agent, status=status, limit=limit, offset=offset)
     return [
         ExecutionSummary(
-            id=e.id, agent_id=e.agent_id, status=e.status, trigger=e.trigger,
-            started_at=e.started_at, finished_at=e.finished_at,
-            duration_ms=e.duration_ms, input_tokens=e.input_tokens,
-            output_tokens=e.output_tokens, total_tokens=e.total_tokens,
-            cost_usd=e.cost_usd, error=e.error,
+            id=e.id,
+            agent_id=e.agent_id,
+            status=e.status,
+            trigger=e.trigger,
+            started_at=e.started_at,
+            finished_at=e.finished_at,
+            duration_ms=e.duration_ms,
+            input_tokens=e.input_tokens,
+            output_tokens=e.output_tokens,
+            total_tokens=e.total_tokens,
+            cost_usd=e.cost_usd,
+            error=e.error,
         )
         for e in execs
     ]
@@ -50,11 +55,19 @@ async def get_execution(exec_id: int, request: Request):
     if not e:
         raise HTTPException(status_code=404, detail="Execution not found")
     return ExecutionDetail(
-        id=e.id, agent_id=e.agent_id, status=e.status, trigger=e.trigger,
-        started_at=e.started_at, finished_at=e.finished_at,
-        duration_ms=e.duration_ms, input_tokens=e.input_tokens,
-        output_tokens=e.output_tokens, total_tokens=e.total_tokens,
-        cost_usd=e.cost_usd, error=e.error, output_data=e.output_data,
+        id=e.id,
+        agent_id=e.agent_id,
+        status=e.status,
+        trigger=e.trigger,
+        started_at=e.started_at,
+        finished_at=e.finished_at,
+        duration_ms=e.duration_ms,
+        input_tokens=e.input_tokens,
+        output_tokens=e.output_tokens,
+        total_tokens=e.total_tokens,
+        cost_usd=e.cost_usd,
+        error=e.error,
+        output_data=e.output_data,
     )
 
 
@@ -67,10 +80,14 @@ async def get_messages(exec_id: int, request: Request):
     logs = await db.get_logs(exec_id, limit=10000)
     return [
         LogEntry(
-            id=l.id, execution_id=l.execution_id, timestamp=l.timestamp,
-            event_type=l.event_type, message=l.message, metadata=l.metadata,
+            id=entry.id,
+            execution_id=entry.execution_id,
+            timestamp=entry.timestamp,
+            event_type=entry.event_type,
+            message=entry.message,
+            metadata=entry.metadata,
         )
-        for l in logs
+        for entry in logs
     ]
 
 
@@ -91,11 +108,13 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             for log in logs:
                 seen_seq = log.id
                 yield ServerSentEvent(
-                    data=json.dumps({
-                        "event_type": log.event_type,
-                        "message": log.message,
-                        "timestamp": log.timestamp,
-                    }),
+                    data=json.dumps(
+                        {
+                            "event_type": log.event_type,
+                            "message": log.message,
+                            "timestamp": log.timestamp,
+                        }
+                    ),
                     event=log.event_type,
                     id=str(seen_seq),
                 )

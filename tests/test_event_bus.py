@@ -1,6 +1,5 @@
 """Tests for the in-memory event bus."""
 
-import asyncio
 import pytest
 from agent_md.core.event_bus import EventBus
 

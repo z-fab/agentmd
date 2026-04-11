@@ -227,6 +227,30 @@ Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://
 
 ---
 
+## 🌐 HTTP Backend
+
+As of v0.8.0, `agentmd start` runs a FastAPI HTTP backend over a Unix domain socket. The CLI communicates with it automatically — no manual API calls needed for normal use.
+
+```bash
+agentmd start          # foreground (Ctrl+C to stop)
+agentmd start -d       # background daemon
+agentmd status         # check backend status
+agentmd stop           # graceful shutdown
+```
+
+The backend exposes a full REST API for integrations. When `--port` and `--api-key` are provided, it also binds to TCP:
+
+```bash
+agentmd start --port 4100 --api-key YOUR_KEY
+curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
+```
+
+Interactive API docs are available at `/docs` (Swagger) and `/redoc` while the backend is running.
+
+**[→ REST API Reference](https://z-fab.github.io/agentmd/api)**
+
+---
+
 ## 🛠️ Tech Stack
 
 | Component | Technology |
@@ -234,6 +258,8 @@ Comprehensive documentation is available at **[z-fab.github.io/agentmd](https://
 | Runtime | Python 3.13+ |
 | Agent Framework | [LangGraph](https://github.com/langchain-ai/langgraph) |
 | LLM Providers | Google, OpenAI, Anthropic, Ollama, Local |
+| HTTP Backend | [FastAPI](https://fastapi.tiangolo.com/) + [Uvicorn](https://www.uvicorn.org/) |
+| HTTP Client | [HTTPX](https://www.python-httpx.org/) |
 | CLI | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) |
 | Database | SQLite (async via [aiosqlite](https://github.com/omnilib/aiosqlite)) |
 | Scheduling | [APScheduler](https://apscheduler.readthedocs.io/) |

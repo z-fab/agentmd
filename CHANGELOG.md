@@ -3,6 +3,36 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0] — 2026-04-11
+
+### Breaking Changes
+- **Backend replaces daemon** — `agentmd start` now runs a FastAPI HTTP backend over Unix socket
+- Old daemon (`daemon.py`) removed entirely
+- `agentmd start` default changed to foreground (use `-d` for background)
+
+### Added
+- HTTP API with 15 endpoints (agents, executions, scheduler, health)
+- SSE streaming for real-time execution events (`/executions/{id}/stream`)
+- Execution cancellation via `DELETE /executions/{id}`
+- EventBus for in-memory pub/sub of execution events
+- CLI auto-spawn — `agentmd run` starts the backend automatically if needed
+- Lifecycle manager with idle timeout (5min default, `--keep-alive` to disable)
+- API key authentication for TCP transport (`--port` + `--api-key`)
+- DB WAL mode for concurrent read access
+- `POST /agents/reload` to re-parse agent files
+- Scheduler pause/resume via API
+- `GET /agents/{name}` includes `next_run` for scheduled agents
+- `POST /agents/{name}/run` accepts optional `message` field for chat-style interaction
+
+### Changed
+- CLI `run` command now streams via SSE instead of direct execution
+- DB opened in read-only mode for static CLI commands (`list`, `logs`, `validate`)
+- Backend is the sole DB writer (eliminates SQLite lock contention)
+
+### Fixed
+- Ghost processes no longer possible (backend owns all executions)
+- Cold start eliminated for subsequent runs (backend keeps state warm)
+
 ## [0.7.1] — 2026-04-10
 
 ### Added

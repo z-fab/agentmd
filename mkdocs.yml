@@ -123,5 +123,7 @@ nav:
       - Performance: guides/performance.md
       - Multi-Environment: guides/multi-environment.md
       - Versioning & GitOps: guides/versioning-gitops.md
+  - REST API: api.md
+  - Migration v0.8: migration-0.8.md
   - Architecture: architecture.md
   - Roadmap: roadmap.md

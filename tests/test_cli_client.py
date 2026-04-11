@@ -1,6 +1,5 @@
 """Tests for the CLI HTTP client."""
 
-import pytest
 from agent_md.cli.client import BackendClient, get_socket_path
 
 

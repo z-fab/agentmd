@@ -17,18 +17,10 @@ from agent_md.cli.theme import (
     format_relative_time,
     format_tokens,
     format_trigger,
-    make_panel,
     make_table,
-    print_agent_complete,
-    print_agent_event,
-    print_agent_start,
-    print_banner,
-    print_chat_header,
     print_check,
-    print_chat_summary,
     print_error,
     print_kv,
-    print_markdown,
     print_success,
     print_warning,
     select_agent,
@@ -419,6 +411,7 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
 
     if api_key and port:
         from agent_md.api.auth import ApiKeyMiddleware
+
         app.add_middleware(ApiKeyMiddleware, api_key=api_key)
 
     config = uvicorn.Config(app, uds=str(socket_path), log_level="warning" if quiet else "info")
@@ -467,7 +460,6 @@ def run(
     quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ):
     """Execute a single agent."""
-    import json
     from rich.console import Console
     from agent_md.cli.spawn import ensure_backend
 

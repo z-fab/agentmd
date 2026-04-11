@@ -1,6 +1,5 @@
 """Tests for global limit defaults from config.yaml."""
 
-import pytest
 from unittest.mock import patch
 
 
