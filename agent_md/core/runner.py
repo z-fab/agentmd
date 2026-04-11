@@ -312,6 +312,7 @@ class AgentRunner:
                     cost_usd, \
                     _pricing_warned, \
                     last_errors
+                msg_count = 0
                 async for msg in stream_agent_graph(
                     graph,
                     config.system_prompt,
@@ -321,6 +322,14 @@ class AgentRunner:
                     config=graph_config,
                     arguments=arguments,
                 ):
+                    msg_count += 1
+                    msg_type = getattr(msg, "type", "unknown")
+                    has_tool_calls = bool(hasattr(msg, "tool_calls") and msg.tool_calls)
+                    content_preview = _extract_text(getattr(msg, "content", ""))[:100]
+                    logger.info(
+                        f"DEBUG stream msg #{msg_count}: type={msg_type} "
+                        f"tool_calls={has_tool_calls} content={content_preview!r}"
+                    )
                     log_id = await ex_logger.log_message(msg)
 
                     if event_bus is not None:
