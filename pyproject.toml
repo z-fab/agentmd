@@ -59,6 +59,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["agent_md*"]
 
+[tool.setuptools.package-data]
+"agent_md.config" = ["*.yaml"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 
