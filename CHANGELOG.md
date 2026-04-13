@@ -3,6 +3,14 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.1] — 2026-04-12
+
+### Fixed
+- **Cancellation of scheduled/watched executions** — scheduled and file-watch triggered executions now register cancel events, making `DELETE /executions/{id}` work for all execution types
+- **Cancel endpoint tolerant** — `DELETE /executions/{id}` returns 200 for already-finished executions instead of 409
+- **Watcher decoupled from scheduler** — `_AgentWatchHandler` receives an execute function instead of a scheduler reference, removing unnecessary coupling
+- **`pricing.yaml` missing from package** — added to `setuptools.package-data` so it's included in pip/uv installations
+
 ## [0.9.0] — 2026-04-11
 
 ### Breaking Changes

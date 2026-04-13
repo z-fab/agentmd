@@ -137,7 +137,7 @@ class AgentScheduler:
         resolved_paths = [self.path_context._resolve_relative(p) for p in config.trigger.paths]
         logger.info(f"Setting up watch for agent '{config.name}': {resolved_paths}")
 
-        handler = _AgentWatchHandler(config.name, resolved_paths, self, self._loop)
+        handler = _AgentWatchHandler(config.name, resolved_paths, self._execute_agent, self._loop)
         watch_ids = []
 
         for path in resolved_paths:
@@ -287,12 +287,12 @@ class _AgentWatchHandler(FileSystemEventHandler):
         self,
         agent_name: str,
         watch_paths: list[Path],
-        scheduler: AgentScheduler,
+        execute_fn,
         loop: asyncio.AbstractEventLoop | None,
     ):
         self.agent_name = agent_name
         self.watch_paths = watch_paths
-        self.scheduler = scheduler
+        self._execute_fn = execute_fn  # async fn(agent_id, trigger_type, trigger_context)
         self._loop = loop
         self._debounce_timers: dict[Path, asyncio.TimerHandle] = {}
         self._pending_contexts: dict[Path, str] = {}
@@ -326,7 +326,7 @@ class _AgentWatchHandler(FileSystemEventHandler):
 
         if context and self._loop:
             asyncio.run_coroutine_threadsafe(
-                self.scheduler._execute_agent(self.agent_name, "watch", trigger_context=context),
+                self._execute_fn(self.agent_name, "watch", trigger_context=context),
                 self._loop,
             )
             logger.info(f"Triggered agent '{self.agent_name}': {context}")
