@@ -24,6 +24,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
     from agent_md.tools.files import (
         create_file_edit_tool,
         create_file_glob_tool,
+        create_file_move_tool,
         create_file_read_tool,
         create_file_write_tool,
     )
@@ -40,6 +41,7 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
         tools.append(create_file_write_tool(agent_config, path_context))
         tools.append(create_file_edit_tool(agent_config, path_context))
         tools.append(create_file_glob_tool(agent_config, path_context))
+        tools.append(create_file_move_tool(agent_config, path_context))
         tools.append(create_memory_save_tool(agent_config, path_context))
         tools.append(create_memory_append_tool(agent_config, path_context))
         tools.append(create_memory_retrieve_tool(agent_config, path_context))
@@ -68,6 +70,7 @@ def list_builtin_tools() -> list[str]:
             "file_write",
             "file_edit",
             "file_glob",
+            "file_move",
             "memory_save",
             "memory_append",
             "memory_retrieve",
