@@ -25,7 +25,7 @@ No boilerplate. No frameworks to learn. Just Markdown.
 - **📄 One file = One agent** — YAML frontmatter for config, Markdown body for the prompt
 - **⚡ Zero boilerplate** — No classes, decorators, or complex frameworks
 - **🕐 Flexible triggers** — Run manually, on schedules (cron/intervals), or when files change
-- **🔧 Built-in tools** — File I/O and HTTP requests work out of the box
+- **🔧 Built-in tools** — File I/O (read, write, edit, move, glob) and HTTP requests work out of the box
 - **🔌 MCP support** — Connect to any Model Context Protocol server
 - **📊 Execution tracking** — Every run logged with status, duration, token usage, and estimated cost
 - **🛡️ Execution limits** — Hard caps on tool calls, tokens, and cost to prevent runaway agents
