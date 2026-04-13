@@ -31,7 +31,15 @@ class AgentScheduler:
     """Manages APScheduler jobs and Watchdog file monitoring."""
 
     def __init__(
-        self, registry: AgentRegistry, runner: AgentRunner, path_context, on_event=None, on_complete=None, on_start=None
+        self,
+        registry: AgentRegistry,
+        runner: AgentRunner,
+        path_context,
+        on_event=None,
+        on_complete=None,
+        on_start=None,
+        event_bus=None,
+        cancel_events: dict | None = None,
     ):
         self.registry = registry
         self.runner = runner
@@ -39,6 +47,8 @@ class AgentScheduler:
         self.on_event = on_event
         self.on_complete = on_complete
         self.on_start = on_start
+        self.event_bus = event_bus
+        self.cancel_events = cancel_events if cancel_events is not None else {}
         self.scheduler = AsyncIOScheduler()
         self.observer = Observer()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -99,14 +109,26 @@ class AgentScheduler:
         """Callback for scheduled execution."""
         config = self.registry.get(agent_id)
         if config and config.enabled:
-            await self.runner.run(
-                config,
-                trigger_type,
-                trigger_context=trigger_context,
-                on_event=self.on_event,
-                on_start=self.on_start,
-                on_complete=self.on_complete,
+            cancel_event = asyncio.Event()
+            # Pre-create execution so we can register the cancel_event
+            execution_id = await self.runner.db.create_execution(
+                agent_id=config.name, trigger=trigger_type, status="running"
             )
+            self.cancel_events[execution_id] = cancel_event
+            try:
+                await self.runner.run(
+                    config,
+                    trigger_type,
+                    trigger_context=trigger_context,
+                    on_event=self.on_event,
+                    on_start=self.on_start,
+                    on_complete=self.on_complete,
+                    event_bus=self.event_bus,
+                    cancel_event=cancel_event,
+                    execution_id=execution_id,
+                )
+            finally:
+                self.cancel_events.pop(execution_id, None)
         elif config and not config.enabled:
             logger.debug(f"Skipping disabled agent: {agent_id}")
 

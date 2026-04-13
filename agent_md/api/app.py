@@ -18,6 +18,10 @@ async def _lifespan(app: FastAPI):
     """Startup: bootstrap runtime. Shutdown: close everything."""
     state = app.state
 
+    state.start_time = time.monotonic()
+    state.shutdown_event = asyncio.Event()
+    state.cancel_events: dict[int, asyncio.Event] = {}
+
     rt = await bootstrap(
         workspace=state.workspace,
         db_path=getattr(state, "db_path", None),
@@ -25,12 +29,11 @@ async def _lifespan(app: FastAPI):
         on_event=state.on_event,
         on_start=state.on_start,
         on_complete=state.on_complete,
+        event_bus=state.event_bus,
+        cancel_events=state.cancel_events,
     )
     state.runtime = rt
     state.db = rt.db
-    state.start_time = time.monotonic()
-    state.shutdown_event = asyncio.Event()
-    state.cancel_events: dict[int, asyncio.Event] = {}
 
     # Start lifecycle manager (idle timeout)
     from agent_md.execution.lifecycle import LifecycleManager
