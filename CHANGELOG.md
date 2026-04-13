@@ -11,6 +11,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Watcher decoupled from scheduler** — `_AgentWatchHandler` receives an execute function instead of a scheduler reference, removing unnecessary coupling
 - **`pricing.yaml` missing from package** — added to `setuptools.package-data` so it's included in pip/uv installations
 
+### Changed
+- **Pricing registry updated** — added Google Gemini 3 family (pro, flash, flash-preview), OpenAI GPT-5 family (5.4, 5.2, 5.1, 5, mini, nano) and o1, Anthropic Claude Opus 4/4.1/4.5, Sonnet 4/4.5, Haiku 3.5
+
 ## [0.9.0] — 2026-04-11
 
 ### Breaking Changes
