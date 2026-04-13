@@ -165,12 +165,15 @@ async def cancel_execution(exec_id: int, request: Request):
     e = await db.get_execution(exec_id)
     if not e:
         raise HTTPException(status_code=404, detail="Execution not found")
-    if e.status != "running":
-        raise HTTPException(status_code=409, detail=f"Execution is {e.status}, not running")
+
+    # Already finished — not an error, just acknowledge
+    if e.status not in ("running", "pending"):
+        return CancelResponse(status=e.status, execution_id=exec_id)
 
     cancel_event = state.cancel_events.get(exec_id)
     if cancel_event:
         cancel_event.set()
         return CancelResponse(status="cancelling", execution_id=exec_id)
 
-    raise HTTPException(status_code=409, detail="Execution not cancellable (no cancel event)")
+    # Running but no cancel_event — race condition, treat as already done
+    return CancelResponse(status=e.status, execution_id=exec_id)
