@@ -1,7 +1,5 @@
 """Tests for file_move tool."""
 
-from pathlib import Path
-
 import pytest
 
 from agent_md.tools.files.move import create_file_move_tool

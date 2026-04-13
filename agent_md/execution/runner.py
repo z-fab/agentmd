@@ -376,7 +376,9 @@ class AgentRunner:
                             )
                             _pricing_warned = True
 
-                        _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+                        _check_limits(
+                            config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd
+                        )
 
                         # Loop detection: same tool error 3 consecutive times
                         if config.settings.loop_detection and getattr(msg, "type", "") == "tool":

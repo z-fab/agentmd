@@ -20,9 +20,7 @@ from __future__ import annotations
 import contextvars
 from pathlib import Path
 
-_current_context: contextvars.ContextVar[tuple | None] = contextvars.ContextVar(
-    "agentmd_context", default=None
-)
+_current_context: contextvars.ContextVar[tuple | None] = contextvars.ContextVar("agentmd_context", default=None)
 
 
 def _set_context(agent_config, path_context) -> contextvars.Token:

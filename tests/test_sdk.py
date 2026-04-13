@@ -1,7 +1,6 @@
 """Tests for agent_md.sdk — public utilities for custom tool authors."""
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
