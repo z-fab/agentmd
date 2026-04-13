@@ -6,6 +6,7 @@ import sys
 import time
 
 from agent_md.execution.logger import ExecutionLogger, _extract_text
+from agent_md.sdk import _set_context, _reset_context
 from agent_md.workspace.path_context import PathContext
 from agent_md.config.pricing import estimate_cost
 from agent_md.workspace.registry import AgentConfig
@@ -297,251 +298,256 @@ class AgentRunner:
         _pricing_warned = False
         last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
 
+        sdk_token = _set_context(config, self.path_context)
         try:
-            # 2. Build model + tools + graph
-            graph = await self._build_graph(config)
+            try:
+                # 2. Build model + tools + graph
+                graph = await self._build_graph(config)
 
-            # 3. Build user input with trigger context
-            user_input = self._build_user_input(trigger_type, trigger_context, config)
-            if user_message:
-                user_input = user_message
+                # 3. Build user input with trigger context
+                user_input = self._build_user_input(trigger_type, trigger_context, config)
+                if user_message:
+                    user_input = user_message
 
-            # 4. Stream execution -- log each message in real time
-            last_ai_msg = None
-            graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
+                # 4. Stream execution -- log each message in real time
+                last_ai_msg = None
+                graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
 
-            async def _stream():
-                nonlocal \
-                    last_ai_msg, \
-                    total_input_tokens, \
-                    total_output_tokens, \
-                    tool_call_count, \
-                    cost_usd, \
-                    _pricing_warned, \
-                    last_errors
-                async for msg in stream_agent_graph(
-                    graph,
-                    config.system_prompt,
-                    config,
-                    self.path_context,
-                    user_input=user_input,
-                    config=graph_config,
-                    arguments=arguments,
-                ):
-                    log_id = await ex_logger.log_message(msg)
+                async def _stream():
+                    nonlocal \
+                        last_ai_msg, \
+                        total_input_tokens, \
+                        total_output_tokens, \
+                        tool_call_count, \
+                        cost_usd, \
+                        _pricing_warned, \
+                        last_errors
+                    async for msg in stream_agent_graph(
+                        graph,
+                        config.system_prompt,
+                        config,
+                        self.path_context,
+                        user_input=user_input,
+                        config=graph_config,
+                        arguments=arguments,
+                    ):
+                        log_id = await ex_logger.log_message(msg)
 
+                        if event_bus is not None:
+                            event_type = _classify_event_type(msg)
+                            event_data = _build_event_data(msg, event_type, config.name)
+                            await event_bus.publish(
+                                execution_id,
+                                {"type": event_type, "seq": log_id, "data": event_data},
+                            )
+
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise LimitExceeded("cancelled", "Execution cancelled by user")
+
+                        # Accumulate token usage from every AI message
+                        usage = getattr(msg, "usage_metadata", None)
+                        if usage:
+                            total_input_tokens += usage.get("input_tokens", 0)
+                            total_output_tokens += usage.get("output_tokens", 0)
+
+                        # Count tool calls
+                        if getattr(msg, "type", "") == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
+                            tool_call_count += len(msg.tool_calls)
+
+                        # Estimate running cost
+                        if usage:
+                            cost_usd = estimate_cost(
+                                config.model.provider,
+                                config.model.name,
+                                total_input_tokens,
+                                total_output_tokens,
+                            )
+
+                        # Warn once if cost limit is set but pricing is unknown
+                        if (
+                            not _pricing_warned
+                            and config.settings.max_cost_usd is not None
+                            and cost_usd is None
+                            and (total_input_tokens + total_output_tokens) > 0
+                        ):
+                            logger.warning(
+                                f"max_cost_usd configured but no pricing data for "
+                                f"{config.model.provider}/{config.model.name}; limit will not be enforced"
+                            )
+                            _pricing_warned = True
+
+                        _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+
+                        # Loop detection: same tool error 3 consecutive times
+                        if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
+                            if _looks_like_error(msg):
+                                sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
+                                last_errors.append(sig)
+                                if len(last_errors) > 3:
+                                    last_errors.pop(0)
+                                if len(last_errors) == 3 and len(set(last_errors)) == 1:
+                                    raise LimitExceeded(
+                                        "loop_detected",
+                                        f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
+                                    )
+                            else:
+                                last_errors.clear()  # Reset on successful tool response
+
+                        if _is_final_ai_message(msg):
+                            last_ai_msg = msg
+
+                await asyncio.wait_for(_stream(), timeout=config.settings.timeout)
+
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+
+                # 5. Extract final output
+                output = ""
+                if last_ai_msg:
+                    raw_content = getattr(last_ai_msg, "content", None)
+                    output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
+                    log_id = await ex_logger.mark_final_answer(last_ai_msg)
                     if event_bus is not None:
-                        event_type = _classify_event_type(msg)
-                        event_data = _build_event_data(msg, event_type, config.name)
                         await event_bus.publish(
                             execution_id,
-                            {"type": event_type, "seq": log_id, "data": event_data},
+                            {
+                                "type": "final_answer",
+                                "seq": log_id,
+                                "data": {"content": output, "agent_name": config.name},
+                            },
                         )
 
-                    if cancel_event is not None and cancel_event.is_set():
-                        raise LimitExceeded("cancelled", "Execution cancelled by user")
-
-                    # Accumulate token usage from every AI message
-                    usage = getattr(msg, "usage_metadata", None)
-                    if usage:
-                        total_input_tokens += usage.get("input_tokens", 0)
-                        total_output_tokens += usage.get("output_tokens", 0)
-
-                    # Count tool calls
-                    if getattr(msg, "type", "") == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
-                        tool_call_count += len(msg.tool_calls)
-
-                    # Estimate running cost
-                    if usage:
-                        cost_usd = estimate_cost(
-                            config.model.provider,
-                            config.model.name,
-                            total_input_tokens,
-                            total_output_tokens,
-                        )
-
-                    # Warn once if cost limit is set but pricing is unknown
-                    if (
-                        not _pricing_warned
-                        and config.settings.max_cost_usd is not None
-                        and cost_usd is None
-                        and (total_input_tokens + total_output_tokens) > 0
-                    ):
-                        logger.warning(
-                            f"max_cost_usd configured but no pricing data for "
-                            f"{config.model.provider}/{config.model.name}; limit will not be enforced"
-                        )
-                        _pricing_warned = True
-
-                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
-
-                    # Loop detection: same tool error 3 consecutive times
-                    if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
-                        if _looks_like_error(msg):
-                            sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
-                            last_errors.append(sig)
-                            if len(last_errors) > 3:
-                                last_errors.pop(0)
-                            if len(last_errors) == 3 and len(set(last_errors)) == 1:
-                                raise LimitExceeded(
-                                    "loop_detected",
-                                    f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
-                                )
-                        else:
-                            last_errors.clear()  # Reset on successful tool response
-
-                    if _is_final_ai_message(msg):
-                        last_ai_msg = msg
-
-            await asyncio.wait_for(_stream(), timeout=config.settings.timeout)
-
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-
-            # 5. Extract final output
-            output = ""
-            if last_ai_msg:
-                raw_content = getattr(last_ai_msg, "content", None)
-                output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
-                log_id = await ex_logger.mark_final_answer(last_ai_msg)
+                # 6. Persist success
+                result = await self._finish_execution(
+                    execution_id,
+                    "success",
+                    duration_ms,
+                    total_input_tokens,
+                    total_output_tokens,
+                    output_data=output[:10000],
+                    cost_usd=cost_usd,
+                )
+                result["output"] = output
+                logger.info(
+                    f"Execution complete: {config.name} — success in {duration_ms}ms "
+                    f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
+                )
                 if event_bus is not None:
                     await event_bus.publish(
                         execution_id,
                         {
-                            "type": "final_answer",
-                            "seq": log_id,
-                            "data": {"content": output, "agent_name": config.name},
+                            "type": "complete",
+                            "seq": _COMPLETE_SEQ,
+                            "data": {
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms"),
+                                "total_tokens": result.get("total_tokens"),
+                                "cost_usd": result.get("cost_usd"),
+                                "error": result.get("error"),
+                            },
                         },
                     )
+                if on_complete is not None:
+                    on_complete(config.name, result)
+                return result
 
-            # 6. Persist success
-            result = await self._finish_execution(
-                execution_id,
-                "success",
-                duration_ms,
-                total_input_tokens,
-                total_output_tokens,
-                output_data=output[:10000],
-                cost_usd=cost_usd,
-            )
-            result["output"] = output
-            logger.info(
-                f"Execution complete: {config.name} — success in {duration_ms}ms "
-                f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
-            )
-            if event_bus is not None:
-                await event_bus.publish(
+            except asyncio.TimeoutError:
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+                error_msg = f"Timeout after {config.settings.timeout}s"
+                logger.warning(f"Execution timeout: {config.name} — {error_msg}")
+                result = await self._finish_execution(
                     execution_id,
-                    {
-                        "type": "complete",
-                        "seq": _COMPLETE_SEQ,
-                        "data": {
-                            "status": result["status"],
-                            "duration_ms": result.get("duration_ms"),
-                            "total_tokens": result.get("total_tokens"),
-                            "cost_usd": result.get("cost_usd"),
-                            "error": result.get("error"),
-                        },
-                    },
+                    "timeout",
+                    duration_ms,
+                    total_input_tokens,
+                    total_output_tokens,
+                    error=error_msg,
+                    cost_usd=cost_usd,
                 )
-            if on_complete is not None:
-                on_complete(config.name, result)
-            return result
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {
+                            "type": "complete",
+                            "seq": _COMPLETE_SEQ,
+                            "data": {
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms"),
+                                "total_tokens": result.get("total_tokens"),
+                                "cost_usd": result.get("cost_usd"),
+                                "error": result.get("error"),
+                            },
+                        },
+                    )
+                if on_complete is not None:
+                    on_complete(config.name, result)
+                return result
 
-        except asyncio.TimeoutError:
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-            error_msg = f"Timeout after {config.settings.timeout}s"
-            logger.warning(f"Execution timeout: {config.name} — {error_msg}")
-            result = await self._finish_execution(
-                execution_id,
-                "timeout",
-                duration_ms,
-                total_input_tokens,
-                total_output_tokens,
-                error=error_msg,
-                cost_usd=cost_usd,
-            )
-            if event_bus is not None:
-                await event_bus.publish(
+            except LimitExceeded as e:
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+                error_msg = f"Aborted: {e.reason}" + (f" ({e.detail})" if e.detail else "")
+                logger.warning(f"Execution aborted: {config.name} — {error_msg}")
+                result = await self._finish_execution(
                     execution_id,
-                    {
-                        "type": "complete",
-                        "seq": _COMPLETE_SEQ,
-                        "data": {
-                            "status": result["status"],
-                            "duration_ms": result.get("duration_ms"),
-                            "total_tokens": result.get("total_tokens"),
-                            "cost_usd": result.get("cost_usd"),
-                            "error": result.get("error"),
-                        },
-                    },
+                    "aborted",
+                    duration_ms,
+                    total_input_tokens,
+                    total_output_tokens,
+                    error=error_msg,
+                    cost_usd=cost_usd,
                 )
-            if on_complete is not None:
-                on_complete(config.name, result)
-            return result
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {
+                            "type": "complete",
+                            "seq": _COMPLETE_SEQ,
+                            "data": {
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms"),
+                                "total_tokens": result.get("total_tokens"),
+                                "cost_usd": result.get("cost_usd"),
+                                "error": result.get("error"),
+                            },
+                        },
+                    )
+                if on_complete is not None:
+                    on_complete(config.name, result)
+                return result
 
-        except LimitExceeded as e:
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-            error_msg = f"Aborted: {e.reason}" + (f" ({e.detail})" if e.detail else "")
-            logger.warning(f"Execution aborted: {config.name} — {error_msg}")
-            result = await self._finish_execution(
-                execution_id,
-                "aborted",
-                duration_ms,
-                total_input_tokens,
-                total_output_tokens,
-                error=error_msg,
-                cost_usd=cost_usd,
-            )
-            if event_bus is not None:
-                await event_bus.publish(
+            except Exception as e:
+                duration_ms = int((time.monotonic() - start_time) * 1000)
+                error_msg = f"{type(e).__name__}: {e}"
+                logger.error(f"Execution error: {config.name} — {error_msg}")
+                result = await self._finish_execution(
                     execution_id,
-                    {
-                        "type": "complete",
-                        "seq": _COMPLETE_SEQ,
-                        "data": {
-                            "status": result["status"],
-                            "duration_ms": result.get("duration_ms"),
-                            "total_tokens": result.get("total_tokens"),
-                            "cost_usd": result.get("cost_usd"),
-                            "error": result.get("error"),
-                        },
-                    },
+                    "error",
+                    duration_ms,
+                    total_input_tokens,
+                    total_output_tokens,
+                    error=error_msg,
+                    cost_usd=cost_usd,
                 )
-            if on_complete is not None:
-                on_complete(config.name, result)
-            return result
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {
+                            "type": "complete",
+                            "seq": _COMPLETE_SEQ,
+                            "data": {
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms"),
+                                "total_tokens": result.get("total_tokens"),
+                                "cost_usd": result.get("cost_usd"),
+                                "error": result.get("error"),
+                            },
+                        },
+                    )
+                if on_complete is not None:
+                    on_complete(config.name, result)
+                return result
 
-        except Exception as e:
-            duration_ms = int((time.monotonic() - start_time) * 1000)
-            error_msg = f"{type(e).__name__}: {e}"
-            logger.error(f"Execution error: {config.name} — {error_msg}")
-            result = await self._finish_execution(
-                execution_id,
-                "error",
-                duration_ms,
-                total_input_tokens,
-                total_output_tokens,
-                error=error_msg,
-                cost_usd=cost_usd,
-            )
-            if event_bus is not None:
-                await event_bus.publish(
-                    execution_id,
-                    {
-                        "type": "complete",
-                        "seq": _COMPLETE_SEQ,
-                        "data": {
-                            "status": result["status"],
-                            "duration_ms": result.get("duration_ms"),
-                            "total_tokens": result.get("total_tokens"),
-                            "cost_usd": result.get("cost_usd"),
-                            "error": result.get("error"),
-                        },
-                    },
-                )
-            if on_complete is not None:
-                on_complete(config.name, result)
-            return result
+        finally:
+            _reset_context(sdk_token)
 
     async def prepare_agent(self, config: AgentConfig):
         """Create model, resolve tools, and build graph -- without executing.
