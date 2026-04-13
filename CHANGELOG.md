@@ -3,6 +3,15 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.0] — 2026-04-13
+
+### Added
+- **`file_move` built-in tool** — move/rename files with full sandbox validation on both source and destination paths (#6)
+- **`agent_md.sdk` module** — public SDK for custom tool authors with `resolve_path()`, `workspace_root()`, `agent_name()`, and `agent_paths()` functions, powered by `contextvars` for async-safe per-execution context
+
+### Removed
+- **`agent_md.sandbox`** — replaced by `agent_md.sdk` with a simpler API (no factory injection required)
+
 ## [0.9.1] — 2026-04-12
 
 ### Fixed

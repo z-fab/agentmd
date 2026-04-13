@@ -332,6 +332,85 @@ Built-in tools (`file_read`, `file_write`, `file_edit`, `file_glob`, `http_reque
 
 ---
 
+---
+
+## SDK — Path Resolution for Custom Tools
+
+Custom tools that need to read or write files should use `agent_md.sdk` for sandbox-safe path resolution. This gives your tool the same security guarantees as built-in tools.
+
+### Available Functions
+
+| Function | Returns | Description |
+|---|---|---|
+| `resolve_path(path)` | `(Path \| None, str \| None)` | Resolve aliases + validate sandbox |
+| `workspace_root()` | `Path` | Absolute path to workspace root |
+| `agent_name()` | `str` | Name of the executing agent |
+| `agent_paths()` | `dict[str, Path]` | Agent's declared path aliases, resolved |
+
+All functions are available during agent execution. Calling them outside of execution raises `RuntimeError`.
+
+### Example: File Processing Tool
+
+```python
+# workspace/agents/_config/tools/word_count.py
+from langchain_core.tools import tool
+from agent_md.sdk import resolve_path
+
+@tool
+def word_count(path: str) -> str:
+    """Count words in a file, with sandbox validation.
+
+    Args:
+        path: Path to the file (supports aliases like {data}/file.txt).
+
+    Returns:
+        Word count or error message.
+    """
+    resolved, error = resolve_path(path)
+    if error:
+        return f"ERROR: {error}"
+
+    try:
+        text = resolved.read_text()
+        return f"{len(text.split())} words in {resolved.name}"
+    except Exception as e:
+        return f"ERROR: {e}"
+```
+
+### Example: Context-Aware Tool
+
+```python
+# workspace/agents/_config/tools/file_info.py
+from langchain_core.tools import tool
+from agent_md.sdk import agent_name, workspace_root, agent_paths
+
+@tool
+def show_context() -> str:
+    """Show the current agent's workspace context.
+
+    Returns:
+        Agent name, workspace root, and declared paths.
+    """
+    paths = agent_paths()
+    path_list = "\n".join(f"  {alias}: {path}" for alias, path in paths.items())
+    return (
+        f"Agent: {agent_name()}\n"
+        f"Workspace: {workspace_root()}\n"
+        f"Paths:\n{path_list or '  (none)'}"
+    )
+```
+
+### When to Use the SDK
+
+- **Use `resolve_path`** when your tool reads or writes files — it validates sandbox rules and resolves aliases
+- **Use `workspace_root`** when you need the base directory for relative operations
+- **Use `agent_name`** for logging, naming output files, or conditional behavior per agent
+- **Use `agent_paths`** to discover which directories the agent has access to
+
+### When NOT to Use the SDK
+
+If your tool doesn't touch the filesystem (API calls, text processing, calculations), you don't need the SDK. A plain `@tool` function works fine.
+
 ## Troubleshooting
 
 ### Tool file not found

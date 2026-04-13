@@ -3,7 +3,7 @@ requires-python = ">=3.13"
 
 [[package]]
 name = "agentmd"
-version = "0.9.0"
+version = "0.9.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

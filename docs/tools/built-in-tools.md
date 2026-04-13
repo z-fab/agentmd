@@ -228,6 +228,62 @@ def file_glob(pattern: str) -> str
 
 ---
 
+## file_move
+
+Move or rename a file. Both source and destination must be within allowed paths.
+
+### Signature
+
+```python
+def file_move(source: str, destination: str) -> str
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `source` | `str` | Yes | Path to the file to move |
+| `destination` | `str` | Yes | Path to move the file to |
+
+### Behavior
+
+- Validates both source and destination against sandbox rules
+- Source must exist and be a file (directories are not supported)
+- Creates destination parent directories automatically
+- Atomic on the same filesystem (uses `shutil.move`)
+- Returns confirmation: `Moved: {source} -> {destination}`
+
+### Security Rules
+
+1. **Both paths** must be within the agent's declared `paths`
+2. **Blocked**: Cannot move `.env`, `.db` files, or files into `_config/`
+3. **Watch paths**: Automatically included as allowed paths
+
+### Examples
+
+**Rename a file:**
+```yaml
+---
+name: file-organizer
+paths:
+  data: data/
+---
+
+Rename `data/raw.csv` to `data/processed.csv`.
+```
+
+**Move to subdirectory:**
+```yaml
+---
+name: inbox-processor
+paths:
+  inbox: inbox/
+  archive: archive/
+---
+
+Move files from `inbox/` to `archive/` after processing.
+```
+
+---
+
 ## http_request
 
 Make HTTP requests to external APIs and services.

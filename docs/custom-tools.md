@@ -22,18 +22,19 @@ enforce the agent's `paths` whitelist on them — they are your code and
 your responsibility.
 
 If you want to opt in to the same path validation that built-in tools
-use, import the helper from `agent_md.sandbox`:
+use, import from `agent_md.sdk`:
 
 ```python
 from langchain_core.tools import tool
-from agent_md.sandbox import validate_path
+from agent_md.sdk import resolve_path
 
-def create_my_tool(agent_config, path_context):
-    @tool
-    def my_custom_tool(file: str) -> str:
-        resolved, error = validate_path(file, agent_config, path_context)
-        if error:
-            return error
-        return resolved.read_text()
-    return my_custom_tool
+@tool
+def my_custom_tool(file: str) -> str:
+    """Read a file with sandbox validation."""
+    resolved, error = resolve_path(file)
+    if error:
+        return error
+    return resolved.read_text()
 ```
+
+See [Custom Tools — SDK](tools/custom-tools.md#sdk--path-resolution-for-custom-tools) for full documentation.
