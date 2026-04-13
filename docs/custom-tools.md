@@ -37,4 +37,4 @@ def my_custom_tool(file: str) -> str:
     return resolved.read_text()
 ```
 
-See [Custom Tools — SDK](tools/custom-tools.md#sdk--path-resolution-for-custom-tools) for full documentation.
+See [Custom Tools — SDK](tools/custom-tools.md#sdk-path-resolution-for-custom-tools) for full documentation.
