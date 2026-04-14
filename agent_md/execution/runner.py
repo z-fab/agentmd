@@ -193,6 +193,9 @@ class AgentRunner:
                 )
             return f"A file change was detected. Process it now.\n\n- {trigger_context}"
 
+        if trigger_type == "agent":
+            return "Execute your task."
+
         return "Execute your task."
 
     async def _build_graph(self, config: AgentConfig):
@@ -257,6 +260,8 @@ class AgentRunner:
         cancel_event: asyncio.Event | None = None,
         execution_id: int | None = None,
         user_message: str | None = None,
+        depth: int = 0,
+        parent_execution_id: int | None = None,
     ) -> dict:
         """Execute an agent and persist the result.
 
@@ -286,6 +291,7 @@ class AgentRunner:
                 agent_id=config.name,
                 trigger=trigger_type,
                 status="running",
+                parent_execution_id=parent_execution_id,
             )
 
         ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=on_event)
