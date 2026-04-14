@@ -47,16 +47,19 @@ def create_run_agent_tool(
 
         logger.info(f"Agent '{caller_config.name}' calling '{agent_name}' (depth={depth + 1})")
 
-        result = await runner.run(
-            config=target_config,
-            trigger_type="agent",
-            trigger_context=f"Called by {caller_config.name}",
-            arguments=arguments,
-            event_bus=event_bus,
-            global_event_bus=global_event_bus,
-            depth=depth + 1,
-            parent_execution_id=parent_execution_id,
-        )
+        try:
+            result = await runner.run(
+                config=target_config,
+                trigger_type="agent",
+                trigger_context=f"Called by {caller_config.name}",
+                arguments=arguments,
+                event_bus=event_bus,
+                global_event_bus=global_event_bus,
+                depth=depth + 1,
+                parent_execution_id=parent_execution_id,
+            )
+        except Exception as e:
+            return {"error": f"Execution failed: {e}"}
 
         return {
             "status": result.get("status", "error"),

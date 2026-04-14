@@ -58,8 +58,8 @@ def resolve_builtin_tools(agent_config=None, path_context=None, **kwargs) -> lis
             tools.append(create_skill_read_file_tool(agent_config, path_context.skills_dir))
             tools.append(create_skill_run_script_tool(agent_config, path_context.skills_dir))
 
-        # Agent-calling tool — only when the agent has agents configured
-        if agent_config.agents:
+        # Agent-calling tool — only when the agent has agents configured and context is available
+        if agent_config.agents and kwargs.get("registry") and kwargs.get("runner"):
             from agent_md.tools.agents.run_agent import create_run_agent_tool
 
             tools.append(
