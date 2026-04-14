@@ -14,6 +14,7 @@ Always available, no configuration needed:
 - **[http_request](built-in-tools.md#http_request)** — Make HTTP calls (GET, POST, etc.)
 - **[memory_save / memory_append / memory_retrieve](built-in-tools.md#memory_save)** — Long-term memory
 - **[skill_use / skill_read_file / skill_run_script](built-in-tools.md#skill_use)** — [Skills](../skills.md) (when enabled)
+- **[run_agent](run-agent.md)** — Delegate to other agents (when `agents` configured)
 
 [Learn more →](built-in-tools.md)
 

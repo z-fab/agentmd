@@ -42,6 +42,7 @@ async def list_executions(
             total_tokens=e.total_tokens,
             cost_usd=e.cost_usd,
             error=e.error,
+            parent_execution_id=e.parent_execution_id,
         )
         for e in execs
     ]
@@ -66,6 +67,7 @@ async def get_execution(exec_id: int, request: Request):
         total_tokens=e.total_tokens,
         cost_usd=e.cost_usd,
         error=e.error,
+        parent_execution_id=e.parent_execution_id,
         output_data=e.output_data,
     )
 

@@ -114,6 +114,7 @@ nav:
       - tools/index.md
       - Built-in Tools: tools/built-in-tools.md
       - Custom Tools: tools/custom-tools.md
+      - Agent Delegation: tools/run-agent.md
       - MCP Integration: tools/mcp-integration.md
   - Examples: examples.md
   - Guides:
