@@ -29,7 +29,7 @@ def apply_substitutions(
     Returns:
         Processed content with all substitutions applied.
     """
-    arg_parts = arguments.split() if arguments else []
+    arg_parts = arguments.split("\n") if arguments else []
 
     def _get_arg(idx: int) -> str:
         return arg_parts[idx] if idx < len(arg_parts) else ""

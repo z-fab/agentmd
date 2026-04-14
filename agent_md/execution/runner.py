@@ -355,6 +355,21 @@ class AgentRunner:
                 if user_message:
                     user_input = user_message
 
+                # 3b. Log the constructed system prompt and user input
+                from agent_md.graph.builder import build_system_message
+
+                sys_msg = build_system_message(
+                    config.system_prompt,
+                    config,
+                    self.path_context,
+                    arguments=arguments,
+                    registry=self.registry,
+                )
+                await ex_logger.log_message(sys_msg)
+                from langchain_core.messages import HumanMessage as _HM
+
+                await ex_logger.log_message(_HM(content=user_input))
+
                 # 4. Stream execution -- log each message in real time
                 last_ai_msg = None
                 graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
