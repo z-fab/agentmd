@@ -775,6 +775,7 @@ def logs(
     last: int = typer.Option(10, "--last", "-n", help="Number of recent executions"),
     execution: int = typer.Option(None, "--execution", "-e", help="Show details for execution ID"),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output in real-time"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full system prompt in execution detail"),
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """Show recent execution history for an agent."""
@@ -786,7 +787,7 @@ def logs(
 
     # Execution detail mode
     if execution is not None:
-        _show_execution_detail(execution, workspace)
+        _show_execution_detail(execution, workspace, verbose=verbose)
         return
 
     # List executions
@@ -853,7 +854,7 @@ def logs(
     console.print()
 
 
-def _show_execution_detail(execution_id: int, workspace: Path | None) -> None:
+def _show_execution_detail(execution_id: int, workspace: Path | None, verbose: bool = False) -> None:
     """Show detailed messages for a specific execution."""
     from agent_md.workspace.services import get_execution_messages
 
@@ -876,9 +877,12 @@ def _show_execution_detail(execution_id: int, workspace: Path | None) -> None:
         )
 
         if log.event_type == "system":
-            # Show system prompt as summary
-            chars = len(log.message) if log.message else 0
-            console.print(f"  [dim]{ts}  {emoji}  System prompt ({chars:,} chars)[/dim]")
+            if verbose:
+                console.print(f"  [dim]{ts}  {emoji}  System prompt:[/dim]")
+                console.print(f"  [dim]{log.message or ''}[/dim]")
+            else:
+                chars = len(log.message) if log.message else 0
+                console.print(f"  [dim]{ts}  {emoji}  System prompt ({chars:,} chars)[/dim]")
         elif log.event_type == "human":
             console.print(f"  [dim]{ts}  {emoji}  {log.message}[/dim]")
         else:

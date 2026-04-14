@@ -106,7 +106,7 @@ class ExecutionLogger:
 
         # --- System / Human / other ---
         else:
-            content = _extract_text(getattr(msg, "content", ""))[:500]
+            content = _extract_text(getattr(msg, "content", ""))
             log_id = await self._persist(msg_type, content)
 
         return log_id
