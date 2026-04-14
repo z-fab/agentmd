@@ -177,7 +177,7 @@ class AgentScheduler:
         logger.info("Scheduler started")
 
         # 2. Register hot-reload handler for .md files
-        reload_handler = _AgentFileHandler(self.registry, self, self._loop)
+        reload_handler = _AgentFileHandler(self.registry, self, self._loop, global_event_bus=self.global_event_bus)
         self.observer.schedule(reload_handler, str(agents_dir), recursive=False)
         logger.info(f"Watching workspace for changes: {agents_dir}")
 
@@ -238,10 +238,25 @@ class _AgentFileHandler(FileSystemEventHandler):
         registry: AgentRegistry,
         scheduler: AgentScheduler,
         loop: asyncio.AbstractEventLoop | None,
+        global_event_bus=None,
     ):
         self.registry = registry
         self.scheduler = scheduler
         self._loop = loop
+        self.global_event_bus = global_event_bus
+
+    def _publish_event(self, event: str, agent_name: str) -> None:
+        """Publish agents_changed event to global bus from watchdog thread."""
+        if self.global_event_bus and self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self.global_event_bus.publish(
+                    {
+                        "type": "agents_changed",
+                        "data": {"event": event, "agent_name": agent_name},
+                    }
+                ),
+                self._loop,
+            )
 
     def _is_agent_file(self, event) -> bool:
         return not event.is_directory and is_agent_file(Path(event.src_path))
@@ -260,6 +275,7 @@ class _AgentFileHandler(FileSystemEventHandler):
             self.registry.remove(name)
             self.scheduler.unschedule_agent(name)
             logger.info(f"Agent file deleted: {name}")
+            self._publish_event("removed", name)
 
     def _reload(self, path: Path) -> None:
         try:
@@ -270,6 +286,7 @@ class _AgentFileHandler(FileSystemEventHandler):
                 # Only the body (system prompt) changed
                 self.registry.register(config)
                 logger.info(f"Hot-reloaded prompt for: {config.name}")
+                self._publish_event("updated", config.name)
             else:
                 # Frontmatter changed — full reload (reschedule + recreate watchers)
                 self.registry.register(config)
@@ -278,6 +295,8 @@ class _AgentFileHandler(FileSystemEventHandler):
                 if config.trigger.type == "watch" and config.enabled:
                     self.scheduler._add_watch_handler(config)
                 logger.info(f"Hot-reloaded agent (full): {config.name}")
+                event_type = "loaded" if old is None else "updated"
+                self._publish_event(event_type, config.name)
 
         except Exception as e:
             logger.warning(f"Failed to reload {path.name}: {e}")

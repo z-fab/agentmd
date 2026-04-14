@@ -77,3 +77,54 @@ class TestSchedulerGlobalEvents:
         assert event["type"] == "scheduler_changed"
         assert event["data"]["status"] == "running"
         global_bus.unsubscribe(queue)
+
+
+class TestAgentsChangedGlobalEvents:
+    async def test_agent_loaded_published(self):
+        global_bus = GlobalEventBus()
+        queue = global_bus.subscribe()
+
+        await global_bus.publish(
+            {
+                "type": "agents_changed",
+                "data": {"event": "loaded", "agent_name": "new-agent"},
+            }
+        )
+
+        event = queue.get_nowait()
+        assert event["type"] == "agents_changed"
+        assert event["data"]["event"] == "loaded"
+        assert event["data"]["agent_name"] == "new-agent"
+        global_bus.unsubscribe(queue)
+
+    async def test_agent_updated_published(self):
+        global_bus = GlobalEventBus()
+        queue = global_bus.subscribe()
+
+        await global_bus.publish(
+            {
+                "type": "agents_changed",
+                "data": {"event": "updated", "agent_name": "my-agent"},
+            }
+        )
+
+        event = queue.get_nowait()
+        assert event["type"] == "agents_changed"
+        assert event["data"]["event"] == "updated"
+        global_bus.unsubscribe(queue)
+
+    async def test_agent_removed_published(self):
+        global_bus = GlobalEventBus()
+        queue = global_bus.subscribe()
+
+        await global_bus.publish(
+            {
+                "type": "agents_changed",
+                "data": {"event": "removed", "agent_name": "old-agent"},
+            }
+        )
+
+        event = queue.get_nowait()
+        assert event["type"] == "agents_changed"
+        assert event["data"]["event"] == "removed"
+        global_bus.unsubscribe(queue)
