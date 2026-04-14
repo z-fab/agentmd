@@ -26,6 +26,8 @@ async def pause_scheduler(request: Request):
     if not rt.scheduler:
         raise HTTPException(status_code=409, detail="No scheduler active")
     rt.scheduler.pause()
+    global_bus = request.app.state.global_event_bus
+    await global_bus.publish({"type": "scheduler_changed", "data": {"status": "paused"}})
     return {"status": "paused"}
 
 
@@ -35,4 +37,6 @@ async def resume_scheduler(request: Request):
     if not rt.scheduler:
         raise HTTPException(status_code=409, detail="No scheduler active")
     rt.scheduler.resume()
+    global_bus = request.app.state.global_event_bus
+    await global_bus.publish({"type": "scheduler_changed", "data": {"status": "running"}})
     return {"status": "running"}

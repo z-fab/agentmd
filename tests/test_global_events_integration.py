@@ -43,3 +43,37 @@ class TestExecutionGlobalEvents:
         assert event["data"]["status"] == "success"
         assert event["data"]["duration_ms"] == 3400
         global_bus.unsubscribe(queue)
+
+
+class TestSchedulerGlobalEvents:
+    async def test_scheduler_paused_published(self):
+        global_bus = GlobalEventBus()
+        queue = global_bus.subscribe()
+
+        await global_bus.publish(
+            {
+                "type": "scheduler_changed",
+                "data": {"status": "paused"},
+            }
+        )
+
+        event = queue.get_nowait()
+        assert event["type"] == "scheduler_changed"
+        assert event["data"]["status"] == "paused"
+        global_bus.unsubscribe(queue)
+
+    async def test_scheduler_resumed_published(self):
+        global_bus = GlobalEventBus()
+        queue = global_bus.subscribe()
+
+        await global_bus.publish(
+            {
+                "type": "scheduler_changed",
+                "data": {"status": "running"},
+            }
+        )
+
+        event = queue.get_nowait()
+        assert event["type"] == "scheduler_changed"
+        assert event["data"]["status"] == "running"
+        global_bus.unsubscribe(queue)
