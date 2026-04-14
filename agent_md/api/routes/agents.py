@@ -88,7 +88,7 @@ async def run_agent(name: str, request: Request, body: RunRequest | None = None)
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
 
     body = body or RunRequest()
-    arguments = "\n".join(body.args) if body.args else ""
+    arguments = body.args or []
 
     cancel_event = asyncio.Event()
     execution_id = await rt.db.create_execution(agent_id=config.name, trigger="manual", status="running")

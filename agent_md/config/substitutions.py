@@ -14,7 +14,7 @@ import subprocess
 
 def apply_substitutions(
     content: str,
-    arguments: str = "",
+    arguments: list[str] | str = "",
     cwd: str | None = None,
     extra_vars: dict[str, str] | None = None,
 ) -> str:
@@ -22,14 +22,19 @@ def apply_substitutions(
 
     Args:
         content: Raw text to process.
-        arguments: Positional arguments string (split on whitespace).
+        arguments: Positional arguments as a list or a single string.
         cwd: Working directory for `!`cmd`` execution. Defaults to "." if None.
         extra_vars: Dict of named variables substituted via ${NAME}.
 
     Returns:
         Processed content with all substitutions applied.
     """
-    arg_parts = arguments.split("\n") if arguments else []
+    if isinstance(arguments, list):
+        arg_parts = arguments
+        arguments_str = "\n".join(arguments)
+    else:
+        arg_parts = [arguments] if arguments else []
+        arguments_str = arguments
 
     def _get_arg(idx: int) -> str:
         return arg_parts[idx] if idx < len(arg_parts) else ""
@@ -44,8 +49,8 @@ def apply_substitutions(
     # $ARGUMENTS[N] (must come before plain $ARGUMENTS)
     result = re.sub(r"\$ARGUMENTS\[(\d+)\]", lambda m: _get_arg(int(m.group(1))), result)
 
-    # $ARGUMENTS — full string
-    result = result.replace("$ARGUMENTS", arguments)
+    # $ARGUMENTS — full string (joined by newline when from list)
+    result = result.replace("$ARGUMENTS", arguments_str)
 
     # $0..$9 — single digit shorthand, not followed by word char
     result = re.sub(r"\$(\d)(?!\w)", lambda m: _get_arg(int(m.group(1))), result)

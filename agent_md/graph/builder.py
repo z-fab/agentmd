@@ -85,7 +85,7 @@ def build_system_message(
     system_prompt: str,
     agent_config=None,
     path_context=None,
-    arguments: str = "",
+    arguments: list[str] | str = "",
     **kwargs,
 ) -> SystemMessage:
     """Build the system message for an agent, shared by run and chat modes."""
@@ -245,7 +245,7 @@ def _build_initial_state(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
-    arguments: str = "",
+    arguments: list[str] | str = "",
     **kwargs,
 ) -> AgentState:
     """Build the initial state dict for graph execution."""
@@ -264,7 +264,7 @@ async def run_agent_graph(
     agent_config=None,
     path_context=None,
     user_input: str = "Execute your task.",
-    arguments: str = "",
+    arguments: list[str] | str = "",
     **kwargs,
 ) -> dict:
     """Execute a compiled graph with the given prompts.
@@ -298,7 +298,7 @@ async def stream_agent_graph(
     path_context=None,
     user_input: str = "Execute your task.",
     config: dict | None = None,
-    arguments: str = "",
+    arguments: list[str] | str = "",
     **kwargs,
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution, yielding each message as it is produced.

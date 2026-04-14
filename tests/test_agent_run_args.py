@@ -9,7 +9,7 @@ def test_arguments_substituted_in_system_prompt():
         cfg.system_prompt,
         agent_config=cfg,
         path_context=None,
-        arguments="report.md\nverbose",
+        arguments=["report.md", "verbose"],
     )
     assert "Process file report.md with mode verbose" in msg.content
 

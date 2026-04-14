@@ -271,7 +271,7 @@ class AgentRunner:
         on_event=None,
         on_start=None,
         on_complete=None,
-        arguments: str = "",
+        arguments: list[str] | str = "",
         event_bus=None,
         global_event_bus=None,
         cancel_event: asyncio.Event | None = None,
