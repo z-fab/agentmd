@@ -7,7 +7,7 @@ from collections.abc import AsyncIterable
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
-from fastapi.sse import EventSourceResponse, ServerSentEvent  # noqa: F401 - EventSourceResponse used in response_class
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 router = APIRouter(prefix="/events", tags=["events"])
 
