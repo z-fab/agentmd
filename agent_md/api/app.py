@@ -31,6 +31,7 @@ async def _lifespan(app: FastAPI):
         on_start=state.on_start,
         on_complete=state.on_complete,
         event_bus=state.event_bus,
+        global_event_bus=state.global_event_bus,
         cancel_events=state.cancel_events,
     )
     state.runtime = rt

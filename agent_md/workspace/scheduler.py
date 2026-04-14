@@ -39,6 +39,7 @@ class AgentScheduler:
         on_complete=None,
         on_start=None,
         event_bus=None,
+        global_event_bus=None,
         cancel_events: dict | None = None,
     ):
         self.registry = registry
@@ -48,6 +49,7 @@ class AgentScheduler:
         self.on_complete = on_complete
         self.on_start = on_start
         self.event_bus = event_bus
+        self.global_event_bus = global_event_bus
         self.cancel_events = cancel_events if cancel_events is not None else {}
         self.scheduler = AsyncIOScheduler()
         self.observer = Observer()
@@ -124,6 +126,7 @@ class AgentScheduler:
                     on_start=self.on_start,
                     on_complete=self.on_complete,
                     event_bus=self.event_bus,
+                    global_event_bus=self.global_event_bus,
                     cancel_event=cancel_event,
                     execution_id=execution_id,
                 )
