@@ -271,11 +271,11 @@ class _AgentFileHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         if not event.is_directory and is_agent_file(Path(event.src_path)):
-            name = Path(event.src_path).stem
-            self.registry.remove(name)
-            self.scheduler.unschedule_agent(name)
-            logger.info(f"Agent file deleted: {name}")
-            self._publish_event("removed", name)
+            name = self.registry.remove_by_path(event.src_path)
+            if name:
+                self.scheduler.unschedule_agent(name)
+                logger.info(f"Agent file deleted: {name}")
+                self._publish_event("removed", name)
 
     def _reload(self, path: Path) -> None:
         try:
