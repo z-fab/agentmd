@@ -3,6 +3,12 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.2] — 2026-04-14
+
+### Fixed
+- **Full system prompt in execution logs** — system and human messages are no longer truncated to 500 chars in the database, storing the complete constructed prompt for debugging
+- **`logs -e -v` shows system prompt** — new `--verbose` / `-v` flag on `agentmd logs` expands the full system prompt in execution detail view instead of showing only the char count
+
 ## [0.12.1] — 2026-04-14
 
 ### Fixed
