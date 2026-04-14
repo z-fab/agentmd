@@ -193,8 +193,8 @@ class AgentRunner:
                 )
             return f"A file change was detected. Process it now.\n\n- {trigger_context}"
 
-        if trigger_type == "agent":
-            return "Execute your task."
+        if trigger_type == "agent" and trigger_context:
+            return f"Execute your task. ({trigger_context})"
 
         return "Execute your task."
 
