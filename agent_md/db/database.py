@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS executions (
     output_tokens INTEGER,
     total_tokens  INTEGER,
     cost_usd      REAL,
-    pid           INTEGER
+    pid           INTEGER,
+    parent_execution_id INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS execution_logs (
@@ -75,6 +76,7 @@ class Database:
             await self._db.execute("PRAGMA journal_mode=WAL")
             await self._db.executescript(SCHEMA)
             await self._db.commit()
+            await self._migrate(self._db)
         logger.info(f"Database connected: {self.db_path}")
 
     async def close(self) -> None:
@@ -89,16 +91,27 @@ class Database:
             raise RuntimeError("Database not connected. Call connect() first.")
         return self._db
 
+    async def _migrate(self, db: aiosqlite.Connection) -> None:
+        """Run schema migrations for columns added after initial release."""
+        cursor = await db.execute("PRAGMA table_info(executions)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "parent_execution_id" not in columns:
+            await db.execute("ALTER TABLE executions ADD COLUMN parent_execution_id INTEGER")
+            await db.commit()
+            logger.info("Migration: added parent_execution_id column to executions")
+
     # --- Executions ---
 
-    async def create_execution(self, agent_id: str, trigger: str, status: str = "running") -> int:
+    async def create_execution(
+        self, agent_id: str, trigger: str, status: str = "running", parent_execution_id: int | None = None
+    ) -> int:
         """Create a new execution record. Returns the execution ID."""
         import os
 
         now = datetime.now(timezone.utc).isoformat()
         cursor = await self.db.execute(
-            "INSERT INTO executions (agent_id, status, trigger, started_at, pid) VALUES (?, ?, ?, ?, ?)",
-            (agent_id, status, trigger, now, os.getpid()),
+            "INSERT INTO executions (agent_id, status, trigger, started_at, pid, parent_execution_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (agent_id, status, trigger, now, os.getpid(), parent_execution_id),
         )
         await self.db.commit()
         return cursor.lastrowid
