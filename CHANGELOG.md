@@ -3,6 +3,12 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.1] — 2026-04-14
+
+### Fixed
+- **System prompt now logged** — the fully constructed system prompt (with all substitutions, paths, agents) and user input are persisted to the execution log before streaming
+- **Arguments passed as list** — API and CLI now pass arguments as `list[str]` through the entire execution chain instead of joining into a string at the boundary. `$ARGUMENTS` joins with newline, `$ARGUMENTS[N]` and `$0..$9` access by index — preserving spaces within each argument value
+
 ## [0.12.0] — 2026-04-14
 
 ### Added
