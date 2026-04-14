@@ -368,6 +368,7 @@ class AgentRunner:
                         user_input=user_input,
                         config=graph_config,
                         arguments=arguments,
+                        registry=self.registry,
                     ):
                         log_id = await ex_logger.log_message(msg)
 

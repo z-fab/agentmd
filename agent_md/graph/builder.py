@@ -86,6 +86,7 @@ def build_system_message(
     agent_config=None,
     path_context=None,
     arguments: str = "",
+    **kwargs,
 ) -> SystemMessage:
     """Build the system message for an agent, shared by run and chat modes."""
     from agent_md.config.substitutions import apply_substitutions
@@ -103,6 +104,10 @@ def build_system_message(
             extra_info += "\n\n" + skills_prompt
         if agent_config.skills:
             extra_info += "\n\n" + _build_meta_messages_prompt()
+
+        agents_prompt = _build_agents_prompt(agent_config, kwargs.get("registry"))
+        if agents_prompt:
+            extra_info += "\n\n" + agents_prompt
 
     full_prompt = f"{extra_info}\n\n{system_prompt}"
 
@@ -195,6 +200,32 @@ def _build_skills_prompt(agent_config, path_context) -> str:
     )
 
 
+def _build_agents_prompt(agent_config, registry) -> str:
+    """Build the available agents section of the system prompt."""
+    if not agent_config.agents:
+        return ""
+    if registry is None:
+        return ""
+
+    entries = []
+    for name in agent_config.agents:
+        config = registry.get(name)
+        if config and config.enabled:
+            desc = config.description or "No description"
+            entries.append(f"- **{name}**: {desc}")
+
+    if not entries:
+        return ""
+
+    agents_list = "\n".join(entries)
+    return (
+        "## Available Agents\n\n"
+        "You can call other agents using the `run_agent` tool. "
+        "Pass the agent name and optional arguments.\n\n"
+        f"{agents_list}"
+    )
+
+
 def _build_meta_messages_prompt() -> str:
     """Build the meta messages section of the system prompt."""
     return (
@@ -215,9 +246,10 @@ def _build_initial_state(
     path_context=None,
     user_input: str = "Execute your task.",
     arguments: str = "",
+    **kwargs,
 ) -> AgentState:
     """Build the initial state dict for graph execution."""
-    system_msg = build_system_message(system_prompt, agent_config, path_context, arguments=arguments)
+    system_msg = build_system_message(system_prompt, agent_config, path_context, arguments=arguments, **kwargs)
     return {
         "messages": [
             system_msg,
@@ -233,6 +265,7 @@ async def run_agent_graph(
     path_context=None,
     user_input: str = "Execute your task.",
     arguments: str = "",
+    **kwargs,
 ) -> dict:
     """Execute a compiled graph with the given prompts.
 
@@ -246,7 +279,7 @@ async def run_agent_graph(
     Returns:
         The final state dict with all messages.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments)
+    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments, **kwargs)
     return await graph.ainvoke(initial_state)
 
 
@@ -266,6 +299,7 @@ async def stream_agent_graph(
     user_input: str = "Execute your task.",
     config: dict | None = None,
     arguments: str = "",
+    **kwargs,
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution, yielding each message as it is produced.
 
@@ -280,7 +314,7 @@ async def stream_agent_graph(
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments)
+    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments, **kwargs)
     async for msg in _stream_state(graph, initial_state, config=config):
         yield msg
 
