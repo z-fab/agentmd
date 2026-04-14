@@ -19,6 +19,13 @@ async def _lifespan(app: FastAPI):
     """Startup: bootstrap runtime. Shutdown: close everything."""
     state = app.state
 
+    # Guard: when two uvicorn servers share the same app (socket + TCP),
+    # each triggers lifespan independently. Only bootstrap once.
+    if getattr(state, "_bootstrapping", False) or getattr(state, "runtime", None) is not None:
+        yield
+        return
+    state._bootstrapping = True
+
     state.start_time = time.monotonic()
     state.shutdown_event = asyncio.Event()
     state.cancel_events: dict[int, asyncio.Event] = {}
