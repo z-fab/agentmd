@@ -11,12 +11,20 @@ from fastapi import FastAPI
 
 from agent_md.workspace.bootstrap import bootstrap
 from agent_md.execution.event_bus import EventBus
+from agent_md.execution.global_event_bus import GlobalEventBus
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Startup: bootstrap runtime. Shutdown: close everything."""
     state = app.state
+
+    # Guard: when two uvicorn servers share the same app (socket + TCP),
+    # each triggers lifespan independently. Only bootstrap once.
+    if getattr(state, "_bootstrapping", False) or getattr(state, "runtime", None) is not None:
+        yield
+        return
+    state._bootstrapping = True
 
     state.start_time = time.monotonic()
     state.shutdown_event = asyncio.Event()
@@ -30,6 +38,7 @@ async def _lifespan(app: FastAPI):
         on_start=state.on_start,
         on_complete=state.on_complete,
         event_bus=state.event_bus,
+        global_event_bus=state.global_event_bus,
         cancel_events=state.cancel_events,
     )
     state.runtime = rt
@@ -42,7 +51,7 @@ async def _lifespan(app: FastAPI):
     lifecycle.keep_alive = getattr(state, "keep_alive", False)
     lifecycle.has_scheduled_agents = lambda: bool(rt.scheduler and rt.scheduler.get_jobs())
     lifecycle.has_running_executions = lambda: bool(state.cancel_events)
-    lifecycle.has_active_streams = lambda: state.event_bus.stream_count > 0
+    lifecycle.has_active_streams = lambda: (state.event_bus.stream_count + state.global_event_bus.stream_count) > 0
     state.lifecycle = lifecycle
 
     lifecycle_task = asyncio.create_task(lifecycle.run())
@@ -66,7 +75,7 @@ def create_app(
     on_complete=None,
 ) -> FastAPI:
     """Build and return the FastAPI application."""
-    from agent_md.api.routes import info, agents, executions, scheduler
+    from agent_md.api.routes import info, agents, executions, scheduler, events
 
     app = FastAPI(
         title="AgentMD",
@@ -81,6 +90,7 @@ def create_app(
     app.state.on_start = on_start
     app.state.on_complete = on_complete
     app.state.event_bus = EventBus()
+    app.state.global_event_bus = GlobalEventBus()
 
     try:
         from importlib.metadata import version
@@ -93,5 +103,6 @@ def create_app(
     app.include_router(agents.router)
     app.include_router(executions.router)
     app.include_router(scheduler.router)
+    app.include_router(events.router)
 
     return app

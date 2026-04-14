@@ -62,6 +62,32 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 | POST | `/scheduler/pause` | Pause scheduler |
 | POST | `/scheduler/resume` | Resume scheduler |
 
+### Events
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/events/stream` | Global SSE event stream |
+
+**Event types:**
+
+| Event | When | Data fields |
+|-------|------|-------------|
+| `heartbeat` | 10s of inactivity | `timestamp` |
+| `execution_started` | Execution begins | `execution_id`, `agent_name`, `trigger` |
+| `execution_completed` | Execution finishes | `execution_id`, `agent_name`, `status`, `duration_ms` |
+| `agents_changed` | Agent file added/modified/deleted | `event` (`loaded`/`updated`/`removed`), `agent_name` |
+| `scheduler_changed` | Scheduler paused/resumed | `status` (`paused`/`running`) |
+
+**Connection:**
+```bash
+curl --unix-socket ~/.local/state/agentmd/agentmd.sock http://localhost/events/stream
+```
+
+**Notes:**
+- No reconnection replay — on reconnect, use REST endpoints to sync state
+- Heartbeat replaces `/health` polling — if the connection is alive, the backend is online
+- The SSE connection keeps the backend alive (counts as active stream for idle timeout)
+
 ## OpenAPI
 
 Interactive docs available at `/docs` (Swagger) and `/redoc` when the backend is running.

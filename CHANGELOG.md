@@ -3,6 +3,21 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.11.0] — 2026-04-13
+
+### Added
+- **Global SSE event stream** — single persistent `GET /events/stream` endpoint that broadcasts all backend state changes as Server-Sent Events, replacing polling-based sync for clients (#5)
+  - `heartbeat` — sent every 10s of inactivity, doubles as health signal
+  - `execution_started` / `execution_completed` — real-time execution lifecycle events
+  - `agents_changed` — agent file loaded, updated, or removed by file watcher
+  - `scheduler_changed` — scheduler paused or resumed
+  - No replay on reconnect — clients use existing REST endpoints to sync state
+  - SSE connection keeps backend alive (counts as active stream for idle timeout)
+- **`GlobalEventBus`** — lightweight in-memory pub/sub for system-wide events, separate from the per-execution `EventBus`
+
+### Fixed
+- **Double bootstrap on `--port`** — when running with `--port` (socket + TCP), the lifespan was triggered twice causing a watchdog `RuntimeError: Cannot add watch`. Now guarded to bootstrap only once.
+
 ## [0.10.0] — 2026-04-13
 
 ### Added

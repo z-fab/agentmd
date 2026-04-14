@@ -88,6 +88,7 @@ async def bootstrap(
     on_start=None,
     readonly: bool = False,
     event_bus=None,
+    global_event_bus=None,
     cancel_events: dict | None = None,
 ) -> Runtime:
     """Initialize all components and load agents from workspace.
@@ -216,6 +217,7 @@ async def bootstrap(
             on_complete=on_complete,
             on_start=on_start,
             event_bus=event_bus,
+            global_event_bus=global_event_bus,
             cancel_events=cancel_events if cancel_events is not None else {},
         )
         for config in registry.enabled():

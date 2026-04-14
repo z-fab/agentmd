@@ -108,6 +108,7 @@ async def _run_in_background(rt, config, execution_id, state, arguments, message
             trigger_type="manual",
             arguments=arguments,
             event_bus=state.event_bus,
+            global_event_bus=state.global_event_bus,
             cancel_event=cancel_event,
             execution_id=execution_id,
             user_message=message,

@@ -253,6 +253,7 @@ class AgentRunner:
         on_complete=None,
         arguments: str = "",
         event_bus=None,
+        global_event_bus=None,
         cancel_event: asyncio.Event | None = None,
         execution_id: int | None = None,
         user_message: str | None = None,
@@ -288,6 +289,19 @@ class AgentRunner:
             )
 
         ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=on_event)
+
+        if global_event_bus is not None:
+            await global_event_bus.publish(
+                {
+                    "type": "execution_started",
+                    "data": {
+                        "execution_id": execution_id,
+                        "agent_name": config.name,
+                        "trigger": trigger_type,
+                    },
+                }
+            )
+
         start_time = time.monotonic()
 
         # Token accumulators
@@ -429,6 +443,18 @@ class AgentRunner:
                     cost_usd=cost_usd,
                 )
                 result["output"] = output
+                if global_event_bus is not None:
+                    await global_event_bus.publish(
+                        {
+                            "type": "execution_completed",
+                            "data": {
+                                "execution_id": execution_id,
+                                "agent_name": config.name,
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms", 0),
+                            },
+                        }
+                    )
                 logger.info(
                     f"Execution complete: {config.name} — success in {duration_ms}ms "
                     f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
@@ -465,6 +491,18 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
+                if global_event_bus is not None:
+                    await global_event_bus.publish(
+                        {
+                            "type": "execution_completed",
+                            "data": {
+                                "execution_id": execution_id,
+                                "agent_name": config.name,
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms", 0),
+                            },
+                        }
+                    )
                 if event_bus is not None:
                     await event_bus.publish(
                         execution_id,
@@ -497,6 +535,18 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
+                if global_event_bus is not None:
+                    await global_event_bus.publish(
+                        {
+                            "type": "execution_completed",
+                            "data": {
+                                "execution_id": execution_id,
+                                "agent_name": config.name,
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms", 0),
+                            },
+                        }
+                    )
                 if event_bus is not None:
                     await event_bus.publish(
                         execution_id,
@@ -529,6 +579,18 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
+                if global_event_bus is not None:
+                    await global_event_bus.publish(
+                        {
+                            "type": "execution_completed",
+                            "data": {
+                                "execution_id": execution_id,
+                                "agent_name": config.name,
+                                "status": result["status"],
+                                "duration_ms": result.get("duration_ms", 0),
+                            },
+                        }
+                    )
                 if event_bus is not None:
                     await event_bus.publish(
                         execution_id,
