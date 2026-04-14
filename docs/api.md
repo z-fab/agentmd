@@ -52,6 +52,24 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 | GET | `/executions/{id}/stream` | SSE stream (catchup + live) |
 | DELETE | `/executions/{id}` | Cancel running execution |
 
+**Execution response fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int | Execution ID |
+| `agent_id` | string | Agent name |
+| `status` | string | `running`, `success`, `error`, `cancelled` |
+| `trigger` | string | `manual`, `schedule`, `watch`, `agent` |
+| `parent_execution_id` | int \| null | Parent execution ID when triggered by `run_agent` |
+| `started_at` | string | ISO 8601 timestamp |
+| `finished_at` | string \| null | ISO 8601 timestamp |
+| `duration_ms` | int \| null | Execution duration |
+| `total_tokens` | int \| null | Total token usage |
+| `cost_usd` | float \| null | Estimated cost |
+| `error` | string \| null | Error message if failed |
+
+The `agent` trigger type indicates the execution was started by another agent via the `run_agent` tool. Use `parent_execution_id` to trace delegation chains.
+
 **SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`
 
 ### Scheduler

@@ -3,6 +3,21 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.0] — 2026-04-14
+
+### Added
+- **`run_agent` built-in tool** — agents can now call other agents via a declared `agents` allowlist in frontmatter, enabling orchestration and ad-hoc delegation patterns
+  - Called agent runs as an independent execution with its own sandbox, limits, and token tracking
+  - Executions linked via `parent_execution_id` for traceability, trigger type `agent`
+  - Depth control prevents runaway chains (default: 3, configurable via `defaults.max_agent_depth` in config.yaml)
+  - Available agents and descriptions injected into system prompt automatically
+  - Arguments forwarded to child agent via `$ARGUMENTS` substitution
+- **`agents` frontmatter field** — allowlist of agent names this agent can call
+- **`parent_execution_id`** — new field in execution records linking child to parent execution
+
+### Fixed
+- **Agent deletion by filename** — file watcher now uses a path-to-name registry mapping instead of `Path.stem`, fixing deletion when agent `name` differs from filename
+
 ## [0.11.0] — 2026-04-13
 
 ### Added

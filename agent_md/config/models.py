@@ -158,6 +158,7 @@ class AgentConfig(BaseModel):
     custom_tools: list[str] = []
     mcp: list[str] = []
     skills: list[str] = []
+    agents: list[str] = []
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
     history: str = "low"  # 'low', 'medium', 'high', 'off'
@@ -215,6 +216,14 @@ class AgentConfig(BaseModel):
         if isinstance(v, str):
             return [v]
         return v
+
+    @field_validator("agents", mode="before")
+    @classmethod
+    def normalize_agents(cls, v):
+        """Accept a single string or a list of strings."""
+        if isinstance(v, str):
+            return [v]
+        return v if v else []
 
     @field_validator("paths", mode="before")
     @classmethod

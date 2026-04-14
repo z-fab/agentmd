@@ -113,12 +113,29 @@ def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
 class AgentRunner:
     """Executes agents and persists results to the database."""
 
-    def __init__(self, db: Database, mcp_manager: MCPManager, path_context: PathContext, db_path: str | None = None):
+    def __init__(
+        self,
+        db: Database,
+        mcp_manager: MCPManager,
+        path_context: PathContext,
+        db_path: str | None = None,
+        registry=None,
+    ):
         self.db = db
         self.mcp_manager = mcp_manager
         self.path_context = path_context
         self.db_path = db_path  # for creating AsyncSqliteSaver
+        self.registry = registry
         self._checkpoint_conns: list = []  # track aiosqlite connections for cleanup
+
+    @property
+    def _max_agent_depth(self) -> int:
+        try:
+            from agent_md.config.settings import settings
+
+            return settings.defaults_max_agent_depth
+        except Exception:
+            return 3
 
     async def aclose(self):
         """Close any open checkpoint database connections."""
@@ -193,9 +210,12 @@ class AgentRunner:
                 )
             return f"A file change was detected. Process it now.\n\n- {trigger_context}"
 
+        if trigger_type == "agent" and trigger_context:
+            return f"Execute your task. ({trigger_context})"
+
         return "Execute your task."
 
-    async def _build_graph(self, config: AgentConfig):
+    async def _build_graph(self, config: AgentConfig, **tool_kwargs):
         """Create model, resolve tools, and compile the graph."""
         from agent_md.config.models import HISTORY_LIMITS
 
@@ -206,7 +226,7 @@ class AgentRunner:
             base_url=config.model.base_url,
         )
 
-        tools = resolve_builtin_tools(config, self.path_context)
+        tools = resolve_builtin_tools(config, self.path_context, **tool_kwargs)
 
         if config.custom_tools:
             tools.extend(load_custom_tools(config.custom_tools, self.path_context.tools_dir))
@@ -257,6 +277,8 @@ class AgentRunner:
         cancel_event: asyncio.Event | None = None,
         execution_id: int | None = None,
         user_message: str | None = None,
+        depth: int = 0,
+        parent_execution_id: int | None = None,
     ) -> dict:
         """Execute an agent and persist the result.
 
@@ -286,6 +308,7 @@ class AgentRunner:
                 agent_id=config.name,
                 trigger=trigger_type,
                 status="running",
+                parent_execution_id=parent_execution_id,
             )
 
         ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=on_event)
@@ -316,7 +339,16 @@ class AgentRunner:
         try:
             try:
                 # 2. Build model + tools + graph
-                graph = await self._build_graph(config)
+                graph = await self._build_graph(
+                    config,
+                    registry=self.registry,
+                    runner=self,
+                    depth=depth,
+                    max_depth=self._max_agent_depth,
+                    parent_execution_id=execution_id,
+                    event_bus=event_bus,
+                    global_event_bus=global_event_bus,
+                )
 
                 # 3. Build user input with trigger context
                 user_input = self._build_user_input(trigger_type, trigger_context, config)
@@ -344,6 +376,7 @@ class AgentRunner:
                         user_input=user_input,
                         config=graph_config,
                         arguments=arguments,
+                        registry=self.registry,
                     ):
                         log_id = await ex_logger.log_message(msg)
 

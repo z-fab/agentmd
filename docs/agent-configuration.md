@@ -34,10 +34,10 @@ Your system prompt goes here...
 | **Pattern** | `^[a-zA-Z0-9_-]+$` |
 | **Default** | None |
 
-Unique identifier for the agent. Used in CLI commands, logs, and execution history.
+Unique identifier for the agent. This is the canonical name used everywhere: CLI commands, API, logs, SSE events, and the `agents` allowlist for delegation.
 
 - Must contain only alphanumeric characters, hyphens, and underscores
-- Used with `agentmd run <name>` and `agentmd logs <name>`
+- Used with `agentmd run <name>`, `agentmd logs <name>`, API endpoints, and agent-to-agent calls
 
 ```yaml
 name: file-summarizer
@@ -353,6 +353,27 @@ skills: review-code
 ```
 
 When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, and `skill_run_script`.
+
+### `agents`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string \| string[] |
+| **Required** | No |
+| **Default** | `[]` |
+
+List of agent names this agent is allowed to call via the `run_agent` tool. Agents are referenced by their frontmatter `name`. See [Agent Delegation](tools/run-agent.md) for full documentation.
+
+```yaml
+agents:
+  - web-researcher
+  - summarizer
+
+# Or single agent:
+agents: summarizer
+```
+
+When agents are configured, the `run_agent` tool is added automatically.
 
 ### `paths`
 

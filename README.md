@@ -28,6 +28,7 @@ No boilerplate. No frameworks to learn. Just Markdown.
 - **🔧 Built-in tools** — File I/O (read, write, edit, move, glob) and HTTP requests work out of the box
 - **🔌 MCP support** — Connect to any Model Context Protocol server
 - **📊 Execution tracking** — Every run logged with status, duration, token usage, and estimated cost
+- **🤖 Agent-to-agent delegation** — Agents can call other agents with allowlist control and depth limits
 - **🛡️ Execution limits** — Hard caps on tool calls, tokens, and cost to prevent runaway agents
 - **🌐 Real-time SSE event stream** — Subscribe to live execution and system events via `/events/stream`
 - **🎯 Git-friendly** — Version control your prompts. See exactly how they evolved.

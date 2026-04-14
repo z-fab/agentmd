@@ -71,6 +71,7 @@ class ExecutionSummary(BaseModel):
     total_tokens: int | None = None
     cost_usd: float | None = None
     error: str | None = None
+    parent_execution_id: int | None = None
 
 
 class ExecutionDetail(ExecutionSummary):

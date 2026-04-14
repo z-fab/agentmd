@@ -166,7 +166,7 @@ async def bootstrap(
 
     # Create core components
     registry = AgentRegistry()
-    runner = AgentRunner(db, mcp_manager, path_context, db_path=str(db_path))
+    runner = AgentRunner(db, mcp_manager, path_context, db_path=str(db_path), registry=registry)
     scheduler = None
 
     # Scan agents directory for .md files

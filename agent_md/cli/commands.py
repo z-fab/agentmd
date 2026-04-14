@@ -125,6 +125,7 @@ Optional:
 - settings: temperature, max_tokens, timeout
 - history: "low" (default, remembers last 10 messages), "medium" (50), "high" (200), "off"
 - paths: dict of alias: path pairs for directories the agent can access
+- agents: list of agent names this agent can call via run_agent tool (e.g. [summarizer, formatter])
 
 ## Agent capabilities
 
@@ -133,6 +134,7 @@ Agents have built-in tools for:
 - Searching for files using glob patterns
 - Making HTTP requests
 - Persistent memory across runs (save, append, retrieve by section)
+- Calling other agents via run_agent (requires agents field in frontmatter)
 
 Custom tools can be added in agents/_config/tools/.
 
@@ -222,6 +224,11 @@ def _ask_agent_details(agent_name: str) -> str:
         default="",
     )
 
+    agent_agents = Prompt.ask(
+        "  [cyan]Agents to call[/cyan] [dim](comma-separated agent names, or empty)[/dim]",
+        default="",
+    )
+
     # Build frontmatter
     lines = ["---", f"name: {agent_name}"]
     if description:
@@ -238,6 +245,12 @@ def _ask_agent_details(agent_name: str) -> str:
             if "=" in pair:
                 alias, path = pair.split("=", 1)
                 lines.append(f"  {alias.strip()}: {path.strip()}")
+    if agent_agents.strip():
+        lines.append("agents:")
+        for name in agent_agents.split(","):
+            name = name.strip()
+            if name:
+                lines.append(f"  - {name}")
     lines.append("---")
     lines.append("")
     lines.append(description or "You are a helpful assistant. Describe your task here.")

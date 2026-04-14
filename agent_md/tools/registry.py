@@ -8,7 +8,7 @@ from agent_md.tools.http import http_request
 _STATIC_TOOLS = [http_request]
 
 
-def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
+def resolve_builtin_tools(agent_config=None, path_context=None, **kwargs) -> list:
     """Return all built-in tools, ready to use.
 
     Context-aware tools (file_read, file_write, file_glob, memory_*, skill_*)
@@ -58,6 +58,23 @@ def resolve_builtin_tools(agent_config=None, path_context=None) -> list:
             tools.append(create_skill_read_file_tool(agent_config, path_context.skills_dir))
             tools.append(create_skill_run_script_tool(agent_config, path_context.skills_dir))
 
+        # Agent-calling tool — only when the agent has agents configured and context is available
+        if agent_config.agents and kwargs.get("registry") and kwargs.get("runner"):
+            from agent_md.tools.agents.run_agent import create_run_agent_tool
+
+            tools.append(
+                create_run_agent_tool(
+                    caller_config=agent_config,
+                    registry=kwargs.get("registry"),
+                    runner=kwargs.get("runner"),
+                    depth=kwargs.get("depth", 0),
+                    max_depth=kwargs.get("max_depth", 3),
+                    parent_execution_id=kwargs.get("parent_execution_id"),
+                    event_bus=kwargs.get("event_bus"),
+                    global_event_bus=kwargs.get("global_event_bus"),
+                )
+            )
+
     return tools
 
 
@@ -77,5 +94,6 @@ def list_builtin_tools() -> list[str]:
             "skill_use",
             "skill_read_file",
             "skill_run_script",
+            "run_agent",
         ]
     )
