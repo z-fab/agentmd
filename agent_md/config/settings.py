@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     defaults_max_tokens: int | None = None
     defaults_timeout: int | None = None
     defaults_history: str | None = None
+    defaults_max_agent_depth: int = 3
     log_level: str = "INFO"
 
     # --- Internal ---
@@ -157,6 +158,7 @@ class Settings(BaseSettings):
                 ("max_tokens", "defaults_max_tokens"),
                 ("timeout", "defaults_timeout"),
                 ("history", "defaults_history"),
+                ("max_agent_depth", "defaults_max_agent_depth"),
             ):
                 if key in defaults:
                     raw.setdefault(flat_key, defaults[key])
