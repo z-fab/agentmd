@@ -113,7 +113,14 @@ def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
 class AgentRunner:
     """Executes agents and persists results to the database."""
 
-    def __init__(self, db: Database, mcp_manager: MCPManager, path_context: PathContext, db_path: str | None = None, registry=None):
+    def __init__(
+        self,
+        db: Database,
+        mcp_manager: MCPManager,
+        path_context: PathContext,
+        db_path: str | None = None,
+        registry=None,
+    ):
         self.db = db
         self.mcp_manager = mcp_manager
         self.path_context = path_context
@@ -125,6 +132,7 @@ class AgentRunner:
     def _max_agent_depth(self) -> int:
         try:
             from agent_md.config.settings import settings
+
             return settings.defaults_max_agent_depth
         except Exception:
             return 3

@@ -23,14 +23,17 @@ def registry():
 
 def _make_runner(result=None):
     runner = AsyncMock()
-    runner.run = AsyncMock(return_value=result or {
-        "status": "success",
-        "output": "Task completed",
-        "execution_id": 10,
-        "duration_ms": 500,
-        "total_tokens": 1000,
-        "cost_usd": 0.005,
-    })
+    runner.run = AsyncMock(
+        return_value=result
+        or {
+            "status": "success",
+            "output": "Task completed",
+            "execution_id": 10,
+            "duration_ms": 500,
+            "total_tokens": 1000,
+            "cost_usd": 0.005,
+        }
+    )
     return runner
 
 
@@ -38,8 +41,11 @@ async def test_trigger_type_is_agent(registry):
     runner = _make_runner()
     orchestrator = registry.get("orchestrator")
     tool = create_run_agent_tool(
-        caller_config=orchestrator, registry=registry, runner=runner,
-        depth=0, max_depth=3,
+        caller_config=orchestrator,
+        registry=registry,
+        runner=runner,
+        depth=0,
+        max_depth=3,
     )
     await tool.ainvoke({"agent_name": "worker"})
     call_kwargs = runner.run.call_args.kwargs
@@ -51,8 +57,12 @@ async def test_parent_execution_id_is_callers_execution(registry):
     runner = _make_runner()
     orchestrator = registry.get("orchestrator")
     tool = create_run_agent_tool(
-        caller_config=orchestrator, registry=registry, runner=runner,
-        depth=0, max_depth=3, parent_execution_id=55,
+        caller_config=orchestrator,
+        registry=registry,
+        runner=runner,
+        depth=0,
+        max_depth=3,
+        parent_execution_id=55,
     )
     await tool.ainvoke({"agent_name": "worker"})
     call_kwargs = runner.run.call_args.kwargs
@@ -65,8 +75,11 @@ async def test_depth_chain_blocks_at_limit(registry):
 
     # Depth 2 should work
     tool = create_run_agent_tool(
-        caller_config=orchestrator, registry=registry, runner=runner,
-        depth=2, max_depth=3,
+        caller_config=orchestrator,
+        registry=registry,
+        runner=runner,
+        depth=2,
+        max_depth=3,
     )
     result = await tool.ainvoke({"agent_name": "worker"})
     assert result["status"] == "success"
@@ -74,26 +87,34 @@ async def test_depth_chain_blocks_at_limit(registry):
 
     # Depth 3 should be blocked
     tool = create_run_agent_tool(
-        caller_config=orchestrator, registry=registry, runner=runner,
-        depth=3, max_depth=3,
+        caller_config=orchestrator,
+        registry=registry,
+        runner=runner,
+        depth=3,
+        max_depth=3,
     )
     result = await tool.ainvoke({"agent_name": "worker"})
     assert "error" in result
 
 
 async def test_child_error_returned_to_parent(registry):
-    runner = _make_runner(result={
-        "status": "error",
-        "error": "Something went wrong",
-        "execution_id": 11,
-        "duration_ms": 50,
-        "total_tokens": 100,
-        "cost_usd": 0.001,
-    })
+    runner = _make_runner(
+        result={
+            "status": "error",
+            "error": "Something went wrong",
+            "execution_id": 11,
+            "duration_ms": 50,
+            "total_tokens": 100,
+            "cost_usd": 0.001,
+        }
+    )
     orchestrator = registry.get("orchestrator")
     tool = create_run_agent_tool(
-        caller_config=orchestrator, registry=registry, runner=runner,
-        depth=0, max_depth=3,
+        caller_config=orchestrator,
+        registry=registry,
+        runner=runner,
+        depth=0,
+        max_depth=3,
     )
     result = await tool.ainvoke({"agent_name": "worker"})
     assert result["status"] == "error"
@@ -104,8 +125,11 @@ async def test_arguments_forwarded(registry):
     runner = _make_runner()
     orchestrator = registry.get("orchestrator")
     tool = create_run_agent_tool(
-        caller_config=orchestrator, registry=registry, runner=runner,
-        depth=0, max_depth=3,
+        caller_config=orchestrator,
+        registry=registry,
+        runner=runner,
+        depth=0,
+        max_depth=3,
     )
     await tool.ainvoke({"agent_name": "worker", "arguments": "file.txt summarize"})
     call_kwargs = runner.run.call_args.kwargs

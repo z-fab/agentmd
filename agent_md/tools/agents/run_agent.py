@@ -72,8 +72,5 @@ def create_run_agent_tool(
     return StructuredTool.from_function(
         coroutine=_run_agent,
         name="run_agent",
-        description=(
-            f"Execute another agent and return its result. "
-            f"Allowed agents: {agent_names}"
-        ),
+        description=(f"Execute another agent and return its result. Allowed agents: {agent_names}"),
     )

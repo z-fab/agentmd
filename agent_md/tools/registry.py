@@ -62,16 +62,18 @@ def resolve_builtin_tools(agent_config=None, path_context=None, **kwargs) -> lis
         if agent_config.agents:
             from agent_md.tools.agents.run_agent import create_run_agent_tool
 
-            tools.append(create_run_agent_tool(
-                caller_config=agent_config,
-                registry=kwargs.get("registry"),
-                runner=kwargs.get("runner"),
-                depth=kwargs.get("depth", 0),
-                max_depth=kwargs.get("max_depth", 3),
-                parent_execution_id=kwargs.get("parent_execution_id"),
-                event_bus=kwargs.get("event_bus"),
-                global_event_bus=kwargs.get("global_event_bus"),
-            ))
+            tools.append(
+                create_run_agent_tool(
+                    caller_config=agent_config,
+                    registry=kwargs.get("registry"),
+                    runner=kwargs.get("runner"),
+                    depth=kwargs.get("depth", 0),
+                    max_depth=kwargs.get("max_depth", 3),
+                    parent_execution_id=kwargs.get("parent_execution_id"),
+                    event_bus=kwargs.get("event_bus"),
+                    global_event_bus=kwargs.get("global_event_bus"),
+                )
+            )
 
     return tools
 
