@@ -372,7 +372,15 @@ class AgentRunner:
 
                 # 4. Stream execution -- log each message in real time
                 last_ai_msg = None
-                graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else None
+                graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else {}
+
+                # Set recursion_limit high enough for max_tool_calls
+                from agent_md.graph.builder import compute_recursion_limit
+
+                has_post_tool = bool(config.skills and self.path_context and self.path_context.skills_dir.exists())
+                graph_config["recursion_limit"] = compute_recursion_limit(
+                    config.settings.max_tool_calls, has_post_tool
+                )
 
                 async def _stream():
                     nonlocal \

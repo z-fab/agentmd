@@ -32,6 +32,18 @@ def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, 
     return agent.compile(checkpointer=checkpointer)
 
 
+def compute_recursion_limit(max_tool_calls: int | None, has_post_tool_processor: bool) -> int:
+    """Derive LangGraph recursion_limit from max_tool_calls.
+
+    Each tool call cycle = 2 graph steps (agent→tools) or 3 with post_tool_processor.
+    LangGraph's default of 25 is too low for agents with max_tool_calls=50.
+    """
+    if max_tool_calls is None:
+        return 100
+    steps_per_cycle = 3 if has_post_tool_processor else 2
+    return max_tool_calls * steps_per_cycle + 5
+
+
 def _build_file_access_prompt(agent_config, path_context) -> str:
     """Build the file access section of the system prompt.
 
