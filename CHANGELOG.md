@@ -3,6 +3,11 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.12.3] — 2026-04-23
+
+### Fixed
+- **Graph recursion limit** — LangGraph's default `recursion_limit` of 25 was too low for agents with `max_tool_calls=50`, causing `GraphRecursionError` on complex executions. Now derived automatically from `max_tool_calls` setting.
+
 ## [0.12.2] — 2026-04-14
 
 ### Fixed
