@@ -64,7 +64,7 @@ class ExecutionLogger:
             human         — HumanMessage
             ai            — AI reasoning (with no tool calls)
             tool_call     — AI requesting a tool (one entry per call)
-            tool_response — Result returned by a tool
+            tool_result   — Result returned by a tool
             final_answer  — Last AI message (no tool calls)
         """
         msg_type = getattr(msg, "type", "unknown")
@@ -93,9 +93,9 @@ class ExecutionLogger:
             tool_content = _extract_text(getattr(msg, "content", ""))[:500]
             logger.info(f"[{self.agent_name}] 📎 {tool_name} → {tool_content[:100]}")
             self._emit(
-                "tool_response", {"tool_name": tool_name, "content": tool_content[:100], "agent_name": self.agent_name}
+                "tool_result", {"tool_name": tool_name, "content": tool_content[:100], "agent_name": self.agent_name}
             )
-            log_id = await self._persist("tool_response", f"{tool_name} — {tool_content}")
+            log_id = await self._persist("tool_result", f"{tool_name} — {tool_content}")
 
         # --- AI without tool calls (reasoning or final answer) ---
         elif msg_type == "ai":

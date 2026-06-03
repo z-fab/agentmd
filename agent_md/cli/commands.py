@@ -611,7 +611,7 @@ def _print_event(console, event_type: str, data: dict):
         elif content:
             # DB replay format: "file_write — args: {'path': '...'}"
             console.print(f"  [cyan]\U0001f527 >> {content[:120]}[/cyan]")
-    elif event_type in ("tool_result", "tool_response"):
+    elif event_type == "tool_result":
         tool_name = data.get("tool_name", "")
         result = content[:120].replace("\n", " ")
         if tool_name:

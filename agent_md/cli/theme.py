@@ -125,7 +125,7 @@ EVENT_DISPLAY: dict[str, tuple[str, str]] = {
     "human": ("\U0001f464", "dim"),
     "ai": ("\U0001f916", "cyan"),
     "tool_call": ("\U0001f527", "yellow"),
-    "tool_response": ("\U0001f4ce", "green"),
+    "tool_result": ("\U0001f4ce", "green"),
     "final_answer": ("\u2705", "bold green"),
 }
 
@@ -181,7 +181,7 @@ def print_agent_event(event_type: str, data: dict, *, include_final_answer: bool
     """Print a streaming agent event line. Used as ``on_event`` hook.
 
     Args:
-        event_type: Event type string (ai, tool_call, tool_response, final_answer).
+        event_type: Event type string (ai, tool_call, tool_result, final_answer).
         data: Event data dict with content/tool info.
         include_final_answer: When *False* the ``final_answer`` event is
             silently ignored (used by ``chat`` where the response is rendered
@@ -193,10 +193,10 @@ def print_agent_event(event_type: str, data: dict, *, include_final_answer: bool
     emoji, style = EVENT_DISPLAY.get(event_type, ("\u2753", "white"))
     indent = "    "  # 4-space indent for hierarchy under header
 
-    if event_type in ("ai", "tool_response"):
+    if event_type in ("ai", "tool_result"):
         limit = 200 if event_type == "ai" else 100
         content = sanitize_event_content(data.get("content", ""))[:limit]
-        label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_response" else ""
+        label = data.get("tool_name", "") + " \u2190 " if event_type == "tool_result" else ""
         line = f"{indent}[dim]{ts}[/dim]  [{style}]{emoji} {label}{content}[/{style}]"
         console.print(line, overflow="ellipsis", no_wrap=True, crop=True)
     elif event_type == "tool_call":
