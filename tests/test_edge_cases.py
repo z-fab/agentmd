@@ -267,12 +267,19 @@ def test_print_event_complete_not_handled():
     assert output.strip() == ""
 
 
-def test_print_event_tool_result_alias():
-    """tool_response alias for tool_result is handled the same way."""
+def test_print_event_tool_result():
+    """tool_result event renders with << marker and content."""
     data = {"content": "some tool output"}
-    output = _capture_print_event("tool_response", data)
+    output = _capture_print_event("tool_result", data)
     assert "<<" in output
     assert "some tool output" in output
+
+
+def test_print_event_tool_response_alias_removed():
+    """tool_response alias is no longer handled — produces no output."""
+    data = {"content": "some tool output"}
+    output = _capture_print_event("tool_response", data)
+    assert "<<" not in output
 
 
 # ---------------------------------------------------------------------------
