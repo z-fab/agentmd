@@ -1,5 +1,6 @@
-"""File tools — read, write, edit, glob, move."""
+"""File tools — read, write, edit, glob, move, delete."""
 
+from agent_md.tools.files.delete import create_file_delete_tool
 from agent_md.tools.files.edit import create_file_edit_tool
 from agent_md.tools.files.glob import create_file_glob_tool
 from agent_md.tools.files.move import create_file_move_tool
@@ -12,4 +13,5 @@ __all__ = [
     "create_file_edit_tool",
     "create_file_glob_tool",
     "create_file_move_tool",
+    "create_file_delete_tool",
 ]
