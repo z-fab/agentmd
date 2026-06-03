@@ -3,6 +3,18 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.0] — 2026-06-03
+
+### Fixed
+- **Path sandbox rejected dotted directory names** — agents could not write into declared `paths` whose folder name contained a dot (e.g. Obsidian vaults like `90. Arquivos`); the sandbox misclassified the directory as a file. Writes into such directories now work.
+
+### Added
+- **`file_delete` tool** — new built-in tool to delete a single file within the agent's allowed paths. Files only (no directories), graceful "not found" for missing files. Enabled by default. (#7)
+- **Full agent config in `GET /agents/{name}`** — the detail endpoint now exposes `paths`, `custom_tools`, `mcp`, `skills`, `trigger_every`, `trigger_cron`, `trigger_paths`, and `source_path`. (#4)
+
+### Changed
+- **Standardized tool-result event name** — the runtime now emits and persists `tool_result` consistently (previously `tool_response` in the DB/logger), matching the SSE stream. Delete the execution DB to drop stale `tool_response` rows. (#14)
+
 ## [0.12.3] — 2026-04-23
 
 ### Fixed
