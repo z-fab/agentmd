@@ -51,6 +51,14 @@ class AgentDetail(AgentSummary):
     next_run: str | None = None
     history: str
     settings: dict
+    paths: dict[str, str] = {}
+    custom_tools: list[str] = []
+    mcp: list[str] = []
+    skills: list[str] = []
+    trigger_every: str | None = None
+    trigger_cron: str | None = None
+    trigger_paths: list[str] = []
+    source_path: str | None = None
 
 
 class RunResponse(BaseModel):

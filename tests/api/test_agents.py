@@ -10,9 +10,14 @@ async def app_with_agents(tmp_path):
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
     (agents_dir / "test-agent.md").write_text(
-        "---\nname: test-agent\nmodel:\n  provider: google\n  name: gemini-2.5-flash\n---\nYou are a test agent.\n"
+        "---\n"
+        "name: test-agent\n"
+        "model:\n  provider: google\n  name: gemini-2.5-flash\n"
+        "tools: [file_read, file_write]\n"
+        "paths:\n  vault: ./my-vault\n"
+        "---\nYou are a test agent.\n"
     )
-    application = create_app(workspace=tmp_path, db_path=tmp_path / "test.db")
+    application = create_app(workspace=tmp_path, agents_dir=agents_dir, db_path=tmp_path / "test.db")
     async with application.router.lifespan_context(application):
         yield application
 
@@ -53,3 +58,21 @@ async def test_agent_runs_empty(client):
     resp = await client.get("/agents/test-agent/runs")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_get_agent_detail_exposes_full_config(client):
+    resp = await client.get("/agents/test-agent")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["custom_tools"] == ["file_read", "file_write"]
+    assert "vault" in data["paths"]
+    assert data["paths"]["vault"].endswith("my-vault")
+    assert data["mcp"] == []
+    assert data["skills"] == []
+    assert data["trigger_every"] is None
+    assert data["trigger_cron"] is None
+    assert data["trigger_paths"] == []
+    assert data["source_path"] is not None
+    assert data["source_path"].endswith("test-agent.md")

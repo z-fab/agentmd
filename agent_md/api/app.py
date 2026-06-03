@@ -32,6 +32,7 @@ async def _lifespan(app: FastAPI):
 
     rt = await bootstrap(
         workspace=state.workspace,
+        agents_dir=getattr(state, "agents_dir", None),
         db_path=getattr(state, "db_path", None),
         start_scheduler=state.start_scheduler,
         on_event=state.on_event,
@@ -68,6 +69,7 @@ async def _lifespan(app: FastAPI):
 
 def create_app(
     workspace: Path | None = None,
+    agents_dir: Path | None = None,
     db_path: Path | None = None,
     start_scheduler: bool = False,
     on_event=None,
@@ -84,6 +86,7 @@ def create_app(
     )
 
     app.state.workspace = workspace
+    app.state.agents_dir = agents_dir
     app.state.db_path = db_path
     app.state.start_scheduler = start_scheduler
     app.state.on_event = on_event

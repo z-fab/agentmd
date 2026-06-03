@@ -46,6 +46,11 @@ async def get_agent(name: str, request: Request):
     if rt.scheduler and config.trigger.type == "schedule":
         next_run = rt.scheduler.get_next_run(name)
 
+    resolved_paths = {
+        alias: str(rt.path_context.resolve_alias(alias, config))
+        for alias in config.paths
+    }
+
     return AgentDetail(
         name=config.name,
         description=config.description,
@@ -57,6 +62,14 @@ async def get_agent(name: str, request: Request):
         next_run=next_run,
         history=config.history,
         settings=config.settings.model_dump(),
+        paths=resolved_paths,
+        custom_tools=config.custom_tools,
+        mcp=config.mcp,
+        skills=config.skills,
+        trigger_every=config.trigger.every,
+        trigger_cron=config.trigger.cron,
+        trigger_paths=config.trigger.paths,
+        source_path=config.file_path or None,
     )
 
 
