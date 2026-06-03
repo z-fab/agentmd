@@ -61,19 +61,22 @@ def _find_env_files() -> list[str]:
     if global_env.is_file():
         files.append(str(global_env))
 
-    # Workspace: ~/agentmd/agents/_config/.env (or configured workspace)
-    # Try to read workspace from config.yaml to find the workspace .env
+    # Workspace: {workspace}/{agents_dir}/_config/.env (or configured workspace)
+    # Try to read workspace + agents_dir from config.yaml to find the workspace .env
     config_path = _get_config_path()
     workspace_path = _get_default_workspace()
+    agents_subdir = "agents"
     if config_path.is_file():
         try:
             raw = yaml.safe_load(config_path.read_text()) or {}
             if raw.get("workspace"):
                 workspace_path = Path(raw["workspace"]).expanduser()
+            if raw.get("agents_dir"):
+                agents_subdir = str(raw["agents_dir"])
         except Exception:
             pass
 
-    ws_env = workspace_path / "agents" / "_config" / ".env"
+    ws_env = workspace_path / agents_subdir / "_config" / ".env"
     if ws_env.is_file():
         files.append(str(ws_env))
 
@@ -111,9 +114,11 @@ class Settings(BaseSettings):
     workspace: str = ""
     agents_dir: str = "agents"
     db_path: str = ""
-    mcp_config: str = "agents/_config/mcp-servers.json"
-    tools_dir: str = "agents/_config/tools"
-    skills_dir: str = "agents/_config/skills"
+    # Empty by default → derived from agents_dir as {agents_dir}/_config/... in bootstrap.
+    # Set explicitly in config.yaml to override.
+    mcp_config: str = ""
+    tools_dir: str = ""
+    skills_dir: str = ""
     defaults_provider: str = "google"
     defaults_model: str = "gemini-2.5-flash"
     defaults_max_tool_calls: int | None = None

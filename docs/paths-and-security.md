@@ -38,7 +38,11 @@ Four paths can be configured:
 | `workspace` | Root directory for agents | `~/agentmd` |
 | `agents_dir` | Where `.md` files live | `{workspace}/agents` |
 | `db_path` | SQLite execution history | `{workspace}/data/agentmd.db` |
-| `mcp_config` | MCP servers file | `{agents_dir}/mcp-servers.json` |
+| `mcp_config` | MCP servers file | `{agents_dir}/_config/mcp-servers.json` |
+| `tools_dir` | Custom tool modules | `{agents_dir}/_config/tools` |
+| `skills_dir` | Skill directories | `{agents_dir}/_config/skills` |
+
+The `_config` directory (skills, tools, MCP config) lives **inside** `agents_dir`, so a custom `agents_dir` keeps everything together instead of creating a separate `agents/` folder. Each of `mcp_config`, `tools_dir`, and `skills_dir` can still be overridden explicitly in `config.yaml`.
 
 ### Configuration File
 
@@ -71,7 +75,9 @@ agentmd start \
 workspace     → ~/agentmd
 agents_dir    → {workspace}/agents
 db_path       → {workspace}/data/agentmd.db
-mcp_config    → {agents_dir}/mcp-servers.json
+mcp_config    → {agents_dir}/_config/mcp-servers.json
+tools_dir     → {agents_dir}/_config/tools
+skills_dir    → {agents_dir}/_config/skills
 ```
 
 ### Resolution Examples

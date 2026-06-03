@@ -8,6 +8,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 - **`agentmd info` shows database paths** — the configuration panel now displays the resolved execution DB (`Database`) and checkpoints DB (`Checkpoints DB`) paths, alongside the existing config/env/workspace entries. The DB location can be customized via `db_path` in `config.yaml` (absolute, or relative to the workspace); the checkpoints DB always sits beside it.
 
+### Fixed
+- **`_config` directory now follows `agents_dir`** — `tools_dir`, `skills_dir`, and `mcp_config` are now derived from the configured `agents_dir` (`{agents_dir}/_config/...`) by default, instead of a hardcoded `agents/_config/...`. With a custom `agents_dir` (e.g. `99. Agents`), agentmd no longer spawns a stray top-level `agents/` folder in the workspace; skills/tools/MCP config live inside the agents directory. Each path can still be overridden explicitly in `config.yaml`. The workspace `.env` lookup follows `agents_dir` too.
+
 ## [0.13.0] — 2026-06-03
 
 ### Fixed

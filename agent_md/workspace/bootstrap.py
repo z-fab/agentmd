@@ -97,7 +97,7 @@ async def bootstrap(
         workspace: Root workspace directory.
         agents_dir: Directory containing .md agent files. Defaults to {workspace}/agents.
         db_path: Path to SQLite database. Defaults to {workspace}/data/agentmd.db.
-        mcp_config: Path to MCP servers JSON config. Defaults to {agents_dir}/mcp-servers.json.
+        mcp_config: Path to MCP servers JSON config. Defaults to {agents_dir}/_config/mcp-servers.json.
         start_scheduler: Whether to start the scheduler and file watcher.
         on_event: Optional callback for real-time UI updates.
         on_complete: Optional callback when execution completes.
@@ -128,12 +128,19 @@ async def bootstrap(
             db_path = state_dir / "agentmd.db"
     db_path = db_path.resolve()
 
+    # The _config directory (skills, tools, mcp config) lives inside agents_dir by
+    # default, so a custom agents_dir keeps everything together instead of spawning a
+    # separate `agents/` folder. An explicit config.yaml value still overrides.
+    config_dir = agents_dir / "_config"
+
     if mcp_config is None:
-        mcp_config = _resolve_path(settings.mcp_config, workspace)
+        mcp_config = (
+            _resolve_path(settings.mcp_config, workspace) if settings.mcp_config else config_dir / "mcp-servers.json"
+        )
     mcp_config = mcp_config.resolve()
 
-    tools_dir = _resolve_path(settings.tools_dir, workspace)
-    skills_dir = _resolve_path(settings.skills_dir, workspace)
+    tools_dir = _resolve_path(settings.tools_dir, workspace) if settings.tools_dir else config_dir / "tools"
+    skills_dir = _resolve_path(settings.skills_dir, workspace) if settings.skills_dir else config_dir / "skills"
 
     path_context = PathContext(
         workspace_root=workspace,
