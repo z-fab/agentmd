@@ -57,6 +57,7 @@ Three types of tools available:
 **Built-in Tools** (always available):
 - `file_read` — Read files (with path validation)
 - `file_write` — Write/create files (with path validation)
+- `file_delete` — Delete a file (with path validation, files only)
 - `http_request` — Make HTTP GET/POST requests
 - `memory_save` / `memory_append` / `memory_retrieve` — Long-term memory
 - `skill_use` / `skill_read_file` / `skill_run_script` — Skills (when enabled)

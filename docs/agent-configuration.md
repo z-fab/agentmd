@@ -303,7 +303,7 @@ settings:
 | **Alias** | `custom_tools`, `tools` |
 | **Default** | `[]` |
 
-Custom tool modules to load from `workspace/tools/`. Built-in tools (`file_read`, `file_write`, `file_edit`, `file_glob`, `http_request`) are always available.
+Custom tool modules to load from `workspace/tools/`. Built-in tools (`file_read`, `file_write`, `file_edit`, `file_delete`, `file_glob`, `http_request`) are always available.
 
 ```yaml
 custom_tools:
