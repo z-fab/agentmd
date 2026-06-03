@@ -83,3 +83,29 @@ def test_validate_path_traversal_rejected(ctx, cfg_with_aliases):
     resolved, error = ctx.validate_path("{vault}/../../etc/passwd", cfg_with_aliases)
     assert resolved is None
     assert error is not None
+
+
+def test_validate_path_inside_dotted_dir(ctx, tmp_path):
+    """A declared path whose folder name contains a dot (e.g. Obsidian
+    '90. Arquivos') must still allow writes to files inside it."""
+    dotted = tmp_path / "90. Arquivos"
+    dotted.mkdir()
+    cfg = AgentConfig(name="t", paths={"jokes": str(dotted)})
+
+    resolved, error = ctx.validate_path("{jokes}/2026-06-02_18-55-07.txt", cfg)
+
+    assert error is None
+    assert resolved == (dotted / "2026-06-02_18-55-07.txt").resolve()
+
+
+def test_validate_path_outside_dotted_dir_still_rejected(ctx, tmp_path):
+    """The fix must not widen the sandbox: paths outside the dotted dir
+    are still rejected."""
+    dotted = tmp_path / "90. Arquivos"
+    dotted.mkdir()
+    cfg = AgentConfig(name="t", paths={"jokes": str(dotted)})
+
+    resolved, error = ctx.validate_path("/etc/passwd", cfg)
+
+    assert resolved is None
+    assert error is not None

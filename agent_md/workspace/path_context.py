@@ -130,11 +130,4 @@ class PathContext:
             return False
 
     def _is_within_any(self, path: Path, directories: list[Path]) -> bool:
-        for d in directories:
-            if d.is_file() or d.suffix:
-                if path == d:
-                    return True
-            else:
-                if self._is_within(path, d):
-                    return True
-        return False
+        return any(path == d or self._is_within(path, d) for d in directories)
