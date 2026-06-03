@@ -46,10 +46,7 @@ async def get_agent(name: str, request: Request):
     if rt.scheduler and config.trigger.type == "schedule":
         next_run = rt.scheduler.get_next_run(name)
 
-    resolved_paths = {
-        alias: str(rt.path_context.resolve_alias(alias, config))
-        for alias in config.paths
-    }
+    resolved_paths = {alias: str(rt.path_context.resolve_alias(alias, config)) for alias in config.paths}
 
     return AgentDetail(
         name=config.name,

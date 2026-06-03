@@ -75,7 +75,9 @@ async def test_logger_tool_message_emits_tool_result():
     assert "tool_result" in event_types, f"Expected 'tool_result' in emitted events, got {event_types}"
     assert "tool_response" not in event_types, f"'tool_response' must not be emitted, got {event_types}"
 
-    persisted_types = [call.kwargs.get("event_type", call.args[1] if len(call.args) > 1 else None)
-                       for call in db.add_log.call_args_list]
+    persisted_types = [
+        call.kwargs.get("event_type", call.args[1] if len(call.args) > 1 else None)
+        for call in db.add_log.call_args_list
+    ]
     assert "tool_result" in persisted_types, f"Expected 'tool_result' persisted, got {persisted_types}"
     assert "tool_response" not in persisted_types, f"'tool_response' must not be persisted, got {persisted_types}"
