@@ -3,6 +3,11 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.13.1] — 2026-06-03
+
+### Added
+- **`agentmd info` shows database paths** — the configuration panel now displays the resolved execution DB (`Database`) and checkpoints DB (`Checkpoints DB`) paths, alongside the existing config/env/workspace entries. The DB location can be customized via `db_path` in `config.yaml` (absolute, or relative to the workspace); the checkpoints DB always sits beside it.
+
 ## [0.13.0] — 2026-06-03
 
 ### Fixed
