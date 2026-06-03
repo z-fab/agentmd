@@ -114,6 +114,24 @@ def _create_workspace(workspace: Path, provider: str, model: str):
         mcp.write_text("{}\n")
 
 
+def _effective_db_paths(db_path_setting: str, workspace: Path) -> tuple[Path, Path]:
+    """Resolve the effective execution DB and checkpoints DB paths.
+
+    Mirrors bootstrap's resolution: an explicit ``db_path`` wins (absolute kept
+    as-is, relative resolved against the workspace); otherwise the XDG state dir
+    is used. The checkpoints DB always sits beside the execution DB.
+    """
+    from agent_md.config.settings import get_state_dir
+
+    if db_path_setting:
+        candidate = Path(db_path_setting).expanduser()
+        db_path = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
+    else:
+        db_path = (get_state_dir() / "agentmd.db").resolve()
+    checkpoints_path = Path(str(db_path).replace(".db", "_checkpoints.db"))
+    return db_path, checkpoints_path
+
+
 def _build_config_panel():
     """Build a Rich Panel showing the current effective configuration."""
     from agent_md.config.settings import Settings, _ensure_default_config, _find_env_files
@@ -141,9 +159,13 @@ def _build_config_panel():
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
+    db_path, checkpoints_path = _effective_db_paths(current.db_path, ws_path)
+
     table.add_row("Config file", str(config_yaml) if config_yaml else "[yellow]not found[/]")
     table.add_row("Env file", str(Path(env_file).resolve()) if env_file else "[yellow]not found[/]")
     table.add_row("Workspace", str(ws_path))
+    table.add_row("Database", str(db_path))
+    table.add_row("Checkpoints DB", str(checkpoints_path))
     table.add_row("Default model", f"{current.defaults_provider} / {current.defaults_model}")
     table.add_row("API keys", ", ".join(providers) if providers else "[yellow]none configured[/]")
 
