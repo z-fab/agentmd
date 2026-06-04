@@ -3,6 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 from agent_md.api.app import create_app
+from agent_md.config.icons import AGENT_EMOJI_PALETTE, resolve_agent_icon
 
 
 @pytest.fixture
@@ -108,14 +109,17 @@ async def test_list_agents_icon_value_round_trips(client):
 
 
 @pytest.mark.asyncio
-async def test_list_agents_icon_none_for_agent_without_icon(client):
-    """Agent without icon returns None for icon in GET /agents."""
+async def test_list_agents_icon_resolved_for_agent_without_icon(client):
+    """Agent without icon returns a resolved palette emoji (not None) in GET /agents."""
     resp = await client.get("/agents")
     assert resp.status_code == 200
     agents = resp.json()
     test_agent = next((a for a in agents if a["name"] == "test-agent"), None)
     assert test_agent is not None
-    assert test_agent["icon"] is None
+    assert test_agent["icon"] is not None
+    assert test_agent["icon"] != ""
+    assert test_agent["icon"] in AGENT_EMOJI_PALETTE
+    assert test_agent["icon"] == resolve_agent_icon("test-agent", None)
 
 
 @pytest.mark.asyncio
@@ -128,9 +132,12 @@ async def test_get_agent_detail_icon_round_trips(client):
 
 
 @pytest.mark.asyncio
-async def test_get_agent_detail_icon_none_when_absent(client):
-    """Agent without icon returns None for icon in GET /agents/{name}."""
+async def test_get_agent_detail_icon_resolved_when_absent(client):
+    """Agent without icon returns a resolved palette emoji (not None) in GET /agents/{name}."""
     resp = await client.get("/agents/test-agent")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["icon"] is None
+    assert data["icon"] is not None
+    assert data["icon"] != ""
+    assert data["icon"] in AGENT_EMOJI_PALETTE
+    assert data["icon"] == resolve_agent_icon("test-agent", None)

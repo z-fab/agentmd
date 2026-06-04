@@ -6,6 +6,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 
+from agent_md.config.icons import resolve_agent_icon
 from agent_md.api.schemas import (
     AgentDetail,
     AgentSummary,
@@ -25,7 +26,7 @@ async def list_agents(request: Request):
         AgentSummary(
             name=c.name,
             description=c.description,
-            icon=c.icon,
+            icon=resolve_agent_icon(c.name, c.icon),
             enabled=c.enabled,
             trigger_type=c.trigger.type,
             model_provider=c.model.provider if c.model else None,
@@ -52,7 +53,7 @@ async def get_agent(name: str, request: Request):
     return AgentDetail(
         name=config.name,
         description=config.description,
-        icon=config.icon,
+        icon=resolve_agent_icon(config.name, config.icon),
         enabled=config.enabled,
         trigger_type=config.trigger.type,
         model_provider=config.model.provider if config.model else None,
