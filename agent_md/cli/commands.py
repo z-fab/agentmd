@@ -1173,7 +1173,9 @@ def respond(
         console.print("[green]Response sent.[/green]")
         return
 
-    r = client.post(f"/executions/{execution_id}/respond", json={"request_id": payload["request_id"], "response": response})
+    r = client.post(
+        f"/executions/{execution_id}/respond", json={"request_id": payload["request_id"], "response": response}
+    )
     if r.status_code == 200:
         console.print("[green]Response sent.[/green]")
     else:

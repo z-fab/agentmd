@@ -1,4 +1,3 @@
-import pytest
 from agent_md.config.models import AgentConfig
 from agent_md.db.database import Database
 

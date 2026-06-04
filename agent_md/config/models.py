@@ -21,6 +21,7 @@ def effective_confirm_tools(config, defaults: list[str] | None = None) -> set[st
         return set()
     return base - set(aa)
 
+
 RESERVED_ALIASES = {"workspace", "skill_dir", "today", "now", "agents", "tools", "skills"}
 
 ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -276,8 +277,7 @@ class AgentConfig(BaseModel):
             raise ValueError("Agent name must be non-empty and have no leading/trailing spaces.")
         if not re.match(r"^[\w \-]+$", v, re.UNICODE):
             raise ValueError(
-                "Agent name may contain only letters, numbers, spaces, hyphens, and underscores. "
-                f"Got: '{v}'"
+                f"Agent name may contain only letters, numbers, spaces, hyphens, and underscores. Got: '{v}'"
             )
         return v
 

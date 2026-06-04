@@ -57,7 +57,12 @@ async def sweep_old_checkpoints(db, db_path: str | Path, retention_days: int) ->
 async def checkpoint_stats(db, db_path: str | Path) -> dict:
     """Return {agent_id: thread_count} and total file size in bytes."""
     cp_path = checkpoint_db_path(db_path)
-    stats = {"path": str(cp_path), "size_bytes": cp_path.stat().st_size if cp_path.exists() else 0, "threads": 0, "per_agent": {}}
+    stats = {
+        "path": str(cp_path),
+        "size_bytes": cp_path.stat().st_size if cp_path.exists() else 0,
+        "threads": 0,
+        "per_agent": {},
+    }
     if not cp_path.exists():
         return stats
     async with aiosqlite.connect(str(cp_path)) as conn:

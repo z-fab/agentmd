@@ -79,6 +79,7 @@ async def test_stream_emits_waiting_frame(app_client):
 async def test_run_skipped_when_waiting(app_client):
     app, client = app_client
     from agent_md.config.models import AgentConfig
+
     cfg = AgentConfig(name="busy", model={"provider": "google", "name": "x"}, on_pending="skip")
     app.state.runtime.registry.register(cfg)
     await app.state.db.create_execution("busy", "manual", status="waiting")
@@ -89,6 +90,7 @@ async def test_run_skipped_when_waiting(app_client):
 async def test_respond_without_live_task_rebuilds(app_client, monkeypatch):
     app, client = app_client
     from agent_md.config.models import AgentConfig
+
     cfg = AgentConfig(name="rec", model={"provider": "google", "name": "x"})
     app.state.runtime.registry.register(cfg)
     ex = await app.state.db.create_execution("rec", "manual", status="waiting")
@@ -105,5 +107,6 @@ async def test_respond_without_live_task_rebuilds(app_client, monkeypatch):
     r = await client.post(f"/executions/{ex}/respond", json={"request_id": "r1", "response": {"approved": True}})
     assert r.status_code == 200
     import asyncio
+
     await asyncio.sleep(0.05)
     assert captured["ok"][0] == "rec"

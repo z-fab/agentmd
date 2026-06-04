@@ -1,5 +1,5 @@
 import pytest
-from agent_md.config.models import AgentConfig
+from agent_md.config.models import AgentConfig, effective_confirm_tools
 
 
 def _cfg(**kw):
@@ -46,9 +46,6 @@ def test_confirm_single_string_coerced():
 
 def test_auto_approve_single_string_coerced():
     assert _cfg(auto_approve="file_write").auto_approve == ["file_write"]
-
-
-from agent_md.config.models import effective_confirm_tools
 
 
 def test_effective_set_union_minus():

@@ -109,11 +109,16 @@ async def test_run_pauses_then_resume_completes(tmp_path, monkeypatch):
 
     db = Database(tmp_path / "t.db")
     await db.connect()
-    pc = PathContext(workspace_root=tmp_path, agents_dir=tmp_path, db_path=tmp_path / "t.db",
-                     mcp_config=tmp_path / "m.json", tools_dir=tmp_path, skills_dir=tmp_path)
+    pc = PathContext(
+        workspace_root=tmp_path,
+        agents_dir=tmp_path,
+        db_path=tmp_path / "t.db",
+        mcp_config=tmp_path / "m.json",
+        tools_dir=tmp_path,
+        skills_dir=tmp_path,
+    )
     runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
-    config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off",
-                         confirm=["file_delete"])
+    config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off", confirm=["file_delete"])
     fake_model = _FakeModel()
     monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: fake_model)
 
@@ -137,12 +142,17 @@ async def test_resume_twice_second_is_skipped(tmp_path, monkeypatch):
 
     db = Database(tmp_path / "t.db")
     await db.connect()
-    pc = PathContext(workspace_root=tmp_path, agents_dir=tmp_path, db_path=tmp_path / "t.db",
-                     mcp_config=tmp_path / "m.json", tools_dir=tmp_path, skills_dir=tmp_path)
+    pc = PathContext(
+        workspace_root=tmp_path,
+        agents_dir=tmp_path,
+        db_path=tmp_path / "t.db",
+        mcp_config=tmp_path / "m.json",
+        tools_dir=tmp_path,
+        skills_dir=tmp_path,
+    )
     runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
     fake_model = _FakeModel()
-    config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off",
-                         confirm=["file_delete"])
+    config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off", confirm=["file_delete"])
     monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: fake_model)
 
     ex = await db.create_execution("del", "manual")
@@ -163,11 +173,22 @@ async def test_confirm_timeout_denies(tmp_path, monkeypatch):
 
     db = Database(tmp_path / "t.db")
     await db.connect()
-    pc = PathContext(workspace_root=tmp_path, agents_dir=tmp_path, db_path=tmp_path / "t.db",
-                     mcp_config=tmp_path / "m.json", tools_dir=tmp_path, skills_dir=tmp_path)
+    pc = PathContext(
+        workspace_root=tmp_path,
+        agents_dir=tmp_path,
+        db_path=tmp_path / "t.db",
+        mcp_config=tmp_path / "m.json",
+        tools_dir=tmp_path,
+        skills_dir=tmp_path,
+    )
     runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
-    config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off",
-                         confirm=["file_delete"], confirm_timeout="1s")
+    config = AgentConfig(
+        name="del",
+        model={"provider": "google", "name": "x"},
+        history="off",
+        confirm=["file_delete"],
+        confirm_timeout="1s",
+    )
     fake_model = _FakeModel()
     monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: fake_model)
 
@@ -176,6 +197,7 @@ async def test_confirm_timeout_denies(tmp_path, monkeypatch):
     assert res["status"] == "waiting"
 
     import asyncio
+
     await asyncio.sleep(1.5)  # let the deny-on-timeout fire and resume
     e = await db.get_execution(ex)
     assert e.status == "success"  # denied tool returns message, agent finishes

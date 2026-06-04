@@ -223,6 +223,7 @@ class AgentRunner:
 
         secs = self._parse_timeout_seconds(config.confirm_timeout)
         if secs is not None:
+
             async def _deny_after():
                 await asyncio.sleep(secs)
                 still = await self.db.get_pending_interrupt(execution_id)
@@ -231,8 +232,11 @@ class AgentRunner:
                     deny = {"approved": False, "reason": "confirm_timeout", "text": "", "selected": []}
                     self._timeout_tasks.pop(execution_id, None)
                     await self.resume(
-                        config, execution_id, deny,
-                        event_bus=event_bus, global_event_bus=global_event_bus,
+                        config,
+                        execution_id,
+                        deny,
+                        event_bus=event_bus,
+                        global_event_bus=global_event_bus,
                     )
 
             self._timeout_tasks[execution_id] = asyncio.create_task(_deny_after())
@@ -485,9 +489,7 @@ class AgentRunner:
                 from agent_md.graph.builder import compute_recursion_limit
 
                 has_post_tool = bool(config.skills and self.path_context and self.path_context.skills_dir.exists())
-                graph_config["recursion_limit"] = compute_recursion_limit(
-                    config.settings.max_tool_calls, has_post_tool
-                )
+                graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
 
                 async def _stream():
                     nonlocal \
@@ -617,7 +619,9 @@ class AgentRunner:
                 return result
 
             except GraphPaused as paused:
-                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus)
+                await self._enter_waiting(
+                    execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus
+                )
                 if global_event_bus is not None:
                     await global_event_bus.publish(
                         {
@@ -766,7 +770,9 @@ class AgentRunner:
             try:
                 await asyncio.wait_for(_drive(), timeout=config.settings.timeout)
             except GraphPaused as paused:
-                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus)
+                await self._enter_waiting(
+                    execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus
+                )
                 return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
 
             duration_ms = int((time.monotonic() - start_time) * 1000)

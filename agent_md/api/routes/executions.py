@@ -242,8 +242,11 @@ async def _dispatch_resume(state, execution_id: int, response) -> None:
     async def _bg():
         try:
             await rt.runner.resume(
-                config, execution_id, response,
-                event_bus=state.event_bus, global_event_bus=state.global_event_bus,
+                config,
+                execution_id,
+                response,
+                event_bus=state.event_bus,
+                global_event_bus=state.global_event_bus,
                 cancel_event=cancel_event,
             )
         finally:

@@ -25,7 +25,13 @@ def test_prompt_and_respond_confirm(monkeypatch):
 
     monkeypatch.setattr(typer, "confirm", lambda *a, **k: True)
     client = _FakeClient()
-    payload = {"request_id": "r1", "kind": "confirm", "message": "Delete?", "tool_name": "file_delete", "tool_args": {"path": "/x"}}
+    payload = {
+        "request_id": "r1",
+        "kind": "confirm",
+        "message": "Delete?",
+        "tool_name": "file_delete",
+        "tool_args": {"path": "/x"},
+    }
     commands._prompt_and_respond(client, 7, Console(), payload)
     assert client.posted[0][0] == "/executions/7/respond"
     assert client.posted[0][1] == {"request_id": "r1", "response": {"approved": True}}

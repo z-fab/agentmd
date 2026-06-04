@@ -64,7 +64,13 @@ def test_ask_user_registered():
     from pathlib import Path
 
     cfg = AgentConfig(name="a", model={"provider": "google", "name": "x"})
-    pc = PathContext(workspace_root=Path("/tmp"), agents_dir=Path("/tmp"), db_path=Path("/tmp/x.db"),
-                     mcp_config=Path("/tmp/m.json"), tools_dir=Path("/tmp"), skills_dir=Path("/tmp"))
+    pc = PathContext(
+        workspace_root=Path("/tmp"),
+        agents_dir=Path("/tmp"),
+        db_path=Path("/tmp/x.db"),
+        mcp_config=Path("/tmp/m.json"),
+        tools_dir=Path("/tmp"),
+        skills_dir=Path("/tmp"),
+    )
     names = {t.name for t in resolve_builtin_tools(cfg, pc)}
     assert "ask_user" in names

@@ -38,7 +38,7 @@ async def test_set_pending_replaces(db):
 
 async def test_claim_execution_for_resume_is_atomic(db):
     ex = await db.create_execution("a", "manual", status="waiting")
-    assert await db.claim_execution_for_resume(ex) is True   # first wins
+    assert await db.claim_execution_for_resume(ex) is True  # first wins
     assert await db.claim_execution_for_resume(ex) is False  # second loses (already running)
     e = await db.get_execution(ex)
     assert e.status == "running"

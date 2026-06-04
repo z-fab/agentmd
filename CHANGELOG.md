@@ -3,6 +3,21 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.0] — 2026-06-04
+
+### Added
+- **Human-in-the-loop (HILT):** agents can pause to ask the user for confirmation, free-text input, or a choice, then resume.
+  - Built-in tools `file_delete` and `file_write` ask for confirmation by default (configurable via `defaults.confirm_tools`).
+  - New agent config: `confirm` (guard extra tools), `auto_approve` (skip confirmation; `"*"` disables all), `on_pending` (`skip`/`parallel`), `confirm_timeout` (auto-deny after a delay; default none).
+  - New built-in tool `ask_user` and SDK primitives `request_confirmation` / `request_input` / `request_choice` for custom tools.
+  - Survives backend restart: paused executions resume when answered.
+  - API: `interrupt` SSE event, `POST /executions/{id}/respond`, `GET /executions/{id}/pending`.
+  - CLI: inline prompt during `agentmd run`, plus `agentmd pending` and `agentmd respond`.
+- **Checkpoint cleanup** (issue #12): startup retention sweep (`defaults.checkpoint_retention_days`, default 30) and `agentmd checkpoint --stats/--purge/--agent/--force`.
+
+### Changed
+- The LangGraph checkpointer is now always on (durability substrate for HILT). `history` only controls how much prior context is seeded into a new run; each execution uses its own checkpoint thread.
+
 ## [0.14.0] — 2026-06-03
 
 ### Added
