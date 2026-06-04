@@ -8,7 +8,7 @@ from typing import Optional
 
 import aiosqlite
 
-from agent_md.db.models import ExecutionRecord, LogRecord
+from agent_md.db.models import ExecutionRecord, LogRecord, PendingInterruptRecord
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS execution_logs (
 CREATE INDEX IF NOT EXISTS idx_executions_agent ON executions(agent_id);
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_logs_execution ON execution_logs(execution_id);
+
+CREATE TABLE IF NOT EXISTS pending_interrupts (
+    execution_id INTEGER PRIMARY KEY,
+    request_id   TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at   TIMESTAMP NOT NULL
+);
 """
 
 
@@ -247,3 +254,38 @@ class Database:
         )
         rows = await cursor.fetchall()
         return [LogRecord(**dict(row)) for row in rows]
+
+    # --- Pending interrupts (HILT) ---
+
+    async def set_pending_interrupt(self, execution_id: int, request_id: str, payload: dict) -> None:
+        """Insert or replace the pending interrupt for an execution."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self.db.execute(
+            """
+            INSERT INTO pending_interrupts (execution_id, request_id, payload_json, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(execution_id) DO UPDATE SET
+                request_id = excluded.request_id,
+                payload_json = excluded.payload_json,
+                created_at = excluded.created_at
+            """,
+            (execution_id, request_id, json.dumps(payload), now),
+        )
+        await self.db.commit()
+
+    async def get_pending_interrupt(self, execution_id: int) -> Optional[PendingInterruptRecord]:
+        cursor = await self.db.execute(
+            "SELECT * FROM pending_interrupts WHERE execution_id = ?",
+            (execution_id,),
+        )
+        row = await cursor.fetchone()
+        return PendingInterruptRecord(**dict(row)) if row else None
+
+    async def list_pending_interrupts(self) -> list[PendingInterruptRecord]:
+        cursor = await self.db.execute("SELECT * FROM pending_interrupts ORDER BY created_at ASC")
+        rows = await cursor.fetchall()
+        return [PendingInterruptRecord(**dict(row)) for row in rows]
+
+    async def clear_pending_interrupt(self, execution_id: int) -> None:
+        await self.db.execute("DELETE FROM pending_interrupts WHERE execution_id = ?", (execution_id,))
+        await self.db.commit()
