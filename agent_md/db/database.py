@@ -305,3 +305,10 @@ class Database:
     async def clear_pending_interrupt(self, execution_id: int) -> None:
         await self.db.execute("DELETE FROM pending_interrupts WHERE execution_id = ?", (execution_id,))
         await self.db.commit()
+
+    async def has_waiting_execution(self, agent_id: str) -> bool:
+        cursor = await self.db.execute(
+            "SELECT 1 FROM executions WHERE agent_id = ? AND status = 'waiting' LIMIT 1",
+            (agent_id,),
+        )
+        return await cursor.fetchone() is not None

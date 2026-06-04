@@ -75,3 +75,13 @@ async def test_stream_emits_waiting_frame(app_client):
                 break
     assert "interrupt" in seen_events
     assert "waiting" in seen_events
+
+
+async def test_run_skipped_when_waiting(app_client):
+    app, client = app_client
+    from agent_md.config.models import AgentConfig
+    cfg = AgentConfig(name="busy", model={"provider": "google", "name": "x"}, on_pending="skip")
+    app.state.runtime.registry.register(cfg)
+    await app.state.db.create_execution("busy", "manual", status="waiting")
+    r = await client.post("/agents/busy/run", json={})
+    assert r.status_code == 409

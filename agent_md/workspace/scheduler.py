@@ -111,6 +111,9 @@ class AgentScheduler:
         """Callback for scheduled execution."""
         config = self.registry.get(agent_id)
         if config and config.enabled:
+            if config.on_pending == "skip" and await self.runner.db.has_waiting_execution(config.name):
+                logger.info(f"Skipping '{agent_id}': a session is waiting for a response")
+                return
             cancel_event = asyncio.Event()
             # Pre-create execution so we can register the cancel_event
             execution_id = await self.runner.db.create_execution(
