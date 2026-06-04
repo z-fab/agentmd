@@ -17,6 +17,13 @@ async def app_with_agents(tmp_path):
         "paths:\n  vault: ./my-vault\n"
         "---\nYou are a test agent.\n"
     )
+    (agents_dir / "icon-agent.md").write_text(
+        "---\n"
+        "name: icon-agent\n"
+        'icon: "📅"\n'
+        "model:\n  provider: google\n  name: gemini-2.5-flash\n"
+        "---\nYou are an agent with an icon.\n"
+    )
     application = create_app(workspace=tmp_path, agents_dir=agents_dir, db_path=tmp_path / "test.db")
     async with application.router.lifespan_context(application):
         yield application
@@ -76,3 +83,54 @@ async def test_get_agent_detail_exposes_full_config(client):
     assert data["trigger_paths"] == []
     assert data["source_path"] is not None
     assert data["source_path"].endswith("test-agent.md")
+
+
+@pytest.mark.asyncio
+async def test_list_agents_includes_icon_key(client):
+    """GET /agents returns objects that include an `icon` key."""
+    resp = await client.get("/agents")
+    assert resp.status_code == 200
+    agents = resp.json()
+    assert len(agents) >= 1
+    for agent in agents:
+        assert "icon" in agent
+
+
+@pytest.mark.asyncio
+async def test_list_agents_icon_value_round_trips(client):
+    """Agent with icon: '📅' returns the correct value in GET /agents."""
+    resp = await client.get("/agents")
+    assert resp.status_code == 200
+    agents = resp.json()
+    icon_agent = next((a for a in agents if a["name"] == "icon-agent"), None)
+    assert icon_agent is not None
+    assert icon_agent["icon"] == "📅"
+
+
+@pytest.mark.asyncio
+async def test_list_agents_icon_none_for_agent_without_icon(client):
+    """Agent without icon returns None for icon in GET /agents."""
+    resp = await client.get("/agents")
+    assert resp.status_code == 200
+    agents = resp.json()
+    test_agent = next((a for a in agents if a["name"] == "test-agent"), None)
+    assert test_agent is not None
+    assert test_agent["icon"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_agent_detail_icon_round_trips(client):
+    """Agent with icon: '📅' returns the correct value in GET /agents/{name}."""
+    resp = await client.get("/agents/icon-agent")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["icon"] == "📅"
+
+
+@pytest.mark.asyncio
+async def test_get_agent_detail_icon_none_when_absent(client):
+    """Agent without icon returns None for icon in GET /agents/{name}."""
+    resp = await client.get("/agents/test-agent")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["icon"] is None

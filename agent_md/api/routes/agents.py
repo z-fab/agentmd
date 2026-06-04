@@ -25,6 +25,7 @@ async def list_agents(request: Request):
         AgentSummary(
             name=c.name,
             description=c.description,
+            icon=c.icon,
             enabled=c.enabled,
             trigger_type=c.trigger.type,
             model_provider=c.model.provider if c.model else None,
@@ -51,6 +52,7 @@ async def get_agent(name: str, request: Request):
     return AgentDetail(
         name=config.name,
         description=config.description,
+        icon=config.icon,
         enabled=config.enabled,
         trigger_type=config.trigger.type,
         model_provider=config.model.provider if config.model else None,

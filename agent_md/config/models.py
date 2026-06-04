@@ -153,6 +153,7 @@ class AgentConfig(BaseModel):
 
     name: str
     description: str = ""
+    icon: str | None = None  # optional emoji/icon for UIs (e.g. Obsidian plugin)
     model: ModelConfig | None = None
     trigger: TriggerConfig = TriggerConfig()
     custom_tools: list[str] = []

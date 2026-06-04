@@ -40,6 +40,7 @@ class ShutdownResponse(BaseModel):
 class AgentSummary(BaseModel):
     name: str
     description: str
+    icon: str | None = None
     enabled: bool
     trigger_type: str
     model_provider: str | None = None
