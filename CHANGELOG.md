@@ -6,7 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ## [0.14.0] — 2026-06-03
 
 ### Added
-- **Agent `icon` field** — agents may declare an optional `icon:` (emoji/short string) in frontmatter. It is exposed on `GET /agents` and `GET /agents/{name}` for UIs such as the Obsidian plugin, which fall back to a stable name-derived emoji when omitted.
+- **Agent `icon` field** — agents may declare an optional `icon:` (emoji/short string) in frontmatter, shown in the Obsidian plugin and the CLI.
+- **Automatic icon resolution** — when an agent has no explicit `icon`, agentmd derives a stable emoji from its name (same name → same emoji). The resolved icon is returned by `GET /agents` and `GET /agents/{name}`, and is shown consistently in both the CLI (`agentmd list`, `agentmd logs`) and the Obsidian plugin.
+
+### Changed
+- **Agent names may contain spaces and accented characters** — the `name` field now allows letters (including accents), digits, spaces, hyphens, and underscores (no leading/trailing spaces, no slashes). The agent is identified by its `name` (not its filename); quote names with spaces when running, e.g. `agentmd run "Daily Processor"`.
 
 ## [0.13.1] — 2026-06-03
 

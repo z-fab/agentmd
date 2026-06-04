@@ -31,18 +31,28 @@ Your system prompt goes here...
 |----------|-------|
 | **Type** | string |
 | **Required** | Yes |
-| **Pattern** | `^[a-zA-Z0-9_-]+$` |
+| **Pattern** | Letters (including accented), digits, spaces, hyphens, underscores; non-empty; no leading/trailing spaces |
 | **Default** | None |
 
-Unique identifier for the agent. This is the canonical name used everywhere: CLI commands, API, logs, SSE events, and the `agents` allowlist for delegation.
+Unique identifier for the agent. This is the canonical name used everywhere: CLI commands, HTTP API paths, logs, SSE events, the scheduler, and the `agents` allowlist for delegation.
 
-- Must contain only alphanumeric characters, hyphens, and underscores
-- Used with `agentmd run <name>`, `agentmd logs <name>`, API endpoints, and agent-to-agent calls
+**Allowed characters:** letters (including accented, e.g. `é`, `ñ`), digits (`0-9`), spaces, hyphens (`-`), and underscores (`_`). No leading or trailing spaces. Slashes (`/`, `\`) and control characters are not allowed.
+
+Names may include spaces. When using a spaced name on the CLI, quote it:
+
+```bash
+agentmd run "Daily Processor"
+agentmd logs "Daily Processor"
+```
+
+> **Name vs. filename:** The agent is identified by its `name` field, **not** by the filename. The filename is only used internally by the file-watcher to track changes on disk. You run, schedule, and reference an agent by `name` — the `.md` filename is irrelevant and can differ from the name.
 
 ```yaml
 name: file-summarizer
 name: daily-report-generator
 name: api_poller
+name: Daily Processor
+name: Résumé Builder
 ```
 
 ## Optional Fields
@@ -157,13 +167,19 @@ description: Analyzes CSV files and generates statistical reports
 |----------|-------|
 | **Type** | string |
 | **Required** | No |
-| **Default** | None |
+| **Default** | Auto-derived from name |
 
-An emoji or short string shown next to the agent in UIs (e.g. the Obsidian plugin). Optional — UIs derive a stable fallback from the agent name when omitted.
+An emoji or short string displayed next to the agent. When set, it is used verbatim. When omitted, agentmd derives a **stable emoji from the agent's name** — the same name always produces the same emoji (deterministic hash). The resolved icon (explicit or auto-derived) is:
+
+- Returned by `GET /agents` and `GET /agents/{name}`
+- Shown in the Obsidian plugin
+- Shown in the CLI (`agentmd list`, `agentmd logs`)
 
 ```yaml
 icon: "📅"
 ```
+
+If you omit `icon`, the CLI and plugin will still show a consistent emoji for that agent based on its name.
 
 ### `trigger`
 
@@ -678,8 +694,10 @@ You are a research assistant. For each query:
 The system validates agent configuration during startup and before execution:
 
 ### Agent Name
-- Must match pattern: `^[a-zA-Z0-9_-]+$`
+- Allowed characters: letters (including accented), digits, spaces, hyphens, and underscores
 - Cannot be empty
+- No leading or trailing spaces
+- No slashes (`/`, `\`) or control characters
 
 ### Model Configuration
 - `model` is optional — when omitted, uses defaults from `config.yaml`

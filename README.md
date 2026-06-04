@@ -85,6 +85,14 @@ write a creative greeting and save it to 'greeting.txt'.
 
 > **Note:** No `model` needed — Agent.md uses the default provider/model you configured during setup.
 
+Agent names may contain spaces and accented characters (e.g. `Daily Processor`, `Résumé Builder`). The `name` field is the agent's identifier — not the filename. Quote names with spaces on the CLI:
+
+```bash
+agentmd run "Daily Processor"
+```
+
+Each agent also has an icon shown in the CLI and the Obsidian plugin. Set it explicitly with `icon: "📅"` in frontmatter, or let agentmd derive a stable emoji from the name automatically.
+
 ### Run It
 
 ```bash
