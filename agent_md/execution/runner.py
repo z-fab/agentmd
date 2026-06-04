@@ -127,6 +127,7 @@ class AgentRunner:
         self.db_path = db_path  # for creating AsyncSqliteSaver
         self.registry = registry
         self._checkpoint_conns: list = []  # track aiosqlite connections for cleanup
+        self._timeout_tasks: dict[int, asyncio.Task] = {}
 
     @property
     def _max_agent_depth(self) -> int:
@@ -197,7 +198,19 @@ class AgentRunner:
             result["cost_usd"] = cost_usd
         return result
 
-    async def _enter_waiting(self, execution_id, config, request: dict, event_bus, ex_logger):
+    @staticmethod
+    def _parse_timeout_seconds(value: str | None) -> float | None:
+        if not value or value == "none":
+            return None
+        import re
+
+        m = re.match(r"^(\d+)([smhd])$", value)
+        if not m:
+            return None
+        n = int(m.group(1))
+        return n * {"s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
+
+    async def _enter_waiting(self, execution_id, config, request: dict, event_bus, ex_logger, global_event_bus=None):
         """Persist the pending request, mark execution waiting, emit the interrupt event."""
         await self.db.set_pending_interrupt(execution_id, request["request_id"], request)
         await self.db.update_execution(execution_id=execution_id, status="waiting")
@@ -207,6 +220,22 @@ class AgentRunner:
                 execution_id,
                 {"type": "interrupt", "seq": log_id, "data": {**request, "agent_name": config.name}},
             )
+
+        secs = self._parse_timeout_seconds(config.confirm_timeout)
+        if secs is not None:
+            async def _deny_after():
+                await asyncio.sleep(secs)
+                still = await self.db.get_pending_interrupt(execution_id)
+                if still and still.request_id == request["request_id"]:
+                    await self.db.clear_pending_interrupt(execution_id)
+                    deny = {"approved": False, "reason": "confirm_timeout", "text": "", "selected": []}
+                    self._timeout_tasks.pop(execution_id, None)
+                    await self.resume(
+                        config, execution_id, deny,
+                        event_bus=event_bus, global_event_bus=global_event_bus,
+                    )
+
+            self._timeout_tasks[execution_id] = asyncio.create_task(_deny_after())
 
     async def _publish_complete(self, execution_id, result, event_bus, global_event_bus, config):
         if global_event_bus is not None:
@@ -588,7 +617,7 @@ class AgentRunner:
                 return result
 
             except GraphPaused as paused:
-                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger)
+                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus)
                 if global_event_bus is not None:
                     await global_event_bus.publish(
                         {
@@ -667,11 +696,17 @@ class AgentRunner:
         cancel_event: asyncio.Event | None = None,
     ) -> dict:
         """Resume a paused execution by injecting *response* into the interrupt."""
+        t = self._timeout_tasks.pop(execution_id, None)
+        if t:
+            t.cancel()
+
         from langgraph.types import Command
         from agent_md.graph.builder import _stream_state
 
         logger.info(f"Resuming execution {execution_id}")
-        await self.db.update_execution(execution_id=execution_id, status="running")
+        if not await self.db.claim_execution_for_resume(execution_id):
+            logger.info(f"Resume skipped for {execution_id}: no longer waiting (already resumed or cancelled)")
+            return {"status": "skipped", "execution_id": execution_id}
         ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=None)
         if global_event_bus is not None:
             await global_event_bus.publish(
@@ -731,7 +766,7 @@ class AgentRunner:
             try:
                 await asyncio.wait_for(_drive(), timeout=config.settings.timeout)
             except GraphPaused as paused:
-                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger)
+                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus)
                 return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
 
             duration_ms = int((time.monotonic() - start_time) * 1000)

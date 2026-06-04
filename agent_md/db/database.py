@@ -306,6 +306,15 @@ class Database:
         await self.db.execute("DELETE FROM pending_interrupts WHERE execution_id = ?", (execution_id,))
         await self.db.commit()
 
+    async def claim_execution_for_resume(self, execution_id: int) -> bool:
+        """Atomically transition waiting -> running. Returns True if this caller won the claim."""
+        cursor = await self.db.execute(
+            "UPDATE executions SET status = 'running' WHERE id = ? AND status = 'waiting'",
+            (execution_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
     async def has_waiting_execution(self, agent_id: str) -> bool:
         cursor = await self.db.execute(
             "SELECT 1 FROM executions WHERE agent_id = ? AND status = 'waiting' LIMIT 1",
