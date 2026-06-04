@@ -78,3 +78,52 @@ async def test_stream_state_raises_graph_paused():
             pass
     assert exc.value.request["kind"] == "confirm"
     assert exc.value.request["tool_name"] == "x"
+
+
+class _NoMCP:
+    async def get_tools(self, names):
+        return []
+
+
+class _FakeModel:
+    """Minimal chat model: first call asks file_delete, second returns text."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def bind_tools(self, tools):
+        return self
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        if self.calls == 1:
+            return AIMessage(content="", tool_calls=[{"name": "file_delete", "args": {"path": "/x"}, "id": "tc1"}])
+        return AIMessage(content="all done")
+
+
+@pytest.mark.skip(reason="needs guard from Task 9")
+async def test_run_pauses_then_resume_completes(tmp_path, monkeypatch):
+    from agent_md.execution.runner import AgentRunner
+    from agent_md.db.database import Database
+    from agent_md.workspace.path_context import PathContext
+    from agent_md.config.models import AgentConfig
+
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    pc = PathContext(workspace_root=tmp_path, agents_dir=tmp_path, db_path=tmp_path / "t.db",
+                     mcp_config=tmp_path / "m.json", tools_dir=tmp_path, skills_dir=tmp_path)
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
+    config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off",
+                         confirm=["file_delete"])
+    monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: _FakeModel())
+
+    ex = await db.create_execution("del", "manual")
+    res = await runner.run(config, execution_id=ex)
+    assert res["status"] == "waiting"
+    pending = await db.get_pending_interrupt(ex)
+    assert pending is not None and pending.payload_json
+
+    res2 = await runner.resume(config, ex, {"approved": True})
+    assert res2["status"] == "success"
+    assert "all done" in res2["output"]
+    await db.close()

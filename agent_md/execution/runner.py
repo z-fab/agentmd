@@ -11,7 +11,7 @@ from agent_md.workspace.path_context import PathContext
 from agent_md.config.pricing import estimate_cost
 from agent_md.workspace.registry import AgentConfig
 from agent_md.db.database import Database
-from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn
+from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn, GraphPaused
 from agent_md.mcp.manager import MCPManager
 from agent_md.providers.factory import create_chat_model
 from agent_md.tools.custom_loader import load_custom_tools
@@ -184,6 +184,46 @@ class AgentRunner:
         if cost_usd is not None:
             result["cost_usd"] = cost_usd
         return result
+
+    async def _enter_waiting(self, execution_id, config, request: dict, event_bus, ex_logger):
+        """Persist the pending request, mark execution waiting, emit the interrupt event."""
+        await self.db.set_pending_interrupt(execution_id, request["request_id"], request)
+        await self.db.update_execution(execution_id=execution_id, status="waiting")
+        log_id = await ex_logger.log_event("interrupt", request.get("message", ""), metadata=request)
+        if event_bus is not None:
+            await event_bus.publish(
+                execution_id,
+                {"type": "interrupt", "seq": log_id, "data": {**request, "agent_name": config.name}},
+            )
+
+    async def _publish_complete(self, execution_id, result, event_bus, global_event_bus, config):
+        if global_event_bus is not None:
+            await global_event_bus.publish(
+                {
+                    "type": "execution_completed",
+                    "data": {
+                        "execution_id": execution_id,
+                        "agent_name": config.name,
+                        "status": result["status"],
+                        "duration_ms": result.get("duration_ms", 0),
+                    },
+                }
+            )
+        if event_bus is not None:
+            await event_bus.publish(
+                execution_id,
+                {
+                    "type": "complete",
+                    "seq": _COMPLETE_SEQ,
+                    "data": {
+                        "status": result["status"],
+                        "duration_ms": result.get("duration_ms"),
+                        "total_tokens": result.get("total_tokens"),
+                        "cost_usd": result.get("cost_usd"),
+                        "error": result.get("error"),
+                    },
+                },
+            )
 
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
         """Build user input message with trigger context."""
@@ -523,40 +563,26 @@ class AgentRunner:
                     cost_usd=cost_usd,
                 )
                 result["output"] = output
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
                 logger.info(
                     f"Execution complete: {config.name} — success in {duration_ms}ms "
                     f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
                 )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
+
+            except GraphPaused as paused:
+                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger)
+                if global_event_bus is not None:
+                    await global_event_bus.publish(
+                        {
+                            "type": "execution_waiting",
+                            "data": {"execution_id": execution_id, "agent_name": config.name},
+                        }
+                    )
+                logger.info(f"Execution {execution_id} paused (HILT {paused.request.get('kind')})")
+                return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
 
             except asyncio.TimeoutError:
                 duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -571,33 +597,7 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
@@ -615,33 +615,7 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
@@ -659,37 +633,141 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
 
+        finally:
+            _reset_context(sdk_token)
+
+    async def resume(
+        self,
+        config: AgentConfig,
+        execution_id: int,
+        response,
+        *,
+        event_bus=None,
+        global_event_bus=None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> dict:
+        """Resume a paused execution by injecting *response* into the interrupt."""
+        from langgraph.types import Command
+        from agent_md.graph.builder import _stream_state
+
+        logger.info(f"Resuming execution {execution_id}")
+        await self.db.update_execution(execution_id=execution_id, status="running")
+        ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=None)
+        if global_event_bus is not None:
+            await global_event_bus.publish(
+                {
+                    "type": "execution_started",
+                    "data": {"execution_id": execution_id, "agent_name": config.name, "trigger": "resume"},
+                }
+            )
+
+        start_time = time.monotonic()
+        total_input_tokens = total_output_tokens = tool_call_count = 0
+        cost_usd = None
+        last_ai_msg = None
+        graph_config = {"configurable": {"thread_id": str(execution_id)}}
+        has_post_tool = bool(config.skills and self.path_context and self.path_context.skills_dir.exists())
+
+        from agent_md.graph.builder import compute_recursion_limit
+
+        graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
+
+        sdk_token = _set_context(config, self.path_context)
+        try:
+            graph = await self._build_graph(
+                config,
+                registry=self.registry,
+                runner=self,
+                depth=0,
+                max_depth=self._max_agent_depth,
+                parent_execution_id=execution_id,
+                event_bus=event_bus,
+                global_event_bus=global_event_bus,
+            )
+
+            async def _drive():
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd
+                async for msg in _stream_state(graph, Command(resume=response), config=graph_config):
+                    log_id = await ex_logger.log_message(msg)
+                    if event_bus is not None:
+                        et = _classify_event_type(msg)
+                        await event_bus.publish(
+                            execution_id, {"type": et, "seq": log_id, "data": _build_event_data(msg, et, config.name)}
+                        )
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise LimitExceeded("cancelled", "Execution cancelled by user")
+                    usage = getattr(msg, "usage_metadata", None)
+                    if usage:
+                        total_input_tokens += usage.get("input_tokens", 0)
+                        total_output_tokens += usage.get("output_tokens", 0)
+                        cost_usd = estimate_cost(
+                            config.model.provider, config.model.name, total_input_tokens, total_output_tokens
+                        )
+                    if getattr(msg, "type", "") == "ai" and getattr(msg, "tool_calls", None):
+                        tool_call_count += len(msg.tool_calls)
+                    if _is_final_ai_message(msg):
+                        last_ai_msg = msg
+
+            try:
+                await asyncio.wait_for(_drive(), timeout=config.settings.timeout)
+            except GraphPaused as paused:
+                await self._enter_waiting(execution_id, config, paused.request, event_bus, ex_logger)
+                return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
+
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            output = ""
+            if last_ai_msg:
+                raw = getattr(last_ai_msg, "content", None)
+                output = _extract_text(raw) if raw is not None else str(last_ai_msg)
+                log_id = await ex_logger.mark_final_answer(last_ai_msg)
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {"type": "final_answer", "seq": log_id, "data": {"content": output, "agent_name": config.name}},
+                    )
+            result = await self._finish_execution(
+                execution_id,
+                "success",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                output_data=output[:10000],
+                cost_usd=cost_usd,
+            )
+            result["output"] = output
+            await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
+            return result
+        except LimitExceeded as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            result = await self._finish_execution(
+                execution_id,
+                "aborted",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                error=f"Aborted: {e.reason}",
+                cost_usd=cost_usd,
+            )
+            await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
+            return result
+        except Exception as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            result = await self._finish_execution(
+                execution_id,
+                "error",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                error=f"{type(e).__name__}: {e}",
+                cost_usd=cost_usd,
+            )
+            await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
+            return result
         finally:
             _reset_context(sdk_token)
 
