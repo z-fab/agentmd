@@ -217,8 +217,6 @@ class AgentRunner:
 
     async def _build_graph(self, config: AgentConfig, **tool_kwargs):
         """Create model, resolve tools, and compile the graph."""
-        from agent_md.config.models import HISTORY_LIMITS
-
         chat_model = create_chat_model(
             provider=config.model.provider,
             model=config.model.name,
@@ -239,10 +237,11 @@ class AgentRunner:
                 f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
             )
 
-        # Session memory: create checkpointer if memory level is set
+        # Checkpointer is ALWAYS on — it is the durability substrate for HILT.
+        # `history` only controls how much prior context we seed (see run()).
         checkpointer = None
         memory_limit = None
-        if config.history != "off" and self.db_path:
+        if self.db_path:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -251,8 +250,7 @@ class AgentRunner:
             checkpointer = AsyncSqliteSaver(conn)
             await checkpointer.setup()
             self._checkpoint_conns.append(conn)
-            memory_limit = HISTORY_LIMITS[config.history]
-            logger.info(f"Session history enabled: level={config.history}, limit={memory_limit}")
+            logger.info(f"Checkpointer enabled (history={config.history}, thread per execution)")
 
         # Create post-tool processor for skill meta message injection
         post_processor = None
@@ -372,7 +370,7 @@ class AgentRunner:
 
                 # 4. Stream execution -- log each message in real time
                 last_ai_msg = None
-                graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else {}
+                graph_config = {"configurable": {"thread_id": str(execution_id)}}
 
                 # Set recursion_limit high enough for max_tool_calls
                 from agent_md.graph.builder import compute_recursion_limit

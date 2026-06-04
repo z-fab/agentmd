@@ -13,6 +13,14 @@ from agent_md.graph.state import AgentState
 logger = logging.getLogger(__name__)
 
 
+class GraphPaused(Exception):
+    """Raised when the graph hits a HILT interrupt. Carries the request payload."""
+
+    def __init__(self, request: dict):
+        self.request = request
+        super().__init__(f"graph paused: {request.get('kind')}")
+
+
 def create_react_graph(chat_model, tools, checkpointer=None, memory_limit=None, post_tool_processor=None):
     """Create a compiled ReAct graph for a single agent.
 
@@ -295,9 +303,15 @@ async def run_agent_graph(
     return await graph.ainvoke(initial_state)
 
 
-async def _stream_state(graph, state: dict, config: dict | None = None) -> AsyncGenerator[BaseMessage, None]:
-    """Stream graph execution from a state dict, yielding each message."""
+async def _stream_state(graph, state, config: dict | None = None) -> AsyncGenerator[BaseMessage, None]:
+    """Stream graph execution from a state dict, yielding each message.
+
+    Raises GraphPaused if the graph hits a HILT interrupt.
+    """
     async for step in graph.astream(state, config=config or {}):
+        if "__interrupt__" in step:
+            interrupts = step["__interrupt__"]
+            raise GraphPaused(interrupts[0].value)
         for _node_name, node_output in step.items():
             for msg in node_output.get("messages", []):
                 yield msg

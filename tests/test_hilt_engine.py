@@ -1,6 +1,8 @@
 import operator
 from typing import Annotated, Sequence, TypedDict
 
+import pytest
+
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
@@ -54,3 +56,25 @@ async def test_sdk_request_input_roundtrip():
 
     out = [c async for c in app.astream(Command(resume={"text": "Ana"}), config=cfg)]
     assert out[-1]["n"]["messages"][0].content == "hi Ana"
+
+
+async def test_stream_state_raises_graph_paused():
+    from agent_md.graph.builder import _stream_state, GraphPaused
+    from agent_md.sdk import request_confirmation
+
+    def node(state):
+        request_confirmation("ok?", tool_name="x", tool_args={})
+        return {"messages": [AIMessage(content="done")]}
+
+    g = StateGraph(_S)
+    g.add_node("n", node)
+    g.set_entry_point("n")
+    g.add_edge("n", END)
+    app = g.compile(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": "t2"}}
+
+    with pytest.raises(GraphPaused) as exc:
+        async for _ in _stream_state(app, {"messages": [HumanMessage(content="x")]}, config=cfg):
+            pass
+    assert exc.value.request["kind"] == "confirm"
+    assert exc.value.request["tool_name"] == "x"
