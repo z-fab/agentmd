@@ -186,6 +186,22 @@ class Database:
         results = await self.get_executions(agent_id, limit=1)
         return results[0] if results else None
 
+    async def get_last_finished_execution(self, agent_id: str, exclude_id: int | None = None):
+        """Most recent execution for an agent that is not running/waiting/pending."""
+        cursor = await self.db.execute(
+            """
+            SELECT * FROM executions
+            WHERE agent_id = ?
+              AND status NOT IN ('running', 'waiting', 'pending')
+              AND (? IS NULL OR id != ?)
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (agent_id, exclude_id, exclude_id),
+        )
+        row = await cursor.fetchone()
+        return ExecutionRecord(**dict(row)) if row else None
+
     async def get_execution(self, execution_id: int) -> Optional[ExecutionRecord]:
         """Get a single execution by ID."""
         cursor = await self.db.execute(

@@ -266,16 +266,16 @@ def _build_initial_state(
     path_context=None,
     user_input: str = "Execute your task.",
     arguments: list[str] | str = "",
+    seed_messages: list | None = None,
     **kwargs,
 ) -> AgentState:
     """Build the initial state dict for graph execution."""
     system_msg = build_system_message(system_prompt, agent_config, path_context, arguments=arguments, **kwargs)
-    return {
-        "messages": [
-            system_msg,
-            HumanMessage(content=user_input),
-        ]
-    }
+    messages = [system_msg]
+    if seed_messages:
+        messages.extend(seed_messages)
+    messages.append(HumanMessage(content=user_input))
+    return {"messages": messages}
 
 
 async def run_agent_graph(
@@ -325,6 +325,7 @@ async def stream_agent_graph(
     user_input: str = "Execute your task.",
     config: dict | None = None,
     arguments: list[str] | str = "",
+    seed_messages: list | None = None,
     **kwargs,
 ) -> AsyncGenerator[BaseMessage, None]:
     """Stream graph execution, yielding each message as it is produced.
@@ -336,11 +337,14 @@ async def stream_agent_graph(
         path_context: PathContext for path resolution.
         user_input: The user/trigger message.
         config: Optional LangGraph config dict (e.g. thread_id for checkpointing).
+        seed_messages: Optional prior messages to seed the run with cross-run history.
 
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments, **kwargs)
+    initial_state = _build_initial_state(
+        system_prompt, agent_config, path_context, user_input, arguments, seed_messages=seed_messages, **kwargs
+    )
     async for msg in _stream_state(graph, initial_state, config=config):
         yield msg
 

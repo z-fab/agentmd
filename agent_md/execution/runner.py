@@ -261,6 +261,30 @@ class AgentRunner:
             chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit, post_tool_processor=post_processor
         )
 
+    async def _load_history_seed(self, graph, config: AgentConfig, execution_id: int) -> list:
+        """Return prior messages to seed a new run, trimmed to the history level.
+
+        Reads the most recent finished execution's checkpoint for this agent and
+        returns its non-system messages. Empty when history is off or no prior run.
+        """
+        from agent_md.graph.agent import _trim_messages
+        from agent_md.config.models import HISTORY_LIMITS
+
+        if config.history == "off":
+            return []
+        prev = await self.db.get_last_finished_execution(config.name, exclude_id=execution_id)
+        if prev is None:
+            return []
+        try:
+            snapshot = await graph.aget_state({"configurable": {"thread_id": str(prev.id)}})
+        except Exception:
+            return []
+        prior = list(snapshot.values.get("messages", [])) if snapshot and snapshot.values else []
+        non_system = [m for m in prior if getattr(m, "type", "") != "system"]
+        limit = HISTORY_LIMITS[config.history]
+        trimmed = _trim_messages(non_system, limit)
+        return trimmed
+
     async def run(
         self,
         config: AgentConfig,
@@ -347,6 +371,7 @@ class AgentRunner:
                     event_bus=event_bus,
                     global_event_bus=global_event_bus,
                 )
+                history_seed = await self._load_history_seed(graph, config, execution_id)
 
                 # 3. Build user input with trigger context
                 user_input = self._build_user_input(trigger_type, trigger_context, config)
@@ -398,6 +423,7 @@ class AgentRunner:
                         config=graph_config,
                         arguments=arguments,
                         registry=self.registry,
+                        seed_messages=history_seed,
                     ):
                         log_id = await ex_logger.log_message(msg)
 
