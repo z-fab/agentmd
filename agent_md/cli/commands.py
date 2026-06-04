@@ -78,8 +78,10 @@ def _validate_agent_name(name: str) -> str | None:
     """Return error string if name is invalid, else None."""
     import re
 
-    if not re.match(r"^[a-zA-Z0-9_-]+$", name):
-        return "Agent name must contain only alphanumeric characters, hyphens, and underscores."
+    if not name or name != name.strip():
+        return "Agent name must be non-empty and have no leading/trailing spaces."
+    if not re.match(r"^[\w \-]+$", name, re.UNICODE):
+        return "Agent name may contain only letters, numbers, spaces, hyphens, and underscores."
     return None
 
 

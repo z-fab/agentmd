@@ -248,6 +248,11 @@ class AgentConfig(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
-            raise ValueError(f"Agent name must contain only alphanumeric, hyphens, and underscores. Got: '{v}'")
+        if not v or v != v.strip():
+            raise ValueError("Agent name must be non-empty and have no leading/trailing spaces.")
+        if not re.match(r"^[\w \-]+$", v, re.UNICODE):
+            raise ValueError(
+                "Agent name may contain only letters, numbers, spaces, hyphens, and underscores. "
+                f"Got: '{v}'"
+            )
         return v

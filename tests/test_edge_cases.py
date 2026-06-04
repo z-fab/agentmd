@@ -12,7 +12,7 @@ from rich.console import Console
 
 from agent_md.execution.runner import _classify_event_type, _build_event_data
 from agent_md.execution.event_bus import EventBus
-from agent_md.cli.commands import _print_event
+from agent_md.cli.commands import _print_event, _validate_agent_name
 
 
 # ---------------------------------------------------------------------------
@@ -330,3 +330,46 @@ async def test_double_unsubscribe_does_not_decrement_below_zero():
     bus.unsubscribe(5, q)
     bus.unsubscribe(5, q)
     assert bus.stream_count >= 0
+
+
+# ---------------------------------------------------------------------------
+# _validate_agent_name (CLI helper)
+# ---------------------------------------------------------------------------
+
+
+def test_cli_validate_name_simple_valid():
+    assert _validate_agent_name("my-agent") is None
+
+
+def test_cli_validate_name_with_space_valid():
+    assert _validate_agent_name("Daily Processor") is None
+
+
+def test_cli_validate_name_with_accented_letters_valid():
+    assert _validate_agent_name("Diário") is None
+
+
+def test_cli_validate_name_leading_space_invalid():
+    result = _validate_agent_name(" x")
+    assert result is not None
+    assert isinstance(result, str)
+
+
+def test_cli_validate_name_trailing_space_invalid():
+    result = _validate_agent_name("x ")
+    assert result is not None
+
+
+def test_cli_validate_name_slash_invalid():
+    result = _validate_agent_name("a/b")
+    assert result is not None
+
+
+def test_cli_validate_name_backslash_invalid():
+    result = _validate_agent_name("a\\b")
+    assert result is not None
+
+
+def test_cli_validate_name_empty_invalid():
+    result = _validate_agent_name("")
+    assert result is not None
