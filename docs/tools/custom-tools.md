@@ -349,6 +349,8 @@ Custom tools that need to read or write files should use `agent_md.sdk` for sand
 
 All functions are available during agent execution. Calling them outside of execution raises `RuntimeError`.
 
+For pausing execution to ask the user a question, see [SDK — Human-in-the-Loop Primitives](#sdk--human-in-the-loop-primitives) below.
+
 ### Example: File Processing Tool
 
 ```python
@@ -410,6 +412,66 @@ def show_context() -> str:
 ### When NOT to Use the SDK
 
 If your tool doesn't touch the filesystem (API calls, text processing, calculations), you don't need the SDK. A plain `@tool` function works fine.
+
+---
+
+## SDK — Human-in-the-Loop Primitives
+
+Custom tools can pause execution and ask the user a question using three functions from `agent_md.sdk`. The execution suspends until a response arrives — surviving a backend restart — then resumes from where it stopped. See [Human-in-the-Loop](../human-in-the-loop.md) for the full guide.
+
+### Available Functions
+
+| Function | Returns | Description |
+|---|---|---|
+| `request_confirmation(message, *, tool_name=None, tool_args=None)` | `bool` | Ask yes/no; returns `True` if approved |
+| `request_input(message)` | `str` | Ask for free text; returns what the user typed |
+| `request_choice(message, options, *, multi=False)` | `str \| list[str]` | Ask the user to pick from a list; returns the selection |
+
+### Example: Confirm before a destructive action
+
+```python
+from langchain_core.tools import tool
+from agent_md.sdk import request_confirmation, request_choice
+
+
+@tool
+def cleanup(folder: str) -> str:
+    """Delete temp files in a folder."""
+    if not request_confirmation(f"Clean {folder}?", tool_name="cleanup", tool_args={"folder": folder}):
+        return "User declined."
+    # ... do the cleanup ...
+    return "Cleaned."
+```
+
+### Example: Ask for free text
+
+```python
+from langchain_core.tools import tool
+from agent_md.sdk import request_input
+
+@tool
+def create_report(topic: str) -> str:
+    """Generate a report on a topic."""
+    title = request_input(f"Enter a title for the '{topic}' report:")
+    # ... generate with title ...
+    return f"Report '{title}' created."
+```
+
+### Example: Pick from options
+
+```python
+from langchain_core.tools import tool
+from agent_md.sdk import request_choice
+
+@tool
+def deploy(artifact: str) -> str:
+    """Deploy an artifact to an environment."""
+    env = request_choice("Deploy to which environment?", ["staging", "production"])
+    # ... deploy to env ...
+    return f"Deployed {artifact} to {env}."
+```
+
+> **Note:** These primitives are not affected by `auto_approve`. They are for dynamic, in-code questions — distinct from the guarded-tool mechanism, which guards a whole tool by name. You can use both in the same agent.
 
 ## Troubleshooting
 

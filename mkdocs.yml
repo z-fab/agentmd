@@ -109,6 +109,7 @@ nav:
   - Providers: providers.md
   - Triggers: triggers.md
   - Memory: memory.md
+  - Human-in-the-Loop: human-in-the-loop.md
   - Skills: skills.md
   - Tools:
       - tools/index.md

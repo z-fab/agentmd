@@ -246,6 +246,12 @@ custom_tools:
 
     Learn about agent files, triggers, providers, and execution flow.
 
+-   :fontawesome-solid-hand:{ .lg .middle } **[Human-in-the-Loop](human-in-the-loop.md)**
+
+    ---
+
+    Pause agents for user confirmation or input, then resume — even after a restart.
+
 -   :fontawesome-solid-code:{ .lg .middle } **[Examples](examples.md)**
 
     ---
@@ -273,6 +279,7 @@ custom_tools:
 - [x] **Execution tracking** — Full history with token usage
 - [x] **Git-friendly** — Version control your prompts
 - [x] **Memory & context persistence** — Session history + long-term memory tools
+- [x] **Human-in-the-loop** — Pause for user confirmation, input, or choice; resume after restart
 - [ ] **Skills support** — Coming soon
 - [ ] **Agent pipelines** — Chain agents together
 - [ ] **Terminal UI (TUI)** — Real-time monitoring

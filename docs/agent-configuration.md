@@ -478,6 +478,89 @@ history: medium
 history: off
 ```
 
+### Human-in-the-Loop
+
+Four frontmatter fields control how the agent pauses to ask the user a question and what happens while it waits. See [Human-in-the-Loop](human-in-the-loop.md) for a full guide.
+
+#### `confirm`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string[] |
+| **Required** | No |
+| **Default** | `[]` |
+
+Additional tool names to guard with a confirmation step, on top of the global defaults (`file_delete`, `file_write`). Accepts built-in, custom, and MCP tool names.
+
+```yaml
+confirm: [file_edit, send_email]
+```
+
+#### `auto_approve`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string[] or `"*"` |
+| **Required** | No |
+| **Default** | `[]` |
+
+Tool names to remove from the effective confirm set. Use `"*"` (or `"all"`) to disable confirmation for all guarded tools.
+
+```yaml
+auto_approve: [file_write]   # skip the file_write default confirmation
+auto_approve: "*"            # never confirm any guarded tool
+```
+
+The effective confirm set is: **(global defaults ∪ `confirm`) − `auto_approve`**
+
+> `auto_approve` only suppresses guarded-tool prompts. It does not affect `ask_user` calls or SDK `request_*` calls made directly by the agent or a custom tool.
+
+#### `on_pending`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string |
+| **Allowed values** | `skip`, `parallel` |
+| **Default** | `skip` |
+
+Controls whether a new run can start while an execution is `waiting` (paused for user input):
+
+- `skip` (default): scheduler and file-watcher skip a new trigger while one session is paused.
+- `parallel`: allows multiple concurrent waiting sessions (each uses an isolated checkpoint thread).
+
+```yaml
+on_pending: parallel
+```
+
+#### `confirm_timeout`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string |
+| **Accepted values** | `30s`, `5m`, `2h`, `1d`, … or `none` |
+| **Default** | `none` |
+
+How long to wait for a response before auto-denying. On expiry the pending request is denied and the agent continues. `none` waits indefinitely.
+
+```yaml
+confirm_timeout: 1h   # auto-deny after 1 hour
+```
+
+#### Global defaults for HILT fields
+
+The following keys under `defaults:` in `config.yaml` set fallback values for all agents:
+
+```yaml
+# config.yaml
+defaults:
+  confirm_tools: [file_delete, file_write]  # tools guarded by default
+  on_pending: skip                          # default concurrency mode
+  confirm_timeout: none                     # default timeout
+  checkpoint_retention_days: 30            # days to keep old checkpoint threads (0/none = disable)
+```
+
+Per-agent frontmatter values override these defaults, following the same `apply_global_defaults` pattern used elsewhere in the config.
+
 ### `enabled`
 
 | Property | Value |
@@ -752,6 +835,7 @@ name: minimal-agent
 - [Memory](memory.md) - Session history and long-term memory
 - [Triggers](triggers.md) - Detailed schedule and watch options
 - [Paths & Security](paths-and-security.md) - File access permissions and global path configuration
+- [Human-in-the-Loop](human-in-the-loop.md) - Pausing agents for user input and resuming
 - [Custom Tools](tools/custom-tools.md) - Building custom tools
 - [MCP Integration](tools/mcp-integration.md) - Using MCP servers
 - [Providers](providers.md) - Supported LLM providers
