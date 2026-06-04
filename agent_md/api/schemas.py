@@ -118,3 +118,25 @@ class CancelResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class RespondRequest(BaseModel):
+    request_id: str
+    response: dict
+
+
+class RespondResponse(BaseModel):
+    status: str
+    execution_id: int
+
+
+class PendingResponse(BaseModel):
+    execution_id: int
+    request_id: str
+    kind: str
+    message: str
+    tool_name: str | None = None
+    tool_args: dict | None = None
+    options: list[str] | None = None
+    multi: bool = False
+    created_at: str

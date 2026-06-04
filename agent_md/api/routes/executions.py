@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterable
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +14,9 @@ from agent_md.api.schemas import (
     ExecutionDetail,
     ExecutionSummary,
     LogEntry,
+    PendingResponse,
+    RespondRequest,
+    RespondResponse,
 )
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -159,6 +163,44 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
         event_bus.unsubscribe(exec_id, queue)
 
 
+@router.get("/{exec_id}/pending", response_model=PendingResponse)
+async def get_pending(exec_id: int, request: Request):
+    db = request.app.state.db
+    rec = await db.get_pending_interrupt(exec_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="No pending request")
+    payload = json.loads(rec.payload_json)
+    return PendingResponse(
+        execution_id=exec_id,
+        request_id=rec.request_id,
+        kind=payload.get("kind", "input"),
+        message=payload.get("message", ""),
+        tool_name=payload.get("tool_name"),
+        tool_args=payload.get("tool_args"),
+        options=payload.get("options"),
+        multi=payload.get("multi", False),
+        created_at=rec.created_at,
+    )
+
+
+@router.post("/{exec_id}/respond", response_model=RespondResponse)
+async def respond(exec_id: int, body: RespondRequest, request: Request):
+    state = request.app.state
+    db = state.db
+    e = await db.get_execution(exec_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if e.status != "waiting":
+        raise HTTPException(status_code=409, detail=f"Execution is '{e.status}', not waiting")
+    rec = await db.get_pending_interrupt(exec_id)
+    if not rec or rec.request_id != body.request_id:
+        raise HTTPException(status_code=409, detail="Stale or unknown request_id")
+
+    await db.clear_pending_interrupt(exec_id)
+    await _dispatch_resume(state, exec_id, body.response)
+    return RespondResponse(status="resuming", execution_id=exec_id)
+
+
 @router.delete("/{exec_id}", response_model=CancelResponse)
 async def cancel_execution(exec_id: int, request: Request):
     state = request.app.state
@@ -179,3 +221,28 @@ async def cancel_execution(exec_id: int, request: Request):
 
     # Running but no cancel_event — race condition, treat as already done
     return CancelResponse(status=e.status, execution_id=exec_id)
+
+
+async def _dispatch_resume(state, execution_id: int, response) -> None:
+    """Rebuild the agent and spawn a background resume task."""
+    rt = state.runtime
+    e = await state.db.get_execution(execution_id)
+    config = rt.registry.get(e.agent_id) if e else None
+    if config is None:
+        await state.db.update_execution(execution_id=execution_id, status="error", error="agent not found for resume")
+        return
+
+    cancel_event = asyncio.Event()
+    state.cancel_events[execution_id] = cancel_event
+
+    async def _bg():
+        try:
+            await rt.runner.resume(
+                config, execution_id, response,
+                event_bus=state.event_bus, global_event_bus=state.global_event_bus,
+                cancel_event=cancel_event,
+            )
+        finally:
+            state.cancel_events.pop(execution_id, None)
+
+    asyncio.create_task(_bg())
