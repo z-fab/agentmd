@@ -321,3 +321,32 @@ class Database:
             (agent_id,),
         )
         return await cursor.fetchone() is not None
+
+    # --- Checkpoint maintenance helpers ---
+
+    async def latest_execution_id_per_agent(self) -> list[int]:
+        cursor = await self.db.execute("SELECT MAX(id) AS mx FROM executions GROUP BY agent_id")
+        rows = await cursor.fetchall()
+        return [row["mx"] for row in rows if row["mx"] is not None]
+
+    async def waiting_execution_ids(self) -> list[int]:
+        cursor = await self.db.execute("SELECT id FROM executions WHERE status = 'waiting'")
+        rows = await cursor.fetchall()
+        return [row["id"] for row in rows]
+
+    async def finished_execution_ids_before(self, cutoff_iso: str) -> list[int]:
+        cursor = await self.db.execute(
+            """
+            SELECT id FROM executions
+            WHERE status NOT IN ('running', 'waiting', 'pending')
+              AND (finished_at IS NOT NULL AND finished_at < ?)
+            """,
+            (cutoff_iso,),
+        )
+        rows = await cursor.fetchall()
+        return [row["id"] for row in rows]
+
+    async def all_execution_ids_for_agent(self, agent_id: str) -> list[int]:
+        cursor = await self.db.execute("SELECT id FROM executions WHERE agent_id = ?", (agent_id,))
+        rows = await cursor.fetchall()
+        return [row["id"] for row in rows]
