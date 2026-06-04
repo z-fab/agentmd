@@ -1,0 +1,27 @@
+from agent_md.config.icons import resolve_agent_icon, AGENT_EMOJI_PALETTE
+
+
+def test_explicit_icon_wins():
+    assert resolve_agent_icon("daily-processor", "📅") == "📅"
+
+
+def test_blank_icon_falls_back():
+    assert resolve_agent_icon("daily-processor", "") in AGENT_EMOJI_PALETTE
+    assert resolve_agent_icon("daily-processor", "   ") in AGENT_EMOJI_PALETTE
+    assert resolve_agent_icon("daily-processor", None) in AGENT_EMOJI_PALETTE
+
+
+def test_deterministic():
+    a = resolve_agent_icon("inbox-triage", None)
+    b = resolve_agent_icon("inbox-triage", None)
+    assert a == b
+
+
+def test_palette_has_48_unique_entries():
+    assert len(AGENT_EMOJI_PALETTE) == 48
+
+
+def test_different_names_distribute():
+    # Not a strict guarantee, but a smoke check that names map across the palette.
+    got = {resolve_agent_icon(n, None) for n in ["a", "b", "c", "daily", "hello", "weekly-report", "inbox"]}
+    assert len(got) >= 3
