@@ -5,6 +5,22 @@ from pydantic import BaseModel, field_validator, model_validator
 
 HISTORY_LIMITS = {"low": 10, "medium": 50, "high": 200}
 
+DEFAULT_CONFIRM_TOOLS = ["file_delete", "file_write"]
+
+
+def effective_confirm_tools(config, defaults: list[str] | None = None) -> set[str]:
+    """Return the set of tool names that require confirmation for *config*.
+
+    effective = (defaults ∪ config.confirm) − config.auto_approve
+    auto_approve == "*"/"all" clears the set entirely.
+    """
+    base = set(defaults if defaults is not None else DEFAULT_CONFIRM_TOOLS)
+    base |= set(config.confirm)
+    aa = config.auto_approve
+    if aa in ("*", "all"):
+        return set()
+    return base - set(aa)
+
 RESERVED_ALIASES = {"workspace", "skill_dir", "today", "now", "agents", "tools", "skills"}
 
 ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -210,6 +226,10 @@ class AgentConfig(BaseModel):
 
             if "history" not in data and settings.defaults_history:
                 data["history"] = settings.defaults_history
+            if "on_pending" not in data and settings.defaults_on_pending:
+                data["on_pending"] = settings.defaults_on_pending
+            if "confirm_timeout" not in data and settings.defaults_confirm_timeout:
+                data["confirm_timeout"] = settings.defaults_confirm_timeout
         except Exception:
             pass
         return data

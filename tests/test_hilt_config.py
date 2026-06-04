@@ -46,3 +46,22 @@ def test_confirm_single_string_coerced():
 
 def test_auto_approve_single_string_coerced():
     assert _cfg(auto_approve="file_write").auto_approve == ["file_write"]
+
+
+from agent_md.config.models import effective_confirm_tools
+
+
+def test_effective_set_union_minus():
+    c = _cfg(confirm=["file_edit"], auto_approve=["file_write"])
+    s = effective_confirm_tools(c, defaults=["file_delete", "file_write"])
+    assert s == {"file_delete", "file_edit"}
+
+
+def test_effective_set_wildcard_clears():
+    c = _cfg(auto_approve="*")
+    assert effective_confirm_tools(c, defaults=["file_delete", "file_write"]) == set()
+
+
+def test_effective_set_default_only():
+    c = _cfg()
+    assert effective_confirm_tools(c, defaults=["file_delete", "file_write"]) == {"file_delete", "file_write"}

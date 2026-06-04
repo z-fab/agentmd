@@ -129,6 +129,10 @@ class Settings(BaseSettings):
     defaults_max_tokens: int | None = None
     defaults_timeout: int | None = None
     defaults_history: str | None = None
+    defaults_confirm_tools: list[str] | None = None
+    defaults_on_pending: str | None = None
+    defaults_confirm_timeout: str | None = None
+    defaults_checkpoint_retention_days: int = 30
     defaults_max_agent_depth: int = 3
     log_level: str = "INFO"
 
@@ -163,6 +167,10 @@ class Settings(BaseSettings):
                 ("max_tokens", "defaults_max_tokens"),
                 ("timeout", "defaults_timeout"),
                 ("history", "defaults_history"),
+                ("confirm_tools", "defaults_confirm_tools"),
+                ("on_pending", "defaults_on_pending"),
+                ("confirm_timeout", "defaults_confirm_timeout"),
+                ("checkpoint_retention_days", "defaults_checkpoint_retention_days"),
                 ("max_agent_depth", "defaults_max_agent_depth"),
             ):
                 if key in defaults:
