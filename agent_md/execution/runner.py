@@ -301,7 +301,15 @@ class AgentRunner:
         return "Execute your task."
 
     async def _build_graph(self, config: AgentConfig, **tool_kwargs):
-        """Create model, resolve tools, and compile the graph."""
+        """Create model, resolve tools, and compile the graph.
+
+        Returns ``(graph, checkpoint_conn)`` where ``checkpoint_conn`` is the
+        aiosqlite connection backing the checkpointer (or ``None`` if no
+        checkpointer was created). The caller owns the connection's lifecycle:
+        per-execution callers (run/resume) must close it when done; session-
+        scoped callers (prepare_agent/chat) must append it to
+        ``self._checkpoint_conns`` so it is closed at ``aclose()``.
+        """
         chat_model = create_chat_model(
             provider=config.model.provider,
             model=config.model.name,
@@ -329,15 +337,15 @@ class AgentRunner:
         # `history` only controls how much prior context we seed (see run()).
         checkpointer = None
         memory_limit = None
+        checkpoint_conn = None
         if self.db_path:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
             checkpoint_db = str(self.db_path).replace(".db", "_checkpoints.db")
-            conn = await aiosqlite.connect(checkpoint_db)
-            checkpointer = AsyncSqliteSaver(conn)
+            checkpoint_conn = await aiosqlite.connect(checkpoint_db)
+            checkpointer = AsyncSqliteSaver(checkpoint_conn)
             await checkpointer.setup()
-            self._checkpoint_conns.append(conn)
             logger.info(f"Checkpointer enabled (history={config.history}, thread per execution)")
 
         # Create post-tool processor for skill meta message injection
@@ -345,9 +353,10 @@ class AgentRunner:
         if config.skills and self.path_context and self.path_context.skills_dir.exists():
             post_processor = create_post_tool_processor(config, self.path_context.skills_dir)
 
-        return create_react_graph(
+        graph = create_react_graph(
             chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit, post_tool_processor=post_processor
         )
+        return graph, checkpoint_conn
 
     async def _load_history_seed(self, graph, config: AgentConfig, execution_id: int) -> list:
         """Return prior messages to seed a new run, trimmed to the history level.
@@ -446,10 +455,11 @@ class AgentRunner:
         last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
 
         sdk_token = _set_context(config, self.path_context)
+        checkpoint_conn = None
         try:
             try:
                 # 2. Build model + tools + graph
-                graph = await self._build_graph(
+                graph, checkpoint_conn = await self._build_graph(
                     config,
                     registry=self.registry,
                     runner=self,
@@ -688,6 +698,11 @@ class AgentRunner:
 
         finally:
             _reset_context(sdk_token)
+            if checkpoint_conn is not None:
+                try:
+                    await checkpoint_conn.close()
+                except Exception:
+                    pass
 
     async def resume(
         self,
@@ -724,6 +739,7 @@ class AgentRunner:
         total_input_tokens = total_output_tokens = tool_call_count = 0
         cost_usd = None
         last_ai_msg = None
+        last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
         graph_config = {"configurable": {"thread_id": str(execution_id)}}
         has_post_tool = bool(config.skills and self.path_context and self.path_context.skills_dir.exists())
 
@@ -732,8 +748,9 @@ class AgentRunner:
         graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
 
         sdk_token = _set_context(config, self.path_context)
+        checkpoint_conn = None
         try:
-            graph = await self._build_graph(
+            graph, checkpoint_conn = await self._build_graph(
                 config,
                 registry=self.registry,
                 runner=self,
@@ -745,7 +762,7 @@ class AgentRunner:
             )
 
             async def _drive():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, last_errors
                 async for msg in _stream_state(graph, Command(resume=response), config=graph_config):
                     log_id = await ex_logger.log_message(msg)
                     if event_bus is not None:
@@ -764,6 +781,24 @@ class AgentRunner:
                         )
                     if getattr(msg, "type", "") == "ai" and getattr(msg, "tool_calls", None):
                         tool_call_count += len(msg.tool_calls)
+
+                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+
+                    # Loop detection: same tool error 3 consecutive times (parity with run())
+                    if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
+                        if _looks_like_error(msg):
+                            sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
+                            last_errors.append(sig)
+                            if len(last_errors) > 3:
+                                last_errors.pop(0)
+                            if len(last_errors) == 3 and len(set(last_errors)) == 1:
+                                raise LimitExceeded(
+                                    "loop_detected",
+                                    f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
+                                )
+                        else:
+                            last_errors.clear()
+
                     if _is_final_ai_message(msg):
                         last_ai_msg = msg
 
@@ -826,13 +861,23 @@ class AgentRunner:
             return result
         finally:
             _reset_context(sdk_token)
+            if checkpoint_conn is not None:
+                try:
+                    await checkpoint_conn.close()
+                except Exception:
+                    pass
 
     async def prepare_agent(self, config: AgentConfig):
         """Create model, resolve tools, and build graph -- without executing.
 
         Returns the compiled LangGraph graph, ready for streaming.
         """
-        return await self._build_graph(config)
+        graph, checkpoint_conn = await self._build_graph(config)
+        # Chat reuses the graph across turns, so the connection is session-scoped:
+        # hand it to aclose() rather than closing it here.
+        if checkpoint_conn is not None:
+            self._checkpoint_conns.append(checkpoint_conn)
+        return graph
 
     async def chat_turn(self, graph, messages, ex_logger, timeout, graph_config=None):
         """Stream one chat turn and return (new_messages, input_tokens, output_tokens).

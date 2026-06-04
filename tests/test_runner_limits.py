@@ -134,7 +134,8 @@ async def test_max_tool_calls_aborts():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
@@ -169,7 +170,8 @@ async def test_max_execution_tokens_aborts():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
@@ -206,7 +208,8 @@ async def test_max_cost_usd_aborts():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
@@ -237,7 +240,8 @@ async def test_cost_warning_unknown_model():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
@@ -269,7 +273,8 @@ async def test_null_limits_no_abort():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):

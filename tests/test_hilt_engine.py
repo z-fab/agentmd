@@ -202,3 +202,77 @@ async def test_confirm_timeout_denies(tmp_path, monkeypatch):
     e = await db.get_execution(ex)
     assert e.status == "success"  # denied tool returns message, agent finishes
     await db.close()
+
+
+class _LoopModel:
+    """Pauses on the first turn, then floods unguarded tool calls on resume.
+
+    Call 1 -> a single guarded ``file_delete`` so ``run()`` pauses (status
+    "waiting"). After resume, every call returns one AI message carrying THREE
+    unguarded ``file_read`` tool calls. Those three calls are counted off the AI
+    message (before any tool executes), so within a single resume drive
+    ``tool_call_count`` jumps to 3 and trips ``_check_limits`` with
+    ``max_tool_calls=2`` -- proving limits are enforced from inside resume().
+    """
+
+    def __init__(self):
+        self.calls = 0
+
+    def bind_tools(self, tools):
+        return self
+
+    async def ainvoke(self, messages):
+        self.calls += 1
+        if self.calls == 1:
+            return AIMessage(content="", tool_calls=[{"name": "file_delete", "args": {"path": "/x"}, "id": "d1"}])
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "file_read", "args": {"path": "/x"}, "id": "r1"},
+                {"name": "file_read", "args": {"path": "/y"}, "id": "r2"},
+                {"name": "file_read", "args": {"path": "/z"}, "id": "r3"},
+            ],
+        )
+
+
+async def test_resume_enforces_limits(tmp_path, monkeypatch):
+    from agent_md.execution.runner import AgentRunner
+    from agent_md.db.database import Database
+    from agent_md.workspace.path_context import PathContext
+    from agent_md.config.models import AgentConfig
+
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    pc = PathContext(
+        workspace_root=tmp_path,
+        agents_dir=tmp_path,
+        db_path=tmp_path / "t.db",
+        mcp_config=tmp_path / "m.json",
+        tools_dir=tmp_path,
+        skills_dir=tmp_path,
+    )
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
+    model = _LoopModel()
+    config = AgentConfig(
+        name="loopy",
+        model={"provider": "google", "name": "x"},
+        history="off",
+        confirm=["file_delete"],
+    )
+    config.settings.max_tool_calls = 2
+    monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: model)
+
+    ex = await db.create_execution("loopy", "manual")
+    # Initial run pauses on the first guarded file_delete.
+    assert (await runner.run(config, execution_id=ex))["status"] == "waiting"
+
+    # Approve the delete. On resume the model emits 3 unguarded tool calls in one
+    # message; tool_call_count (3) exceeds max_tool_calls (2), so _check_limits
+    # inside resume()'s _drive loop must abort the execution.
+    res = await runner.resume(config, ex, {"approved": True})
+
+    assert res["status"] == "aborted"
+    e = await db.get_execution(ex)
+    assert e.status == "aborted"
+    assert "max_tool_calls" in (e.error or "")
+    await db.close()
