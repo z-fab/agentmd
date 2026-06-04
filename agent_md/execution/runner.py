@@ -137,6 +137,18 @@ class AgentRunner:
         except Exception:
             return 3
 
+    @property
+    def _default_confirm_tools(self) -> list[str]:
+        try:
+            from agent_md.config.settings import settings
+            from agent_md.config.models import DEFAULT_CONFIRM_TOOLS
+
+            return settings.defaults_confirm_tools or DEFAULT_CONFIRM_TOOLS
+        except Exception:
+            from agent_md.config.models import DEFAULT_CONFIRM_TOOLS
+
+            return DEFAULT_CONFIRM_TOOLS
+
     async def aclose(self):
         """Close any open checkpoint database connections."""
         for conn in self._checkpoint_conns:
@@ -264,7 +276,10 @@ class AgentRunner:
             base_url=config.model.base_url,
         )
 
-        tools = resolve_builtin_tools(config, self.path_context, **tool_kwargs)
+        from agent_md.config.models import effective_confirm_tools
+
+        confirm_tools = effective_confirm_tools(config, defaults=self._default_confirm_tools)
+        tools = resolve_builtin_tools(config, self.path_context, confirm_tools=confirm_tools, **tool_kwargs)
 
         if config.custom_tools:
             tools.extend(load_custom_tools(config.custom_tools, self.path_context.tools_dir))

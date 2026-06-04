@@ -101,7 +101,6 @@ class _FakeModel:
         return AIMessage(content="all done")
 
 
-@pytest.mark.skip(reason="needs guard from Task 9")
 async def test_run_pauses_then_resume_completes(tmp_path, monkeypatch):
     from agent_md.execution.runner import AgentRunner
     from agent_md.db.database import Database
@@ -115,7 +114,8 @@ async def test_run_pauses_then_resume_completes(tmp_path, monkeypatch):
     runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
     config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off",
                          confirm=["file_delete"])
-    monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: _FakeModel())
+    fake_model = _FakeModel()
+    monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: fake_model)
 
     ex = await db.create_execution("del", "manual")
     res = await runner.run(config, execution_id=ex)
