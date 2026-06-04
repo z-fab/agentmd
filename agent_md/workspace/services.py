@@ -230,10 +230,19 @@ async def get_agent_logs(
     agent_name: str,
     n: int,
     workspace: Path | None = None,
-) -> list:
-    """Return the *n* most recent executions for *agent_name*."""
+) -> tuple[list, str]:
+    """Return ``(executions, resolved_icon)`` for *agent_name*.
+
+    The icon is resolved from the agent's config (explicit ``icon`` if set,
+    else the deterministic fallback), matching ``agentmd list`` and the plugin.
+    """
+    from agent_md.config.icons import resolve_agent_icon
+
     async with _runtime(workspace, readonly=True) as rt:
-        return await rt.db.get_executions(agent_name, limit=n)
+        executions = await rt.db.get_executions(agent_name, limit=n)
+        config = rt.registry.get(agent_name)
+        icon = resolve_agent_icon(agent_name, config.icon if config else None)
+        return executions, icon
 
 
 async def get_execution_messages(

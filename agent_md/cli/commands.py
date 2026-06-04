@@ -807,13 +807,12 @@ def logs(
 
     from agent_md.workspace.services import get_agent_logs
 
-    executions = asyncio.run(get_agent_logs(agent, last, workspace))
+    executions, agent_icon = asyncio.run(get_agent_logs(agent, last, workspace))
 
     if not executions:
         print_warning(f"No executions found for '{agent}'.")
         return
 
-    agent_icon = resolve_agent_icon(agent, None)
     console.print(f"\n  [bold]Recent executions \u2014 {agent_icon} {agent}[/bold]\n")
 
     status_style = {
