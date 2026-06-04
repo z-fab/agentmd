@@ -754,6 +754,7 @@ def list_agents(
     console.print()
 
     table = make_table(
+        ("", {}),
         ("Name", {"style": "cyan"}),
         ("Trigger", {}),
         ("Last Run", {"style": "dim"}),
@@ -764,7 +765,8 @@ def list_agents(
         last_run = format_relative_time(last_runs.get(config.name))
         icon = resolve_agent_icon(config.name, config.icon)
         table.add_row(
-            f"{icon} {config.name}",
+            icon,
+            config.name,
             format_trigger(config),
             last_run,
             agent_status_dot(config.enabled),
