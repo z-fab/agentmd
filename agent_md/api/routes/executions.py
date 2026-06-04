@@ -126,11 +126,11 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
 
         # Check if already finished
         execution = await db.get_execution(exec_id)
+        if execution and execution.status == "waiting":
+            yield ServerSentEvent(data={"status": "waiting"}, event="waiting")
+            return
         if execution and execution.status not in ("running", "pending"):
-            yield ServerSentEvent(
-                data={"status": execution.status},
-                event="complete",
-            )
+            yield ServerSentEvent(data={"status": execution.status}, event="complete")
             return
 
         # Drain live events (dedup against replay)
@@ -140,9 +140,10 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             except asyncio.TimeoutError:
                 execution = await db.get_execution(exec_id)
                 if not execution or execution.status not in ("running", "pending"):
+                    ev = "waiting" if execution and execution.status == "waiting" else "complete"
                     yield ServerSentEvent(
                         data={"status": execution.status if execution else "unknown"},
-                        event="complete",
+                        event=ev,
                     )
                     return
                 continue
@@ -158,6 +159,8 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 id=str(seq),
             )
             if event["type"] == "complete":
+                break
+            if event["type"] == "interrupt":
                 break
     finally:
         event_bus.unsubscribe(exec_id, queue)
@@ -205,12 +208,15 @@ async def respond(exec_id: int, body: RespondRequest, request: Request):
 async def cancel_execution(exec_id: int, request: Request):
     state = request.app.state
     db = state.db
-
     e = await db.get_execution(exec_id)
     if not e:
         raise HTTPException(status_code=404, detail="Execution not found")
 
-    # Already finished — not an error, just acknowledge
+    if e.status == "waiting":
+        await db.clear_pending_interrupt(exec_id)
+        await db.update_execution(execution_id=exec_id, status="aborted", error="cancelled while waiting")
+        return CancelResponse(status="aborted", execution_id=exec_id)
+
     if e.status not in ("running", "pending"):
         return CancelResponse(status=e.status, execution_id=exec_id)
 
@@ -218,8 +224,6 @@ async def cancel_execution(exec_id: int, request: Request):
     if cancel_event:
         cancel_event.set()
         return CancelResponse(status="cancelling", execution_id=exec_id)
-
-    # Running but no cancel_event — race condition, treat as already done
     return CancelResponse(status=e.status, execution_id=exec_id)
 
 

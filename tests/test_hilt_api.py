@@ -47,3 +47,31 @@ async def test_respond_stale_request_id(app_client):
     await app.state.db.set_pending_interrupt(ex, "r1", {"request_id": "r1", "kind": "confirm", "message": "ok?"})
     r = await client.post(f"/executions/{ex}/respond", json={"request_id": "WRONG", "response": {"approved": True}})
     assert r.status_code == 409
+
+
+async def test_cancel_waiting_aborts_and_clears(app_client):
+    app, client = app_client
+    ex = await app.state.db.create_execution("a", "manual", status="waiting")
+    await app.state.db.set_pending_interrupt(ex, "r1", {"request_id": "r1", "kind": "confirm", "message": "ok?"})
+    r = await client.delete(f"/executions/{ex}")
+    assert r.status_code == 200
+    assert r.json()["status"] == "aborted"
+    assert await app.state.db.get_pending_interrupt(ex) is None
+    e = await app.state.db.get_execution(ex)
+    assert e.status == "aborted"
+
+
+async def test_stream_emits_waiting_frame(app_client):
+    app, client = app_client
+    ex = await app.state.db.create_execution("a", "manual", status="waiting")
+    await app.state.db.add_log(ex, "interrupt", "ok?", {"request_id": "r1", "kind": "confirm"})
+    await app.state.db.set_pending_interrupt(ex, "r1", {"request_id": "r1", "kind": "confirm", "message": "ok?"})
+    seen_events = []
+    async with client.stream("GET", f"/executions/{ex}/stream") as resp:
+        async for line in resp.aiter_lines():
+            if line.startswith("event:"):
+                seen_events.append(line.split(":", 1)[1].strip())
+            if "waiting" in seen_events:
+                break
+    assert "interrupt" in seen_events
+    assert "waiting" in seen_events
