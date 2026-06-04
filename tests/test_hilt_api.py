@@ -1,4 +1,3 @@
-import json
 import pytest
 from httpx import AsyncClient, ASGITransport
 from agent_md.api.app import create_app
@@ -85,3 +84,26 @@ async def test_run_skipped_when_waiting(app_client):
     await app.state.db.create_execution("busy", "manual", status="waiting")
     r = await client.post("/agents/busy/run", json={})
     assert r.status_code == 409
+
+
+async def test_respond_without_live_task_rebuilds(app_client, monkeypatch):
+    app, client = app_client
+    from agent_md.config.models import AgentConfig
+    cfg = AgentConfig(name="rec", model={"provider": "google", "name": "x"})
+    app.state.runtime.registry.register(cfg)
+    ex = await app.state.db.create_execution("rec", "manual", status="waiting")
+    await app.state.db.set_pending_interrupt(ex, "r1", {"request_id": "r1", "kind": "confirm", "message": "ok?"})
+
+    captured = {}
+
+    async def fake_resume(config, execution_id, response, **kw):
+        captured["ok"] = (config.name, execution_id, response)
+        await app.state.db.update_execution(execution_id=execution_id, status="success")
+
+    monkeypatch.setattr(app.state.runtime.runner, "resume", fake_resume)
+
+    r = await client.post(f"/executions/{ex}/respond", json={"request_id": "r1", "response": {"approved": True}})
+    assert r.status_code == 200
+    import asyncio
+    await asyncio.sleep(0.05)
+    assert captured["ok"][0] == "rec"

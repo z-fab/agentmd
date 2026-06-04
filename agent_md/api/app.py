@@ -51,6 +51,8 @@ async def _lifespan(app: FastAPI):
     lifecycle = LifecycleManager(shutdown_event=state.shutdown_event)
     lifecycle.keep_alive = getattr(state, "keep_alive", False)
     lifecycle.has_scheduled_agents = lambda: bool(rt.scheduler and rt.scheduler.get_jobs())
+    # Note: 'waiting' (HILT) executions have no live task and intentionally do
+    # NOT keep the backend alive — respond() rebuilds and resumes on demand.
     lifecycle.has_running_executions = lambda: bool(state.cancel_events)
     lifecycle.has_active_streams = lambda: (state.event_bus.stream_count + state.global_event_bus.stream_count) > 0
     state.lifecycle = lifecycle
