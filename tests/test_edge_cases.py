@@ -12,7 +12,7 @@ from rich.console import Console
 
 from agent_md.execution.runner import _classify_event_type, _build_event_data
 from agent_md.execution.event_bus import EventBus
-from agent_md.cli.commands import _print_event, _validate_agent_name
+from agent_md.cli.commands import _agent_path, _print_event, _validate_agent_name
 
 
 # ---------------------------------------------------------------------------
@@ -373,3 +373,20 @@ def test_cli_validate_name_backslash_invalid():
 def test_cli_validate_name_empty_invalid():
     result = _validate_agent_name("")
     assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# _agent_path helper
+# ---------------------------------------------------------------------------
+
+
+def test_agent_path_encodes_spaces():
+    assert _agent_path("Daily Processor", "/run") == "/agents/Daily%20Processor/run"
+
+
+def test_agent_path_encodes_slash():
+    assert _agent_path("a/b") == "/agents/a%2Fb"
+
+
+def test_agent_path_plain():
+    assert _agent_path("hello", "/runs") == "/agents/hello/runs"

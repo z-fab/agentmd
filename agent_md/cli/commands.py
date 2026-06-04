@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Annotated, Optional
+from urllib.parse import quote
 
 import typer
 
@@ -25,12 +26,18 @@ from agent_md.cli.theme import (
     print_warning,
     select_agent,
 )
+from agent_md.config.icons import resolve_agent_icon
 from agent_md.config.models import AgentConfig
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _agent_path(agent: str, suffix: str = "") -> str:
+    """Build an /agents/<encoded-name><suffix> request path (handles spaces)."""
+    return f"/agents/{quote(agent, safe='')}{suffix}"
 
 
 def _resolve_workspace(workspace: Path | None) -> Path:
@@ -451,7 +458,7 @@ def run(
 
     arguments = ctx.args
     body = {"args": arguments} if arguments else {}
-    resp = client.post(f"/agents/{agent}/run", json=body)
+    resp = client.post(_agent_path(agent, "/run"), json=body)
     if resp.status_code == 404:
         console.print(f"[red]Agent '{agent}' not found.[/red]")
         raise typer.Exit(1)
@@ -658,7 +665,7 @@ def chat(
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
 
-    resp = client.get(f"/agents/{agent}")
+    resp = client.get(_agent_path(agent))
     if resp.status_code == 404:
         console.print(f"[red]Agent '{agent}' not found.[/red]")
         raise typer.Exit(1)
@@ -684,7 +691,7 @@ def chat(
             if not user_input.strip():
                 continue
 
-            resp = client.post(f"/agents/{agent}/run", json={"message": user_input})
+            resp = client.post(_agent_path(agent, "/run"), json={"message": user_input})
             if resp.status_code != 200:
                 console.print(f"[red]Error: {resp.text}[/red]")
                 break
@@ -755,8 +762,9 @@ def list_agents(
 
     for config in agents:
         last_run = format_relative_time(last_runs.get(config.name))
+        icon = resolve_agent_icon(config.name, config.icon)
         table.add_row(
-            config.name,
+            f"{icon} {config.name}",
             format_trigger(config),
             last_run,
             agent_status_dot(config.enabled),
@@ -805,7 +813,8 @@ def logs(
         print_warning(f"No executions found for '{agent}'.")
         return
 
-    console.print(f"\n  [bold]Recent executions \u2014 {agent}[/bold]\n")
+    agent_icon = resolve_agent_icon(agent, None)
+    console.print(f"\n  [bold]Recent executions \u2014 {agent_icon} {agent}[/bold]\n")
 
     status_style = {
         "success": "green",
