@@ -3,6 +3,11 @@
 All notable changes to Agent.md are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.14.0] — 2026-06-03
+
+### Added
+- **Agent `icon` field** — agents may declare an optional `icon:` (emoji/short string) in frontmatter. It is exposed on `GET /agents` and `GET /agents/{name}` for UIs such as the Obsidian plugin, which fall back to a stable name-derived emoji when omitted.
+
 ## [0.13.1] — 2026-06-03
 
 ### Added

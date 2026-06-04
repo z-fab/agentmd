@@ -151,6 +151,20 @@ Human-readable description of what the agent does. Displayed in `agentmd list` o
 description: Analyzes CSV files and generates statistical reports
 ```
 
+### `icon`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string |
+| **Required** | No |
+| **Default** | None |
+
+An emoji or short string shown next to the agent in UIs (e.g. the Obsidian plugin). Optional — UIs derive a stable fallback from the agent name when omitted.
+
+```yaml
+icon: "📅"
+```
+
 ### `trigger`
 
 | Property | Value |
