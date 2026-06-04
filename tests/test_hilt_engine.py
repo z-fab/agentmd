@@ -276,3 +276,95 @@ async def test_resume_enforces_limits(tmp_path, monkeypatch):
     assert e.status == "aborted"
     assert "max_tool_calls" in (e.error or "")
     await db.close()
+
+
+class _SeedSpyModel:
+    """Records every messages list passed to ainvoke; returns a plain AIMessage each time."""
+
+    def __init__(self):
+        self.seen = []  # list of message-lists, one per ainvoke call
+        self.n = 0
+
+    def bind_tools(self, tools):
+        return self
+
+    async def ainvoke(self, messages):
+        self.seen.append(list(messages))
+        self.n += 1
+        return AIMessage(content=f"answer {self.n}")
+
+
+def _text(msg) -> str:
+    """Return message content as a plain string regardless of content type."""
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                parts.append(str(part.get("text", part)))
+        return " ".join(parts)
+    return str(content)
+
+
+async def test_history_seed_injects_prior_run(tmp_path, monkeypatch):
+    """End-to-end: run 1 completes, run 2 receives run-1 messages as seed."""
+    from agent_md.execution.runner import AgentRunner
+    from agent_md.db.database import Database
+    from agent_md.workspace.path_context import PathContext
+    from agent_md.config.models import AgentConfig
+
+    db = Database(tmp_path / "seed.db")
+    await db.connect()
+    pc = PathContext(
+        workspace_root=tmp_path,
+        agents_dir=tmp_path,
+        db_path=tmp_path / "seed.db",
+        mcp_config=tmp_path / "m.json",
+        tools_dir=tmp_path,
+        skills_dir=tmp_path,
+    )
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "seed.db"))
+    # history="low" enables seeding (history != "off")
+    config = AgentConfig(name="seeder", model={"provider": "google", "name": "x"}, history="low")
+
+    spy = _SeedSpyModel()
+    monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: spy)
+
+    try:
+        # Run 1: model returns "answer 1" immediately — no tool calls, status success
+        ex1 = await db.create_execution("seeder", "manual")
+        res1 = await runner.run(config, execution_id=ex1)
+        assert res1["status"] == "success", f"Run 1 expected success, got: {res1}"
+
+        # Run 2: should be seeded with run-1's checkpoint messages
+        ex2 = await db.create_execution("seeder", "manual")
+        res2 = await runner.run(config, execution_id=ex2)
+        assert res2["status"] == "success", f"Run 2 expected success, got: {res2}"
+    finally:
+        await runner.aclose()
+        await db.close()
+
+    # spy.seen[0] = run 1's single ainvoke
+    # spy.seen[1] = run 2's single ainvoke (first and only call of that run)
+    assert len(spy.seen) >= 2, f"Expected at least 2 ainvoke calls; got {len(spy.seen)}"
+
+    run1_msgs = spy.seen[0]
+    run2_msgs = spy.seen[1]
+
+    # Run 2 must have received MORE messages than run 1, because it was seeded
+    # with run 1's conversation (human + AI messages from the checkpoint).
+    assert len(run2_msgs) > len(run1_msgs), (
+        f"Run 2 should receive more messages than run 1 (seeding); "
+        f"run1={len(run1_msgs)} msgs, run2={len(run2_msgs)} msgs"
+    )
+
+    # The run-1 AI answer ("answer 1") must be present in the seeded messages
+    # passed to the spy on run 2's first ainvoke.
+    run2_texts = [_text(m) for m in run2_msgs]
+    assert any("answer 1" in t for t in run2_texts), (
+        f"'answer 1' (run-1 AI response) not found in run-2 seeded messages. Run-2 message contents: {run2_texts}"
+    )

@@ -247,6 +247,12 @@ The `history` setting and the always-on checkpointer are independent:
 - The checkpointer is **always active** regardless of `history`. It is the durability substrate for HILT.
 - `history` controls only how much prior context is fed to the LLM at the **start** of a new, non-HILT run (see [Memory](memory.md)).
 
+### Limitations
+
+**`confirm_timeout` across restarts.** The timeout countdown runs in memory. If the backend restarts while an execution is waiting for a response, the timeout task is not re-armed — the execution will wait indefinitely until it is answered or cancelled. This only affects agents that set an explicit `confirm_timeout`; the default (`none`) is unaffected.
+
+**Limits are per-resume, not cumulative.** `max_cost_usd`, `max_execution_tokens`, and `max_tool_calls` are enforced independently within each `run()` and each `resume()` call. They are not accumulated across the full pause/resume history of a single execution. For example, an agent with `max_tool_calls: 5` may call up to 5 tools before the pause *and* up to 5 more after each resume. The LangGraph recursion limit still caps tool calls within a single resume drive.
+
 ---
 
 ## SDK Primitives
