@@ -1098,6 +1098,90 @@ def validate(
 
 
 # ---------------------------------------------------------------------------
+# agentmd pending
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def pending(
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+):
+    """List executions waiting for a HILT response."""
+    from rich.console import Console
+    from rich.table import Table
+    from agent_md.cli.spawn import ensure_backend
+
+    console = Console()
+    try:
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    resp = client.get("/executions", params={"status": "waiting", "limit": 100})
+    rows = resp.json() if resp.status_code == 200 else []
+    if not rows:
+        console.print("[dim]No executions waiting for a response.[/dim]")
+        return
+
+    table = Table()
+    table.add_column("#", style="cyan")
+    table.add_column("Agent")
+    table.add_column("Question")
+    for r in rows:
+        pend = client.get(f"/executions/{r['id']}/pending")
+        q = pend.json().get("message", "") if pend.status_code == 200 else ""
+        table.add_row(str(r["id"]), r["agent_id"], q[:60])
+    console.print(table)
+
+
+@app.command()
+def respond(
+    execution_id: Annotated[int, typer.Argument()],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+    no: Annotated[bool, typer.Option("--no")] = False,
+    reason: Annotated[Optional[str], typer.Option("--reason")] = None,
+    text: Annotated[Optional[str], typer.Option("--text")] = None,
+    choice: Annotated[Optional[str], typer.Option("--choice")] = None,
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+):
+    """Respond to a waiting execution (interactive, or via flags)."""
+    from rich.console import Console
+    from agent_md.cli.spawn import ensure_backend
+
+    console = Console()
+    try:
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    pend = client.get(f"/executions/{execution_id}/pending")
+    if pend.status_code != 200:
+        console.print(f"[red]No pending request for execution {execution_id}.[/red]")
+        raise typer.Exit(1)
+    payload = pend.json()
+
+    if yes or no:
+        response = {"approved": bool(yes), "reason": reason}
+    elif text is not None:
+        response = {"text": text}
+    elif choice is not None:
+        response = {"selected": [choice]}
+    else:
+        _prompt_and_respond(client, execution_id, console, payload)
+        console.print("[green]Response sent.[/green]")
+        return
+
+    r = client.post(f"/executions/{execution_id}/respond", json={"request_id": payload["request_id"], "response": response})
+    if r.status_code == 200:
+        console.print("[green]Response sent.[/green]")
+    else:
+        console.print(f"[red]{r.text}[/red]")
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # agentmd status
 # ---------------------------------------------------------------------------
 

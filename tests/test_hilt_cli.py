@@ -40,3 +40,19 @@ def test_prompt_and_respond_input(monkeypatch):
     payload = {"request_id": "r2", "kind": "input", "message": "Name?"}
     commands._prompt_and_respond(client, 3, Console(), payload)
     assert client.posted[0][1] == {"request_id": "r2", "response": {"text": "Ana"}}
+
+
+def test_respond_flags_yes(monkeypatch):
+    from agent_md.cli import commands
+
+    client = _FakeClient()
+
+    def fake_get(path, params=None):
+        return _FakeResp(200, {"request_id": "r1", "kind": "confirm", "message": "ok?"})
+
+    client.get = fake_get
+    monkeypatch.setattr("agent_md.cli.spawn.ensure_backend", lambda **k: client)
+
+    commands.respond(execution_id=5, yes=True, no=False, reason="sure", text=None, choice=None, workspace=None)
+    assert client.posted[-1][0] == "/executions/5/respond"
+    assert client.posted[-1][1]["response"] == {"approved": True, "reason": "sure"}
