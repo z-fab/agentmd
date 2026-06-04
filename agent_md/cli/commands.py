@@ -471,7 +471,17 @@ def run(
         console.print(f"[dim]Execution {execution_id} started[/dim]")
 
     try:
-        _stream_execution(client, execution_id, console, quiet)
+        while True:
+            result = _stream_execution(client, execution_id, console, quiet)
+            if result and result.get("interrupt"):
+                _prompt_and_respond(client, execution_id, console, result["interrupt"])
+                continue  # re-open the stream to observe the resume
+            if result and result.get("waiting"):
+                pend = client.get(f"/executions/{execution_id}/pending")
+                if pend.status_code == 200:
+                    _prompt_and_respond(client, execution_id, console, pend.json())
+                    continue
+            break
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelling...[/yellow]")
         client.delete(f"/executions/{execution_id}")
@@ -480,6 +490,34 @@ def run(
 # ---------------------------------------------------------------------------
 # SSE streaming helpers
 # ---------------------------------------------------------------------------
+
+
+def _prompt_and_respond(client, execution_id: int, console, payload: dict) -> None:
+    """Render a HILT request, collect the answer, and POST it."""
+    import typer
+
+    kind = payload.get("kind", "input")
+    message = payload.get("message", "Input needed")
+    request_id = payload.get("request_id")
+    console.print(f"\n[bold yellow]✋ {message}[/bold yellow]")
+    if payload.get("tool_name"):
+        console.print(f"[dim]tool: {payload['tool_name']}  args: {payload.get('tool_args')}[/dim]")
+
+    if kind == "confirm":
+        approved = typer.confirm("Approve?")
+        response = {"approved": approved}
+    elif kind == "choice":
+        options = payload.get("options") or []
+        for i, opt in enumerate(options):
+            console.print(f"  {i + 1}. {opt}")
+        idx = typer.prompt("Choose (number)", type=int)
+        sel = options[idx - 1] if 1 <= idx <= len(options) else ""
+        response = {"selected": [sel] if sel else []}
+    else:
+        text = typer.prompt("Your answer")
+        response = {"text": text}
+
+    client.post(f"/executions/{execution_id}/respond", json={"request_id": request_id, "response": response})
 
 
 def _stream_execution(client, execution_id: int, console, quiet: bool):
@@ -532,11 +570,17 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                     got_final_answer = True
                     if not quiet:
                         _print_event(console, event_type, data)
+                elif event_type in ("interrupt", "waiting"):
+                    if event_type == "interrupt":
+                        return {"interrupt": data}
+                    return {"waiting": True}
                 elif not quiet:
                     _print_event(console, event_type, data)
 
                 data_buffer = ""
                 event_type = None
+
+    return None
 
 
 def _stream_chat_turn(client, execution_id: int, console) -> dict:
