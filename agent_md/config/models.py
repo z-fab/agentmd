@@ -1,5 +1,5 @@
 import re
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -164,6 +164,10 @@ class AgentConfig(BaseModel):
     enabled: bool = True
     history: str = "low"  # 'low', 'medium', 'high', 'off'
     paths: dict[str, PathEntry] = {}
+    confirm: list[str] = []
+    auto_approve: list[str] | Literal["*", "all"] = []
+    on_pending: str = "skip"
+    confirm_timeout: str | None = None
 
     @field_validator("history", mode="before")
     @classmethod
@@ -255,4 +259,41 @@ class AgentConfig(BaseModel):
                 "Agent name may contain only letters, numbers, spaces, hyphens, and underscores. "
                 f"Got: '{v}'"
             )
+        return v
+
+    @field_validator("confirm", mode="before")
+    @classmethod
+    def normalize_confirm(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        return v
+
+    @field_validator("auto_approve", mode="before")
+    @classmethod
+    def normalize_auto_approve(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            if v in ("*", "all"):
+                return v
+            return [v]
+        return v
+
+    @field_validator("on_pending")
+    @classmethod
+    def validate_on_pending(cls, v):
+        allowed = ("skip", "parallel")
+        if v not in allowed:
+            raise ValueError(f"on_pending must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("confirm_timeout")
+    @classmethod
+    def validate_confirm_timeout(cls, v):
+        if v is None or v == "none":
+            return v
+        if not re.match(r"^\d+[smhd]$", v):
+            raise ValueError(f"Invalid confirm_timeout: '{v}'. Use e.g. '30s', '5m', '2h', '1d', or 'none'.")
         return v
