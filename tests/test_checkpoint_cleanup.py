@@ -75,3 +75,16 @@ async def test_sweep_preserves_non_latest_waiting(tmp_path):
         remaining = sorted(int(r[0]) for r in await cur.fetchall())
     assert remaining == [e1, e2]
     await db.close()
+
+
+async def test_stats_maps_threads_to_agents(tmp_path):
+    db = Database(tmp_path / "agentmd.db")
+    await db.connect()
+    e1 = await db.create_execution("alpha", "manual")
+    e2 = await db.create_execution("beta", "manual")
+    cp = cm.checkpoint_db_path(tmp_path / "agentmd.db")
+    await _make_checkpoint_db(cp, [e1, e2])
+    s = await cm.checkpoint_stats(db, tmp_path / "agentmd.db")
+    assert s["threads"] == 2
+    assert s["per_agent"] == {"alpha": 1, "beta": 1}
+    await db.close()

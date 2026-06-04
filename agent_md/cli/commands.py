@@ -1237,6 +1237,44 @@ def status(
 
 
 @app.command()
+def checkpoint(
+    stats: Annotated[bool, typer.Option("--stats")] = False,
+    purge: Annotated[bool, typer.Option("--purge")] = False,
+    agent: Annotated[Optional[str], typer.Option("--agent")] = None,
+    force: Annotated[bool, typer.Option("--force")] = False,
+):
+    """Inspect or purge the LangGraph checkpoint database."""
+    import asyncio
+    from rich.console import Console
+    from agent_md.db.database import Database
+    from agent_md.config.settings import get_state_dir
+    from agent_md.execution import checkpoint_maint as cm
+
+    console = Console()
+    db_path = get_state_dir() / "agentmd.db"
+
+    async def _go():
+        db = Database(db_path)
+        await db.connect()
+        try:
+            if purge:
+                removed = await cm.purge_checkpoints(db, db_path, agent=agent, force=force)
+                console.print(f"[green]Removed {removed} checkpoint thread(s).[/green]")
+            else:
+                s = await cm.checkpoint_stats(db, db_path)
+                console.print(f"[bold]Checkpoint DB[/bold]: {s['path']}")
+                console.print(f"Size: {s['size_bytes'] / 1024:.1f} KiB  |  Threads: {s['threads']}")
+                for ag, n in sorted(s["per_agent"].items()):
+                    console.print(f"  {ag}: {n}")
+        finally:
+            await db.close()
+
+    if not stats and not purge:
+        stats = True
+    asyncio.run(_go())
+
+
+@app.command()
 def stop(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
