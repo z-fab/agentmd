@@ -102,6 +102,47 @@ def test_stream_execution_returns_new_interrupt():
     assert res["interrupt"]["request_id"] == "r2"
 
 
+def test_stream_execution_deduplicates_replayed_events():
+    """Events already in `seen` must not be printed on reconnect passes."""
+    import io
+    from rich.console import Console
+    from agent_md.cli import commands
+
+    # SSE lines with id: headers — one tool_call and one final_answer
+    lines = [
+        "id: 10",
+        "event: tool_call",
+        'data: {"tools": [{"name": "file_read", "args": "x"}]}',
+        "",
+        "id: 11",
+        "event: final_answer",
+        'data: {"content": "Done!"}',
+        "",
+        "event: complete",
+        'data: {"status": "success"}',
+        "",
+    ]
+
+    # First pass — seen starts empty, everything should be printed
+    buf1 = io.StringIO()
+    console1 = Console(file=buf1, force_terminal=False)
+    seen: set = set()
+    commands._stream_execution(_StreamClient(lines), 1, console1, quiet=False, seen=seen)
+    out1 = buf1.getvalue()
+    assert "file_read" in out1
+    assert "Done!" in out1
+    assert "10" in seen
+    assert "11" in seen
+
+    # Second pass with the same `seen` — replayed events must be skipped
+    buf2 = io.StringIO()
+    console2 = Console(file=buf2, force_terminal=False)
+    commands._stream_execution(_StreamClient(lines), 1, console2, quiet=False, seen=seen)
+    out2 = buf2.getvalue()
+    assert "file_read" not in out2
+    assert "Done!" not in out2
+
+
 def test_respond_flags_yes(monkeypatch):
     from agent_md.cli import commands
 

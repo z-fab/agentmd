@@ -471,9 +471,10 @@ def run(
         console.print(f"[dim]Execution {execution_id} started[/dim]")
 
     answered: set = set()
+    seen: set = set()
     try:
         while True:
-            result = _stream_execution(client, execution_id, console, quiet, answered)
+            result = _stream_execution(client, execution_id, console, quiet, answered, seen)
             if result and result.get("interrupt"):
                 data = result["interrupt"]
                 rid = data.get("request_id")
@@ -529,13 +530,14 @@ def _prompt_and_respond(client, execution_id: int, console, payload: dict) -> No
     client.post(f"/executions/{execution_id}/respond", json={"request_id": request_id, "response": response})
 
 
-def _stream_execution(client, execution_id: int, console, quiet: bool, answered: set | None = None):
+def _stream_execution(client, execution_id: int, console, quiet: bool, answered: set | None = None, seen: set | None = None):
     """Stream SSE events from an execution and print them."""
     import json
 
     with client.stream_sse(f"/executions/{execution_id}/stream") as response:
         event_type = None
         data_buffer = ""
+        event_id = None
         got_final_answer = False
 
         for line in response.iter_lines():
@@ -543,6 +545,8 @@ def _stream_execution(client, execution_id: int, console, quiet: bool, answered:
                 event_type = line[6:].strip()
             elif line.startswith("data:"):
                 data_buffer = line[5:].strip()
+            elif line.startswith("id:"):
+                event_id = line[3:].strip()
             elif line == "" and data_buffer:
                 try:
                     data = json.loads(data_buffer)
@@ -578,27 +582,37 @@ def _stream_execution(client, execution_id: int, console, quiet: bool, answered:
                 elif event_type == "final_answer":
                     got_final_answer = True
                     if not quiet:
-                        _print_event(console, event_type, data)
+                        already_seen = seen is not None and event_id is not None and event_id in seen
+                        if not already_seen:
+                            _print_event(console, event_type, data)
+                            if seen is not None and event_id is not None:
+                                seen.add(event_id)
                 elif event_type == "interrupt":
                     rid = data.get("request_id")
                     if answered is not None and rid in answered:
                         # already handled this pause on a previous pass; skip and keep reading
                         data_buffer = ""
                         event_type = None
+                        event_id = None
                         continue
                     return {"interrupt": data}
                 elif event_type == "waiting":
                     return {"waiting": True}
                 elif not quiet:
-                    _print_event(console, event_type, data)
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        _print_event(console, event_type, data)
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
 
                 data_buffer = ""
                 event_type = None
+                event_id = None
 
     return None
 
 
-def _stream_chat_turn(client, execution_id: int, console, answered: set | None = None) -> dict:
+def _stream_chat_turn(client, execution_id: int, console, answered: set | None = None, seen: set | None = None) -> dict:
     """Stream a single chat turn — discrete display, return stats.
 
     Shows tools and thinking in dim gray; only the final answer is prominent.
@@ -612,12 +626,15 @@ def _stream_chat_turn(client, execution_id: int, console, answered: set | None =
     with client.stream_sse(f"/executions/{execution_id}/stream") as response:
         event_type = None
         data_buffer = ""
+        event_id = None
 
         for line in response.iter_lines():
             if line.startswith("event:"):
                 event_type = line[6:].strip()
             elif line.startswith("data:"):
                 data_buffer = line[5:].strip()
+            elif line.startswith("id:"):
+                event_id = line[3:].strip()
             elif line == "" and data_buffer:
                 try:
                     data = json.loads(data_buffer)
@@ -640,31 +657,45 @@ def _stream_chat_turn(client, execution_id: int, console, answered: set | None =
                         # already handled this pause on a previous pass; skip and keep reading
                         data_buffer = ""
                         event_type = None
+                        event_id = None
                         continue
                     return {"interrupt": data}
                 elif event_type == "waiting":
                     return {"waiting": True}
                 elif event_type == "final_answer":
-                    content = str(data.get("content", data.get("message", "")))
-                    if content:
-                        console.print(content)
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        content = str(data.get("content", data.get("message", "")))
+                        if content:
+                            console.print(content)
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                     got_final = True
                 elif event_type == "tool_call":
-                    tools = data.get("tools", [])
-                    if tools:
-                        names = ", ".join(t.get("name", "?") for t in tools)
-                        console.print(f"  [dim]{names}...[/dim]")
-                    else:
-                        msg = str(data.get("content", data.get("message", "")))[:60]
-                        if msg:
-                            console.print(f"  [dim]{msg}...[/dim]")
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        tools = data.get("tools", [])
+                        if tools:
+                            names = ", ".join(t.get("name", "?") for t in tools)
+                            console.print(f"  [dim]{names}...[/dim]")
+                        else:
+                            msg = str(data.get("content", data.get("message", "")))[:60]
+                            if msg:
+                                console.print(f"  [dim]{msg}...[/dim]")
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                 elif event_type == "ai":
-                    # Buffer AI content — only show if no final_answer follows
-                    last_ai_content = str(data.get("content", data.get("message", "")))
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        # Buffer AI content — only show if no final_answer follows
+                        last_ai_content = str(data.get("content", data.get("message", "")))
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                 # tool_result, system, human, meta — silent in chat mode
 
                 data_buffer = ""
                 event_type = None
+                event_id = None
 
     return stats
 
@@ -769,10 +800,11 @@ def chat(
             turns += 1
 
             answered: set = set()
+            seen: set = set()
             turn_stats: dict = {}
             try:
                 while True:
-                    res = _stream_chat_turn(client, execution_id, console, answered)
+                    res = _stream_chat_turn(client, execution_id, console, answered, seen)
                     if res and res.get("interrupt"):
                         data = res["interrupt"]
                         rid = data.get("request_id")
