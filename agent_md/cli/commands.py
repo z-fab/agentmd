@@ -125,27 +125,40 @@ YAML frontmatter (between --- delimiters) followed by the system prompt in Markd
 ## Frontmatter fields
 
 Required:
-- name: {agent_name}
+- name: {agent_name}  (may contain spaces and accents, e.g. "Daily Processor")
 
 Optional:
+- icon: an emoji that represents the agent (auto-derived from name if omitted)
 - description: one-line summary
 - model: object with provider and name (omit to use global default)
 - trigger: manual (default), schedule (every/cron), watch (paths)
 - settings: temperature, max_tokens, timeout
 - history: "low" (default, remembers last 10 messages), "medium" (50), "high" (200), "off"
 - paths: dict of alias: path pairs for directories the agent can access
-- agents: list of agent names this agent can call via run_agent tool (e.g. [summarizer, formatter])
+- agents: list of agent names this agent can call via run_agent (e.g. [summarizer, formatter])
+- skills: list of skill names available under agents/_config/skills/
+- mcp: list of MCP server names configured in agents/_config/mcp-servers.json
+- custom_tools: list of custom tool file names under agents/_config/tools/ (alias: tools)
 
-## Agent capabilities
+## Built-in tools
 
-Agents have built-in tools for:
-- Reading, writing, and editing files within declared paths
-- Searching for files using glob patterns
-- Making HTTP requests
-- Persistent memory across runs (save, append, retrieve by section)
-- Calling other agents via run_agent (requires agents field in frontmatter)
+- file_read, file_write, file_edit, file_glob, file_move, file_delete
+- http_request
+- memory_save, memory_append, memory_retrieve
+- run_agent (requires agents: in frontmatter)
+- ask_user (prompt the user for confirmation, input, or a choice)
+- skill tools (available when skills: is set)
 
-Custom tools can be added in agents/_config/tools/.
+## Human-in-the-loop (HILT)
+
+By default, file_delete and file_write ask the user for confirmation before running. You can:
+- Guard more tools: `confirm: [toolname, ...]`
+- Skip confirmation for specific tools: `auto_approve: [toolname, ...]` (or `auto_approve: "*"` for all)
+- Control concurrency while waiting: `on_pending: skip` (default) or `on_pending: parallel`
+- Set a response timeout: `confirm_timeout: 30s` / `5m` / `none`
+
+If the agent performs destructive or sensitive actions, it can rely on the default confirmation
+for file operations, and use the `ask_user` tool when it needs information only the user can provide.
 
 ## Rules
 
@@ -159,6 +172,7 @@ Custom tools can be added in agents/_config/tools/.
 
 ---
 name: daily-summary
+icon: 📋
 description: Summarizes daily activity logs
 trigger:
   type: schedule
