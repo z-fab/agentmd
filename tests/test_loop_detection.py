@@ -81,7 +81,8 @@ async def test_loop_detection_same_error_3x():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
@@ -118,7 +119,8 @@ async def test_loop_detection_different_errors_no_abort():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):
@@ -154,7 +156,8 @@ async def test_loop_detection_disabled():
 
     runner = AgentRunner(db, MagicMock(), MagicMock())
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph") as mock_stream:
 
             async def fake_stream(*args, **kwargs):

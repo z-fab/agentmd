@@ -1,4 +1,4 @@
-"""Agent.md CLI — Typer application entry-point."""
+"""Agentmd CLI — Typer application entry-point."""
 
 import logging
 
@@ -7,7 +7,7 @@ from rich.logging import RichHandler
 
 app = typer.Typer(
     name="agentmd",
-    help="Agent.md — Markdown-first agent runtime.",
+    help="Agentmd — Markdown-first agent runtime.",
     no_args_is_help=True,
     rich_markup_mode="rich",
     pretty_exceptions_show_locals=False,
@@ -19,7 +19,7 @@ def _cli_main(
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress output except errors", is_eager=True),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show debug output", is_eager=True),
 ) -> None:
-    """Agent.md — Markdown-first agent runtime."""
+    """Agentmd — Markdown-first agent runtime."""
     if quiet:
         level = logging.ERROR
     elif verbose:

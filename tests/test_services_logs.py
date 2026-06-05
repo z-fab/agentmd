@@ -19,9 +19,7 @@ async def test_get_agent_logs_returns_tuple_with_icon(workspace):
     from agent_md.workspace.services import get_agent_logs
 
     tmp_path, agents_dir = workspace
-    (agents_dir / "my-agent.md").write_text(
-        "---\nname: my-agent\n---\nYou are a test agent.\n"
-    )
+    (agents_dir / "my-agent.md").write_text("---\nname: my-agent\n---\nYou are a test agent.\n")
 
     result = await get_agent_logs("my-agent", 5, workspace=tmp_path)
 
@@ -37,9 +35,7 @@ async def test_get_agent_logs_icon_uses_explicit_icon(workspace):
     from agent_md.workspace.services import get_agent_logs
 
     tmp_path, agents_dir = workspace
-    (agents_dir / "icon-agent.md").write_text(
-        '---\nname: icon-agent\nicon: "📅"\n---\nYou are a test agent.\n'
-    )
+    (agents_dir / "icon-agent.md").write_text('---\nname: icon-agent\nicon: "📅"\n---\nYou are a test agent.\n')
 
     _, icon = await get_agent_logs("icon-agent", 5, workspace=tmp_path)
 

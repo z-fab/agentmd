@@ -11,7 +11,7 @@ from agent_md.workspace.path_context import PathContext
 from agent_md.config.pricing import estimate_cost
 from agent_md.workspace.registry import AgentConfig
 from agent_md.db.database import Database
-from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn
+from agent_md.graph.builder import create_react_graph, stream_agent_graph, stream_chat_turn, GraphPaused
 from agent_md.mcp.manager import MCPManager
 from agent_md.providers.factory import create_chat_model
 from agent_md.tools.custom_loader import load_custom_tools
@@ -127,6 +127,7 @@ class AgentRunner:
         self.db_path = db_path  # for creating AsyncSqliteSaver
         self.registry = registry
         self._checkpoint_conns: list = []  # track aiosqlite connections for cleanup
+        self._timeout_tasks: dict[int, asyncio.Task] = {}
 
     @property
     def _max_agent_depth(self) -> int:
@@ -136,6 +137,18 @@ class AgentRunner:
             return settings.defaults_max_agent_depth
         except Exception:
             return 3
+
+    @property
+    def _default_confirm_tools(self) -> list[str]:
+        try:
+            from agent_md.config.settings import settings
+            from agent_md.config.models import DEFAULT_CONFIRM_TOOLS
+
+            return settings.defaults_confirm_tools or DEFAULT_CONFIRM_TOOLS
+        except Exception:
+            from agent_md.config.models import DEFAULT_CONFIRM_TOOLS
+
+            return DEFAULT_CONFIRM_TOOLS
 
     async def aclose(self):
         """Close any open checkpoint database connections."""
@@ -185,6 +198,78 @@ class AgentRunner:
             result["cost_usd"] = cost_usd
         return result
 
+    @staticmethod
+    def _parse_timeout_seconds(value: str | None) -> float | None:
+        if not value or value == "none":
+            return None
+        import re
+
+        m = re.match(r"^(\d+)([smhd])$", value)
+        if not m:
+            return None
+        n = int(m.group(1))
+        return n * {"s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
+
+    async def _enter_waiting(self, execution_id, config, request: dict, event_bus, ex_logger, global_event_bus=None):
+        """Persist the pending request, mark execution waiting, emit the interrupt event."""
+        await self.db.set_pending_interrupt(execution_id, request["request_id"], request)
+        await self.db.update_execution(execution_id=execution_id, status="waiting")
+        log_id = await ex_logger.log_event("interrupt", request.get("message", ""), metadata=request)
+        if event_bus is not None:
+            await event_bus.publish(
+                execution_id,
+                {"type": "interrupt", "seq": log_id, "data": {**request, "agent_name": config.name}},
+            )
+
+        secs = self._parse_timeout_seconds(config.confirm_timeout)
+        if secs is not None:
+
+            async def _deny_after():
+                await asyncio.sleep(secs)
+                still = await self.db.get_pending_interrupt(execution_id)
+                if still and still.request_id == request["request_id"]:
+                    await self.db.clear_pending_interrupt(execution_id)
+                    deny = {"approved": False, "reason": "confirm_timeout", "text": "", "selected": []}
+                    self._timeout_tasks.pop(execution_id, None)
+                    await self.resume(
+                        config,
+                        execution_id,
+                        deny,
+                        event_bus=event_bus,
+                        global_event_bus=global_event_bus,
+                    )
+
+            self._timeout_tasks[execution_id] = asyncio.create_task(_deny_after())
+
+    async def _publish_complete(self, execution_id, result, event_bus, global_event_bus, config):
+        if global_event_bus is not None:
+            await global_event_bus.publish(
+                {
+                    "type": "execution_completed",
+                    "data": {
+                        "execution_id": execution_id,
+                        "agent_name": config.name,
+                        "status": result["status"],
+                        "duration_ms": result.get("duration_ms", 0),
+                    },
+                }
+            )
+        if event_bus is not None:
+            await event_bus.publish(
+                execution_id,
+                {
+                    "type": "complete",
+                    "seq": _COMPLETE_SEQ,
+                    "data": {
+                        "status": result["status"],
+                        "duration_ms": result.get("duration_ms"),
+                        "total_tokens": result.get("total_tokens"),
+                        "cost_usd": result.get("cost_usd"),
+                        "error": result.get("error"),
+                    },
+                },
+            )
+
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
         """Build user input message with trigger context."""
         if trigger_type == "manual":
@@ -216,9 +301,15 @@ class AgentRunner:
         return "Execute your task."
 
     async def _build_graph(self, config: AgentConfig, **tool_kwargs):
-        """Create model, resolve tools, and compile the graph."""
-        from agent_md.config.models import HISTORY_LIMITS
+        """Create model, resolve tools, and compile the graph.
 
+        Returns ``(graph, checkpoint_conn)`` where ``checkpoint_conn`` is the
+        aiosqlite connection backing the checkpointer (or ``None`` if no
+        checkpointer was created). The caller owns the connection's lifecycle:
+        per-execution callers (run/resume) must close it when done; session-
+        scoped callers (prepare_agent/chat) must append it to
+        ``self._checkpoint_conns`` so it is closed at ``aclose()``.
+        """
         chat_model = create_chat_model(
             provider=config.model.provider,
             model=config.model.name,
@@ -226,7 +317,10 @@ class AgentRunner:
             base_url=config.model.base_url,
         )
 
-        tools = resolve_builtin_tools(config, self.path_context, **tool_kwargs)
+        from agent_md.config.models import effective_confirm_tools
+
+        confirm_tools = effective_confirm_tools(config, defaults=self._default_confirm_tools)
+        tools = resolve_builtin_tools(config, self.path_context, confirm_tools=confirm_tools, **tool_kwargs)
 
         if config.custom_tools:
             tools.extend(load_custom_tools(config.custom_tools, self.path_context.tools_dir))
@@ -239,29 +333,54 @@ class AgentRunner:
                 f"{len(mcp_tools)} MCP ({', '.join(config.mcp)})"
             )
 
-        # Session memory: create checkpointer if memory level is set
+        # Checkpointer is ALWAYS on — it is the durability substrate for HILT.
+        # `history` only controls how much prior context we seed (see run()).
         checkpointer = None
         memory_limit = None
-        if config.history != "off" and self.db_path:
+        checkpoint_conn = None
+        if self.db_path:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
             checkpoint_db = str(self.db_path).replace(".db", "_checkpoints.db")
-            conn = await aiosqlite.connect(checkpoint_db)
-            checkpointer = AsyncSqliteSaver(conn)
+            checkpoint_conn = await aiosqlite.connect(checkpoint_db)
+            checkpointer = AsyncSqliteSaver(checkpoint_conn)
             await checkpointer.setup()
-            self._checkpoint_conns.append(conn)
-            memory_limit = HISTORY_LIMITS[config.history]
-            logger.info(f"Session history enabled: level={config.history}, limit={memory_limit}")
+            logger.info(f"Checkpointer enabled (history={config.history}, thread per execution)")
 
         # Create post-tool processor for skill meta message injection
         post_processor = None
         if config.skills and self.path_context and self.path_context.skills_dir.exists():
             post_processor = create_post_tool_processor(config, self.path_context.skills_dir)
 
-        return create_react_graph(
+        graph = create_react_graph(
             chat_model, tools, checkpointer=checkpointer, memory_limit=memory_limit, post_tool_processor=post_processor
         )
+        return graph, checkpoint_conn
+
+    async def _load_history_seed(self, graph, config: AgentConfig, execution_id: int) -> list:
+        """Return prior messages to seed a new run, trimmed to the history level.
+
+        Reads the most recent finished execution's checkpoint for this agent and
+        returns its non-system messages. Empty when history is off or no prior run.
+        """
+        from agent_md.graph.agent import _trim_messages
+        from agent_md.config.models import HISTORY_LIMITS
+
+        if config.history == "off":
+            return []
+        prev = await self.db.get_last_finished_execution(config.name, exclude_id=execution_id)
+        if prev is None:
+            return []
+        try:
+            snapshot = await graph.aget_state({"configurable": {"thread_id": str(prev.id)}})
+        except Exception:
+            return []
+        prior = list(snapshot.values.get("messages", [])) if snapshot and snapshot.values else []
+        non_system = [m for m in prior if getattr(m, "type", "") != "system"]
+        limit = HISTORY_LIMITS[config.history]
+        trimmed = _trim_messages(non_system, limit)
+        return trimmed
 
     async def run(
         self,
@@ -336,10 +455,11 @@ class AgentRunner:
         last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
 
         sdk_token = _set_context(config, self.path_context)
+        checkpoint_conn = None
         try:
             try:
                 # 2. Build model + tools + graph
-                graph = await self._build_graph(
+                graph, checkpoint_conn = await self._build_graph(
                     config,
                     registry=self.registry,
                     runner=self,
@@ -349,6 +469,7 @@ class AgentRunner:
                     event_bus=event_bus,
                     global_event_bus=global_event_bus,
                 )
+                history_seed = await self._load_history_seed(graph, config, execution_id)
 
                 # 3. Build user input with trigger context
                 user_input = self._build_user_input(trigger_type, trigger_context, config)
@@ -372,15 +493,13 @@ class AgentRunner:
 
                 # 4. Stream execution -- log each message in real time
                 last_ai_msg = None
-                graph_config = {"configurable": {"thread_id": config.name}} if config.history != "off" else {}
+                graph_config = {"configurable": {"thread_id": str(execution_id)}}
 
                 # Set recursion_limit high enough for max_tool_calls
                 from agent_md.graph.builder import compute_recursion_limit
 
                 has_post_tool = bool(config.skills and self.path_context and self.path_context.skills_dir.exists())
-                graph_config["recursion_limit"] = compute_recursion_limit(
-                    config.settings.max_tool_calls, has_post_tool
-                )
+                graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
 
                 async def _stream():
                     nonlocal \
@@ -400,6 +519,7 @@ class AgentRunner:
                         config=graph_config,
                         arguments=arguments,
                         registry=self.registry,
+                        seed_messages=history_seed,
                     ):
                         log_id = await ex_logger.log_message(msg)
 
@@ -499,40 +619,28 @@ class AgentRunner:
                     cost_usd=cost_usd,
                 )
                 result["output"] = output
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
                 logger.info(
                     f"Execution complete: {config.name} — success in {duration_ms}ms "
                     f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
                 )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
+
+            except GraphPaused as paused:
+                await self._enter_waiting(
+                    execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus
+                )
+                if global_event_bus is not None:
+                    await global_event_bus.publish(
+                        {
+                            "type": "execution_waiting",
+                            "data": {"execution_id": execution_id, "agent_name": config.name},
+                        }
+                    )
+                logger.info(f"Execution {execution_id} paused (HILT {paused.request.get('kind')})")
+                return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
 
             except asyncio.TimeoutError:
                 duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -547,33 +655,7 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
@@ -591,33 +673,7 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
@@ -635,46 +691,193 @@ class AgentRunner:
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
-                if global_event_bus is not None:
-                    await global_event_bus.publish(
-                        {
-                            "type": "execution_completed",
-                            "data": {
-                                "execution_id": execution_id,
-                                "agent_name": config.name,
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms", 0),
-                            },
-                        }
-                    )
-                if event_bus is not None:
-                    await event_bus.publish(
-                        execution_id,
-                        {
-                            "type": "complete",
-                            "seq": _COMPLETE_SEQ,
-                            "data": {
-                                "status": result["status"],
-                                "duration_ms": result.get("duration_ms"),
-                                "total_tokens": result.get("total_tokens"),
-                                "cost_usd": result.get("cost_usd"),
-                                "error": result.get("error"),
-                            },
-                        },
-                    )
+                await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
                     on_complete(config.name, result)
                 return result
 
         finally:
             _reset_context(sdk_token)
+            if checkpoint_conn is not None:
+                try:
+                    await checkpoint_conn.close()
+                except Exception:
+                    pass
+
+    async def resume(
+        self,
+        config: AgentConfig,
+        execution_id: int,
+        response,
+        *,
+        event_bus=None,
+        global_event_bus=None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> dict:
+        """Resume a paused execution by injecting *response* into the interrupt."""
+        t = self._timeout_tasks.pop(execution_id, None)
+        if t:
+            t.cancel()
+
+        from langgraph.types import Command
+        from agent_md.graph.builder import _stream_state
+
+        logger.info(f"Resuming execution {execution_id}")
+        if not await self.db.claim_execution_for_resume(execution_id):
+            logger.info(f"Resume skipped for {execution_id}: no longer waiting (already resumed or cancelled)")
+            return {"status": "skipped", "execution_id": execution_id}
+        ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=None)
+        if global_event_bus is not None:
+            await global_event_bus.publish(
+                {
+                    "type": "execution_started",
+                    "data": {"execution_id": execution_id, "agent_name": config.name, "trigger": "resume"},
+                }
+            )
+
+        start_time = time.monotonic()
+        total_input_tokens = total_output_tokens = tool_call_count = 0
+        cost_usd = None
+        last_ai_msg = None
+        last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
+        graph_config = {"configurable": {"thread_id": str(execution_id)}}
+        has_post_tool = bool(config.skills and self.path_context and self.path_context.skills_dir.exists())
+
+        from agent_md.graph.builder import compute_recursion_limit
+
+        graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
+
+        sdk_token = _set_context(config, self.path_context)
+        checkpoint_conn = None
+        try:
+            graph, checkpoint_conn = await self._build_graph(
+                config,
+                registry=self.registry,
+                runner=self,
+                depth=0,
+                max_depth=self._max_agent_depth,
+                parent_execution_id=execution_id,
+                event_bus=event_bus,
+                global_event_bus=global_event_bus,
+            )
+
+            async def _drive():
+                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, last_errors
+                async for msg in _stream_state(graph, Command(resume=response), config=graph_config):
+                    log_id = await ex_logger.log_message(msg)
+                    if event_bus is not None:
+                        et = _classify_event_type(msg)
+                        await event_bus.publish(
+                            execution_id, {"type": et, "seq": log_id, "data": _build_event_data(msg, et, config.name)}
+                        )
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise LimitExceeded("cancelled", "Execution cancelled by user")
+                    usage = getattr(msg, "usage_metadata", None)
+                    if usage:
+                        total_input_tokens += usage.get("input_tokens", 0)
+                        total_output_tokens += usage.get("output_tokens", 0)
+                        cost_usd = estimate_cost(
+                            config.model.provider, config.model.name, total_input_tokens, total_output_tokens
+                        )
+                    if getattr(msg, "type", "") == "ai" and getattr(msg, "tool_calls", None):
+                        tool_call_count += len(msg.tool_calls)
+
+                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+
+                    # Loop detection: same tool error 3 consecutive times (parity with run())
+                    if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
+                        if _looks_like_error(msg):
+                            sig = (getattr(msg, "name", ""), _normalize_error(str(getattr(msg, "content", ""))))
+                            last_errors.append(sig)
+                            if len(last_errors) > 3:
+                                last_errors.pop(0)
+                            if len(last_errors) == 3 and len(set(last_errors)) == 1:
+                                raise LimitExceeded(
+                                    "loop_detected",
+                                    f"{sig[0]} returned the same error 3 times: {sig[1][:100]}",
+                                )
+                        else:
+                            last_errors.clear()
+
+                    if _is_final_ai_message(msg):
+                        last_ai_msg = msg
+
+            try:
+                await asyncio.wait_for(_drive(), timeout=config.settings.timeout)
+            except GraphPaused as paused:
+                await self._enter_waiting(
+                    execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus
+                )
+                return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
+
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            output = ""
+            if last_ai_msg:
+                raw = getattr(last_ai_msg, "content", None)
+                output = _extract_text(raw) if raw is not None else str(last_ai_msg)
+                log_id = await ex_logger.mark_final_answer(last_ai_msg)
+                if event_bus is not None:
+                    await event_bus.publish(
+                        execution_id,
+                        {"type": "final_answer", "seq": log_id, "data": {"content": output, "agent_name": config.name}},
+                    )
+            result = await self._finish_execution(
+                execution_id,
+                "success",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                output_data=output[:10000],
+                cost_usd=cost_usd,
+            )
+            result["output"] = output
+            await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
+            return result
+        except LimitExceeded as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            result = await self._finish_execution(
+                execution_id,
+                "aborted",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                error=f"Aborted: {e.reason}",
+                cost_usd=cost_usd,
+            )
+            await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
+            return result
+        except Exception as e:
+            duration_ms = int((time.monotonic() - start_time) * 1000)
+            result = await self._finish_execution(
+                execution_id,
+                "error",
+                duration_ms,
+                total_input_tokens,
+                total_output_tokens,
+                error=f"{type(e).__name__}: {e}",
+                cost_usd=cost_usd,
+            )
+            await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
+            return result
+        finally:
+            _reset_context(sdk_token)
+            if checkpoint_conn is not None:
+                try:
+                    await checkpoint_conn.close()
+                except Exception:
+                    pass
 
     async def prepare_agent(self, config: AgentConfig):
         """Create model, resolve tools, and build graph -- without executing.
 
         Returns the compiled LangGraph graph, ready for streaming.
         """
-        return await self._build_graph(config)
+        graph, checkpoint_conn = await self._build_graph(config)
+        # Chat reuses the graph across turns, so the connection is session-scoped:
+        # hand it to aclose() rather than closing it here.
+        if checkpoint_conn is not None:
+            self._checkpoint_conns.append(checkpoint_conn)
+        return graph
 
     async def chat_turn(self, graph, messages, ex_logger, timeout, graph_config=None):
         """Stream one chat turn and return (new_messages, input_tokens, output_tokens).

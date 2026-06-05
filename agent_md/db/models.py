@@ -33,3 +33,13 @@ class LogRecord:
         self.event_type: str = kwargs.get("event_type", "")
         self.message: str = kwargs.get("message", "")
         self.metadata: Optional[str] = kwargs.get("metadata")
+
+
+class PendingInterruptRecord:
+    """Represents a row from the pending_interrupts table."""
+
+    def __init__(self, **kwargs):
+        self.execution_id: int = kwargs.get("execution_id", 0)
+        self.request_id: str = kwargs.get("request_id", "")
+        self.payload_json: str = kwargs.get("payload_json", "")
+        self.created_at: str = kwargs.get("created_at", "")

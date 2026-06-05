@@ -8,7 +8,7 @@ from agent_md.tools.http import http_request
 _STATIC_TOOLS = [http_request]
 
 
-def resolve_builtin_tools(agent_config=None, path_context=None, **kwargs) -> list:
+def resolve_builtin_tools(agent_config=None, path_context=None, confirm_tools=None, **kwargs) -> list:
     """Return all built-in tools, ready to use.
 
     Context-aware tools (file_read, file_write, file_glob, memory_*, skill_*)
@@ -77,6 +77,17 @@ def resolve_builtin_tools(agent_config=None, path_context=None, **kwargs) -> lis
                 )
             )
 
+    # Always-available ask_user tool
+    from agent_md.tools.hilt import create_ask_user_tool
+
+    tools.append(create_ask_user_tool())
+
+    # Apply the HILT guard by name (defaults + agent confirm − auto_approve)
+    if confirm_tools:
+        from agent_md.tools.guard import guard_tools
+
+        tools = guard_tools(tools, set(confirm_tools))
+
     return tools
 
 
@@ -85,6 +96,7 @@ def list_builtin_tools() -> list[str]:
     return sorted(
         [t.name for t in _STATIC_TOOLS]
         + [
+            "ask_user",
             "file_read",
             "file_write",
             "file_edit",

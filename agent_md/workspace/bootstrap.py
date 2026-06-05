@@ -167,6 +167,16 @@ async def bootstrap(
         if cleaned:
             logger.info(f"Cleaned {cleaned} orphaned execution(s)")
 
+        # Checkpoint retention sweep (HILT-aware)
+        try:
+            from agent_md.execution.checkpoint_maint import sweep_old_checkpoints
+
+            removed = await sweep_old_checkpoints(db, db_path, settings.defaults_checkpoint_retention_days)
+            if removed:
+                logger.info(f"Checkpoint sweep removed {removed} old thread(s)")
+        except Exception as e:
+            logger.warning(f"Checkpoint sweep skipped: {e}")
+
     # Load MCP server configuration
     mcp_servers = load_mcp_config(mcp_config)
     mcp_manager = MCPManager(mcp_servers)

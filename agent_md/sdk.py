@@ -82,4 +82,47 @@ def agent_paths() -> dict[str, Path]:
     return result
 
 
-__all__ = ["resolve_path", "workspace_root", "agent_name", "agent_paths"]
+def request_confirmation(message: str, *, tool_name: str | None = None, tool_args: dict | None = None) -> bool:
+    """Pause and ask the user to approve an action. Returns True if approved.
+
+    For use inside custom tools. Requires an active execution with a checkpointer.
+    """
+    from langgraph.types import interrupt
+    from agent_md.tools.hilt import build_request
+
+    answer = interrupt(build_request("confirm", message, tool_name=tool_name, tool_args=tool_args))
+    return bool(answer.get("approved")) if isinstance(answer, dict) else bool(answer)
+
+
+def request_input(message: str) -> str:
+    """Pause and ask the user for free text. Returns the text (empty string if none)."""
+    from langgraph.types import interrupt
+    from agent_md.tools.hilt import build_request
+
+    answer = interrupt(build_request("input", message))
+    if isinstance(answer, dict):
+        return str(answer.get("text", ""))
+    return str(answer or "")
+
+
+def request_choice(message: str, options: list[str], *, multi: bool = False) -> list[str] | str:
+    """Pause and ask the user to choose from *options*. Returns selection(s)."""
+    from langgraph.types import interrupt
+    from agent_md.tools.hilt import build_request
+
+    answer = interrupt(build_request("choice", message, options=options, multi=multi))
+    selected = answer.get("selected", []) if isinstance(answer, dict) else (answer or [])
+    if not multi:
+        return selected[0] if selected else ""
+    return list(selected)
+
+
+__all__ = [
+    "resolve_path",
+    "workspace_root",
+    "agent_name",
+    "agent_paths",
+    "request_confirmation",
+    "request_input",
+    "request_choice",
+]

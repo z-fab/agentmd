@@ -374,7 +374,7 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install Agent.md
+      - name: Install Agentmd
         run: |
           pip install -e .
           pip install -e ".[all]"

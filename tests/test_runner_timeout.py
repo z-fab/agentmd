@@ -58,7 +58,8 @@ async def test_timeout_interrupts_execution():
 
     start = time.monotonic()
 
-    with patch.object(runner, "_build_graph", new_callable=AsyncMock):
+    with patch.object(runner, "_build_graph", new_callable=AsyncMock) as mock_build:
+        mock_build.return_value = (MagicMock(), None)
         with patch("agent_md.execution.runner.stream_agent_graph", side_effect=slow_stream):
             result = await runner.run(config)
 

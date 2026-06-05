@@ -1,9 +1,26 @@
 import re
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
 HISTORY_LIMITS = {"low": 10, "medium": 50, "high": 200}
+
+DEFAULT_CONFIRM_TOOLS = ["file_delete", "file_write"]
+
+
+def effective_confirm_tools(config, defaults: list[str] | None = None) -> set[str]:
+    """Return the set of tool names that require confirmation for *config*.
+
+    effective = (defaults ∪ config.confirm) − config.auto_approve
+    auto_approve == "*"/"all" clears the set entirely.
+    """
+    base = set(defaults if defaults is not None else DEFAULT_CONFIRM_TOOLS)
+    base |= set(config.confirm)
+    aa = config.auto_approve
+    if aa in ("*", "all"):
+        return set()
+    return base - set(aa)
+
 
 RESERVED_ALIASES = {"workspace", "skill_dir", "today", "now", "agents", "tools", "skills"}
 
@@ -164,6 +181,10 @@ class AgentConfig(BaseModel):
     enabled: bool = True
     history: str = "low"  # 'low', 'medium', 'high', 'off'
     paths: dict[str, PathEntry] = {}
+    confirm: list[str] = []
+    auto_approve: list[str] | Literal["*", "all"] = []
+    on_pending: str = "skip"
+    confirm_timeout: str | None = None
 
     @field_validator("history", mode="before")
     @classmethod
@@ -206,6 +227,10 @@ class AgentConfig(BaseModel):
 
             if "history" not in data and settings.defaults_history:
                 data["history"] = settings.defaults_history
+            if "on_pending" not in data and settings.defaults_on_pending:
+                data["on_pending"] = settings.defaults_on_pending
+            if "confirm_timeout" not in data and settings.defaults_confirm_timeout:
+                data["confirm_timeout"] = settings.defaults_confirm_timeout
         except Exception:
             pass
         return data
@@ -252,7 +277,43 @@ class AgentConfig(BaseModel):
             raise ValueError("Agent name must be non-empty and have no leading/trailing spaces.")
         if not re.match(r"^[\w \-]+$", v, re.UNICODE):
             raise ValueError(
-                "Agent name may contain only letters, numbers, spaces, hyphens, and underscores. "
-                f"Got: '{v}'"
+                f"Agent name may contain only letters, numbers, spaces, hyphens, and underscores. Got: '{v}'"
             )
+        return v
+
+    @field_validator("confirm", mode="before")
+    @classmethod
+    def normalize_confirm(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        return v
+
+    @field_validator("auto_approve", mode="before")
+    @classmethod
+    def normalize_auto_approve(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            if v in ("*", "all"):
+                return v
+            return [v]
+        return v
+
+    @field_validator("on_pending")
+    @classmethod
+    def validate_on_pending(cls, v):
+        allowed = ("skip", "parallel")
+        if v not in allowed:
+            raise ValueError(f"on_pending must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("confirm_timeout")
+    @classmethod
+    def validate_confirm_timeout(cls, v):
+        if v is None or v == "none":
+            return v
+        if not re.match(r"^\d+[smhd]$", v):
+            raise ValueError(f"Invalid confirm_timeout: '{v}'. Use e.g. '30s', '5m', '2h', '1d', or 'none'.")
         return v

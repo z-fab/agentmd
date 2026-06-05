@@ -1,8 +1,8 @@
-# Agent.md
+# Agentmd
 
 <div align="center" markdown>
 
-<img src="assets/agentmd_banner.png" alt="Agent.md" width="400">
+<img src="assets/agentmd_banner.png" alt="Agentmd" width="400">
 
 **Markdown-first runtime for AI agents**
 
@@ -21,9 +21,9 @@ No boilerplate. No frameworks to learn. Just Markdown.
 
 ---
 
-## :sparkles: Why Agent.md?
+## :sparkles: Why Agentmd?
 
-Most agent frameworks require dozens of files, complex configurations, and deep knowledge of LLM internals. **Agent.md takes a different approach:**
+Most agent frameworks require dozens of files, complex configurations, and deep knowledge of LLM internals. **Agentmd takes a different approach:**
 
 <div class="grid cards" markdown>
 
@@ -238,13 +238,19 @@ custom_tools:
 
     ---
 
-    Install Agent.md and run your first agent in 5 minutes.
+    Install Agentmd and run your first agent in 5 minutes.
 
 -   :fontawesome-solid-book:{ .lg .middle } **[Agent Configuration](agent-configuration.md)**
 
     ---
 
     Learn about agent files, triggers, providers, and execution flow.
+
+-   :fontawesome-solid-hand:{ .lg .middle } **[Human-in-the-Loop](human-in-the-loop.md)**
+
+    ---
+
+    Pause agents for user confirmation or input, then resume — even after a restart.
 
 -   :fontawesome-solid-code:{ .lg .middle } **[Examples](examples.md)**
 
@@ -273,6 +279,7 @@ custom_tools:
 - [x] **Execution tracking** — Full history with token usage
 - [x] **Git-friendly** — Version control your prompts
 - [x] **Memory & context persistence** — Session history + long-term memory tools
+- [x] **Human-in-the-loop** — Pause for user confirmation, input, or choice; resume after restart
 - [ ] **Skills support** — Coming soon
 - [ ] **Agent pipelines** — Chain agents together
 - [ ] **Terminal UI (TUI)** — Real-time monitoring

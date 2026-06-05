@@ -1,6 +1,6 @@
 # Security Best Practices
 
-Practical security guidelines for building and deploying Agent.md agents safely.
+Practical security guidelines for building and deploying Agentmd agents safely.
 
 ## Core Principles
 
@@ -99,7 +99,7 @@ GOOGLE_API_KEY=your-key-here
 SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 DATABASE_URL=postgresql://user:pass@localhost:5432/db
 
-# Agent.md Settings
+# Agentmd Settings
 WORKSPACE_DIR=/workspace
 OUTPUT_DIR=/output
 MAX_ITERATIONS=10

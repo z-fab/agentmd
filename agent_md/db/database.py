@@ -8,7 +8,7 @@ from typing import Optional
 
 import aiosqlite
 
-from agent_md.db.models import ExecutionRecord, LogRecord
+from agent_md.db.models import ExecutionRecord, LogRecord, PendingInterruptRecord
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS execution_logs (
 CREATE INDEX IF NOT EXISTS idx_executions_agent ON executions(agent_id);
 CREATE INDEX IF NOT EXISTS idx_executions_status ON executions(status);
 CREATE INDEX IF NOT EXISTS idx_logs_execution ON execution_logs(execution_id);
+
+CREATE TABLE IF NOT EXISTS pending_interrupts (
+    execution_id INTEGER PRIMARY KEY,
+    request_id   TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at   TIMESTAMP NOT NULL
+);
 """
 
 
@@ -179,6 +186,22 @@ class Database:
         results = await self.get_executions(agent_id, limit=1)
         return results[0] if results else None
 
+    async def get_last_finished_execution(self, agent_id: str, exclude_id: int | None = None):
+        """Most recent execution for an agent that is not running/waiting/pending."""
+        cursor = await self.db.execute(
+            """
+            SELECT * FROM executions
+            WHERE agent_id = ?
+              AND status NOT IN ('running', 'waiting', 'pending')
+              AND (? IS NULL OR id != ?)
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (agent_id, exclude_id, exclude_id),
+        )
+        row = await cursor.fetchone()
+        return ExecutionRecord(**dict(row)) if row else None
+
     async def get_execution(self, execution_id: int) -> Optional[ExecutionRecord]:
         """Get a single execution by ID."""
         cursor = await self.db.execute(
@@ -247,3 +270,83 @@ class Database:
         )
         rows = await cursor.fetchall()
         return [LogRecord(**dict(row)) for row in rows]
+
+    # --- Pending interrupts (HILT) ---
+
+    async def set_pending_interrupt(self, execution_id: int, request_id: str, payload: dict) -> None:
+        """Insert or replace the pending interrupt for an execution."""
+        now = datetime.now(timezone.utc).isoformat()
+        await self.db.execute(
+            """
+            INSERT INTO pending_interrupts (execution_id, request_id, payload_json, created_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(execution_id) DO UPDATE SET
+                request_id = excluded.request_id,
+                payload_json = excluded.payload_json,
+                created_at = excluded.created_at
+            """,
+            (execution_id, request_id, json.dumps(payload), now),
+        )
+        await self.db.commit()
+
+    async def get_pending_interrupt(self, execution_id: int) -> Optional[PendingInterruptRecord]:
+        cursor = await self.db.execute(
+            "SELECT * FROM pending_interrupts WHERE execution_id = ?",
+            (execution_id,),
+        )
+        row = await cursor.fetchone()
+        return PendingInterruptRecord(**dict(row)) if row else None
+
+    async def list_pending_interrupts(self) -> list[PendingInterruptRecord]:
+        cursor = await self.db.execute("SELECT * FROM pending_interrupts ORDER BY created_at ASC")
+        rows = await cursor.fetchall()
+        return [PendingInterruptRecord(**dict(row)) for row in rows]
+
+    async def clear_pending_interrupt(self, execution_id: int) -> None:
+        await self.db.execute("DELETE FROM pending_interrupts WHERE execution_id = ?", (execution_id,))
+        await self.db.commit()
+
+    async def claim_execution_for_resume(self, execution_id: int) -> bool:
+        """Atomically transition waiting -> running. Returns True if this caller won the claim."""
+        cursor = await self.db.execute(
+            "UPDATE executions SET status = 'running' WHERE id = ? AND status = 'waiting'",
+            (execution_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def has_waiting_execution(self, agent_id: str) -> bool:
+        cursor = await self.db.execute(
+            "SELECT 1 FROM executions WHERE agent_id = ? AND status = 'waiting' LIMIT 1",
+            (agent_id,),
+        )
+        return await cursor.fetchone() is not None
+
+    # --- Checkpoint maintenance helpers ---
+
+    async def latest_execution_id_per_agent(self) -> list[int]:
+        cursor = await self.db.execute("SELECT MAX(id) AS mx FROM executions GROUP BY agent_id")
+        rows = await cursor.fetchall()
+        return [row["mx"] for row in rows if row["mx"] is not None]
+
+    async def waiting_execution_ids(self) -> list[int]:
+        cursor = await self.db.execute("SELECT id FROM executions WHERE status = 'waiting'")
+        rows = await cursor.fetchall()
+        return [row["id"] for row in rows]
+
+    async def finished_execution_ids_before(self, cutoff_iso: str) -> list[int]:
+        cursor = await self.db.execute(
+            """
+            SELECT id FROM executions
+            WHERE status NOT IN ('running', 'waiting', 'pending')
+              AND (finished_at IS NOT NULL AND finished_at < ?)
+            """,
+            (cutoff_iso,),
+        )
+        rows = await cursor.fetchall()
+        return [row["id"] for row in rows]
+
+    async def all_execution_ids_for_agent(self, agent_id: str) -> list[int]:
+        cursor = await self.db.execute("SELECT id FROM executions WHERE agent_id = ?", (agent_id,))
+        rows = await cursor.fetchall()
+        return [row["id"] for row in rows]

@@ -1,10 +1,10 @@
 # Paths & Security
 
-Complete guide to path configuration and file access control in Agent.md.
+Complete guide to path configuration and file access control in Agentmd.
 
 ## Overview
 
-Agent.md uses a two-level path system:
+Agentmd uses a two-level path system:
 
 1. **Global paths (runtime)** — Configure where agents and databases live
 2. **Agent paths (frontmatter)** — Declare what each agent can access

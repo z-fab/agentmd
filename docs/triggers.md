@@ -1,6 +1,6 @@
 # Triggers Guide
 
-Triggers define when an agent executes. Agent.md supports three trigger types: **Manual**, **Schedule**, and **Watch**.
+Triggers define when an agent executes. Agentmd supports three trigger types: **Manual**, **Schedule**, and **Watch**.
 
 ---
 

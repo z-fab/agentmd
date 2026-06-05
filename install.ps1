@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 
-Write-Host "`n🤖 Agent.md — Installer`n" -ForegroundColor Green
+Write-Host "`n🤖 Agentmd — Installer`n" -ForegroundColor Green
 
 # Install uv if needed
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {

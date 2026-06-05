@@ -1,6 +1,6 @@
 # Built-in Tools
 
-Agent.md provides built-in tools for file I/O, HTTP, long-term memory, and skills — all with built-in security controls.
+Agentmd provides built-in tools for file I/O, HTTP, long-term memory, and skills — all with built-in security controls.
 
 ## file_read
 
@@ -136,7 +136,7 @@ name: hello-world
 
 Write a greeting to `greeting.txt`.
 ```
-The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `workspace/greeting.txt`
+The agent will call `file_write("greeting.txt", "Hello from Agentmd!")` → `workspace/greeting.txt`
 
 **Generate timestamped reports:**
 ```yaml
@@ -551,6 +551,38 @@ def skill_run_script(skill_name: str, script_name: str, script_args: str = "") -
 - Returns stdout + stderr
 
 For full documentation, see [Skills](../skills.md).
+
+---
+
+## ask_user
+
+Pause the execution and ask the human user a question, then resume with their answer. Always available — no configuration required.
+
+### Signature
+
+```python
+def ask_user(question: str, kind: str = "input", options: list[str] | None = None) -> str
+```
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `question` | `str` | Yes | - | The question to show the user |
+| `kind` | `str` | No | `input` | `input` (free text), `confirm` (yes/no), or `choice` (pick from `options`) |
+| `options` | `list[str]` | No | `None` | The choices, required when `kind="choice"` |
+
+### Behavior
+
+- Pauses the run (status `waiting`) and prompts the user; resumes when answered — surviving a backend restart.
+- Returns the user's answer as a string: the typed text for `input`, `"yes"`/`"no"` for `confirm`, or the selected option for `choice`.
+- Use it for **dynamic** questions the agent can only formulate at runtime (for example, "I found 3 matching files, which one should I delete?").
+
+For the full picture — guarded tools, config fields, the SDK primitives for custom tools, and CLI usage — see [Human-in-the-Loop](../human-in-the-loop.md).
+
+---
+
+## Confirmation on `file_delete` / `file_write`
+
+`file_delete` and `file_write` ask the user for confirmation before running by default (a Human-in-the-Loop guard). You can guard additional tools with `confirm:`, or skip these prompts with `auto_approve:` in the agent frontmatter. The default-guarded set is configurable via `defaults.confirm_tools` in `config.yaml`. See [Human-in-the-Loop](../human-in-the-loop.md) for the full mechanism.
 
 ---
 

@@ -63,13 +63,17 @@ def test_name_with_accented_letters_accepted():
 def test_name_leading_space_rejected():
     with pytest.raises(ValidationError) as exc:
         AgentConfig(name=" x")
-    assert "leading" in str(exc.value).lower() or "trailing" in str(exc.value).lower() or "strip" in str(exc.value).lower()
+    assert (
+        "leading" in str(exc.value).lower() or "trailing" in str(exc.value).lower() or "strip" in str(exc.value).lower()
+    )
 
 
 def test_name_trailing_space_rejected():
     with pytest.raises(ValidationError) as exc:
         AgentConfig(name="x ")
-    assert "leading" in str(exc.value).lower() or "trailing" in str(exc.value).lower() or "strip" in str(exc.value).lower()
+    assert (
+        "leading" in str(exc.value).lower() or "trailing" in str(exc.value).lower() or "strip" in str(exc.value).lower()
+    )
 
 
 def test_name_with_slash_rejected():

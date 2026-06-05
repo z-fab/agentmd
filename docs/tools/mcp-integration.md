@@ -1,6 +1,6 @@
 # MCP Integration
 
-Agent.md integrates with the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) to provide access to external tool servers. Use pre-built MCP servers (fetch, GitHub, Slack, filesystem, etc.) without writing custom Python code.
+Agentmd integrates with the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) to provide access to external tool servers. Use pre-built MCP servers (fetch, GitHub, Slack, filesystem, etc.) without writing custom Python code.
 
 ## Overview
 
@@ -11,7 +11,7 @@ MCP allows you to:
 - Share tools across multiple agents
 - Keep agent logic separate from tool implementation
 
-Agent.md supports both **stdio** (local processes) and **HTTP** (remote servers) transports.
+Agentmd supports both **stdio** (local processes) and **HTTP** (remote servers) transports.
 
 ---
 
@@ -53,7 +53,7 @@ and summarize the top 5 stories.
 agentmd run web-researcher
 ```
 
-Agent.md will:
+Agentmd will:
 1. Load the MCP config from `mcp-servers.json`
 2. Connect to the `fetch` server (launches `uvx mcp-server-fetch`)
 3. Discover available tools (e.g., `fetch`)
@@ -67,7 +67,7 @@ The configuration file is a JSON object where each key is a server name and the 
 
 ### File Location
 
-By default, Agent.md looks for:
+By default, Agentmd looks for:
 
 ```
 workspace/agents/mcp-servers.json

@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get Agent.md running in 5 minutes—from installation to your first working agent.
+Get Agentmd running in 5 minutes—from installation to your first working agent.
 
 ## 1. Installation
 
@@ -52,7 +52,7 @@ agentmd info    # Show current configuration
 
 ## 2. Configuration
 
-Agent.md is zero-config by default — `~/.config/agentmd/config.yaml` is auto-created on first run with sensible defaults. The setup wizard can also create it for you.
+Agentmd is zero-config by default — `~/.config/agentmd/config.yaml` is auto-created on first run with sensible defaults. The setup wizard can also create it for you.
 
 ### `~/.config/agentmd/config.yaml` — Application settings
 
@@ -289,7 +289,7 @@ Copy and customize from our library:
 ---
 
 **You've got this!** You now understand:
-- How to install Agent.md
+- How to install Agentmd
 - How to configure with `config.yaml` and `.env`
 - How to create an agent file (with optional model override)
 - How to execute agents and view results

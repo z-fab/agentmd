@@ -1,6 +1,6 @@
 # Guides
 
-Practical guides for using Agent.md effectively.
+Practical guides for using Agentmd effectively.
 
 ## Essential Guides
 

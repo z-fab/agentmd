@@ -100,6 +100,9 @@ async def run_agent(name: str, request: Request, body: RunRequest | None = None)
     if not config:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
 
+    if config.on_pending == "skip" and await rt.db.has_waiting_execution(config.name):
+        raise HTTPException(status_code=409, detail=f"Agent '{name}' has a session waiting for a response")
+
     body = body or RunRequest()
     arguments = body.args or []
 

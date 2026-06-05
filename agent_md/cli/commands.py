@@ -125,27 +125,40 @@ YAML frontmatter (between --- delimiters) followed by the system prompt in Markd
 ## Frontmatter fields
 
 Required:
-- name: {agent_name}
+- name: {agent_name}  (may contain spaces and accents, e.g. "Daily Processor")
 
 Optional:
+- icon: an emoji that represents the agent (auto-derived from name if omitted)
 - description: one-line summary
 - model: object with provider and name (omit to use global default)
 - trigger: manual (default), schedule (every/cron), watch (paths)
 - settings: temperature, max_tokens, timeout
 - history: "low" (default, remembers last 10 messages), "medium" (50), "high" (200), "off"
 - paths: dict of alias: path pairs for directories the agent can access
-- agents: list of agent names this agent can call via run_agent tool (e.g. [summarizer, formatter])
+- agents: list of agent names this agent can call via run_agent (e.g. [summarizer, formatter])
+- skills: list of skill names available under agents/_config/skills/
+- mcp: list of MCP server names configured in agents/_config/mcp-servers.json
+- custom_tools: list of custom tool file names under agents/_config/tools/ (alias: tools)
 
-## Agent capabilities
+## Built-in tools
 
-Agents have built-in tools for:
-- Reading, writing, and editing files within declared paths
-- Searching for files using glob patterns
-- Making HTTP requests
-- Persistent memory across runs (save, append, retrieve by section)
-- Calling other agents via run_agent (requires agents field in frontmatter)
+- file_read, file_write, file_edit, file_glob, file_move, file_delete
+- http_request
+- memory_save, memory_append, memory_retrieve
+- run_agent (requires agents: in frontmatter)
+- ask_user (prompt the user for confirmation, input, or a choice)
+- skill tools (available when skills: is set)
 
-Custom tools can be added in agents/_config/tools/.
+## Human-in-the-loop (HILT)
+
+By default, file_delete and file_write ask the user for confirmation before running. You can:
+- Guard more tools: `confirm: [toolname, ...]`
+- Skip confirmation for specific tools: `auto_approve: [toolname, ...]` (or `auto_approve: "*"` for all)
+- Control concurrency while waiting: `on_pending: skip` (default) or `on_pending: parallel`
+- Set a response timeout: `confirm_timeout: 30s` / `5m` / `none`
+
+If the agent performs destructive or sensitive actions, it can rely on the default confirmation
+for file operations, and use the `ask_user` tool when it needs information only the user can provide.
 
 ## Rules
 
@@ -159,6 +172,7 @@ Custom tools can be added in agents/_config/tools/.
 
 ---
 name: daily-summary
+icon: 📋
 description: Summarizes daily activity logs
 trigger:
   type: schedule
@@ -346,7 +360,7 @@ def start(
     internal_backend: Annotated[bool, typer.Option("--internal-backend", hidden=True)] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ):
-    """Start the AgentMD backend."""
+    """Start the Agentmd backend."""
     from rich.console import Console
 
     console = Console()
@@ -367,7 +381,7 @@ def start(
         return
 
     if not quiet and not internal_backend:
-        console.print("[bold]AgentMD Backend[/bold]")
+        console.print("[bold]Agentmd Backend[/bold]")
 
     asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
 
@@ -470,8 +484,28 @@ def run(
     if not quiet:
         console.print(f"[dim]Execution {execution_id} started[/dim]")
 
+    answered: set = set()
+    seen: set = set()
     try:
-        _stream_execution(client, execution_id, console, quiet)
+        while True:
+            result = _stream_execution(client, execution_id, console, quiet, answered, seen)
+            if result and result.get("interrupt"):
+                data = result["interrupt"]
+                rid = data.get("request_id")
+                if rid in answered:
+                    break  # safety: already answered, nothing new
+                _prompt_and_respond(client, execution_id, console, data)
+                answered.add(rid)
+                continue  # re-open the stream to observe the resume
+            if result and result.get("waiting"):
+                pend = client.get(f"/executions/{execution_id}/pending")
+                if pend.status_code == 200 and pend.json().get("request_id") not in answered:
+                    p = pend.json()
+                    _prompt_and_respond(client, execution_id, console, p)
+                    answered.add(p.get("request_id"))
+                    continue
+                break
+            break
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelling...[/yellow]")
         client.delete(f"/executions/{execution_id}")
@@ -482,13 +516,44 @@ def run(
 # ---------------------------------------------------------------------------
 
 
-def _stream_execution(client, execution_id: int, console, quiet: bool):
+def _prompt_and_respond(client, execution_id: int, console, payload: dict) -> None:
+    """Render a HILT request, collect the answer, and POST it."""
+    import typer
+
+    kind = payload.get("kind", "input")
+    message = payload.get("message", "Input needed")
+    request_id = payload.get("request_id")
+    console.print(f"\n[bold yellow]✋ {message}[/bold yellow]")
+    if payload.get("tool_name"):
+        console.print(f"[dim]tool: {payload['tool_name']}  args: {payload.get('tool_args')}[/dim]")
+
+    if kind == "confirm":
+        approved = typer.confirm("Approve?")
+        response = {"approved": approved}
+    elif kind == "choice":
+        options = payload.get("options") or []
+        for i, opt in enumerate(options):
+            console.print(f"  {i + 1}. {opt}")
+        idx = typer.prompt("Choose (number)", type=int)
+        sel = options[idx - 1] if 1 <= idx <= len(options) else ""
+        response = {"selected": [sel] if sel else []}
+    else:
+        text = typer.prompt("Your answer")
+        response = {"text": text}
+
+    client.post(f"/executions/{execution_id}/respond", json={"request_id": request_id, "response": response})
+
+
+def _stream_execution(
+    client, execution_id: int, console, quiet: bool, answered: set | None = None, seen: set | None = None
+):
     """Stream SSE events from an execution and print them."""
     import json
 
     with client.stream_sse(f"/executions/{execution_id}/stream") as response:
         event_type = None
         data_buffer = ""
+        event_id = None
         got_final_answer = False
 
         for line in response.iter_lines():
@@ -496,6 +561,8 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                 event_type = line[6:].strip()
             elif line.startswith("data:"):
                 data_buffer = line[5:].strip()
+            elif line.startswith("id:"):
+                event_id = line[3:].strip()
             elif line == "" and data_buffer:
                 try:
                     data = json.loads(data_buffer)
@@ -531,15 +598,37 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                 elif event_type == "final_answer":
                     got_final_answer = True
                     if not quiet:
-                        _print_event(console, event_type, data)
+                        already_seen = seen is not None and event_id is not None and event_id in seen
+                        if not already_seen:
+                            _print_event(console, event_type, data)
+                            if seen is not None and event_id is not None:
+                                seen.add(event_id)
+                elif event_type == "interrupt":
+                    rid = data.get("request_id")
+                    if answered is not None and rid in answered:
+                        # already handled this pause on a previous pass; skip and keep reading
+                        data_buffer = ""
+                        event_type = None
+                        event_id = None
+                        continue
+                    return {"interrupt": data}
+                elif event_type == "waiting":
+                    return {"waiting": True}
                 elif not quiet:
-                    _print_event(console, event_type, data)
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        _print_event(console, event_type, data)
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
 
                 data_buffer = ""
                 event_type = None
+                event_id = None
+
+    return None
 
 
-def _stream_chat_turn(client, execution_id: int, console) -> dict:
+def _stream_chat_turn(client, execution_id: int, console, answered: set | None = None, seen: set | None = None) -> dict:
     """Stream a single chat turn — discrete display, return stats.
 
     Shows tools and thinking in dim gray; only the final answer is prominent.
@@ -553,12 +642,15 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
     with client.stream_sse(f"/executions/{execution_id}/stream") as response:
         event_type = None
         data_buffer = ""
+        event_id = None
 
         for line in response.iter_lines():
             if line.startswith("event:"):
                 event_type = line[6:].strip()
             elif line.startswith("data:"):
                 data_buffer = line[5:].strip()
+            elif line.startswith("id:"):
+                event_id = line[3:].strip()
             elif line == "" and data_buffer:
                 try:
                     data = json.loads(data_buffer)
@@ -575,27 +667,51 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
                     if status in ("aborted", "error", "timeout", "cancelled") and error:
                         console.print(f"  [red]{error}[/red]")
                     break
+                elif event_type == "interrupt":
+                    rid = data.get("request_id")
+                    if answered is not None and rid in answered:
+                        # already handled this pause on a previous pass; skip and keep reading
+                        data_buffer = ""
+                        event_type = None
+                        event_id = None
+                        continue
+                    return {"interrupt": data}
+                elif event_type == "waiting":
+                    return {"waiting": True}
                 elif event_type == "final_answer":
-                    content = str(data.get("content", data.get("message", "")))
-                    if content:
-                        console.print(content)
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        content = str(data.get("content", data.get("message", "")))
+                        if content:
+                            console.print(content)
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                     got_final = True
                 elif event_type == "tool_call":
-                    tools = data.get("tools", [])
-                    if tools:
-                        names = ", ".join(t.get("name", "?") for t in tools)
-                        console.print(f"  [dim]{names}...[/dim]")
-                    else:
-                        msg = str(data.get("content", data.get("message", "")))[:60]
-                        if msg:
-                            console.print(f"  [dim]{msg}...[/dim]")
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        tools = data.get("tools", [])
+                        if tools:
+                            names = ", ".join(t.get("name", "?") for t in tools)
+                            console.print(f"  [dim]{names}...[/dim]")
+                        else:
+                            msg = str(data.get("content", data.get("message", "")))[:60]
+                            if msg:
+                                console.print(f"  [dim]{msg}...[/dim]")
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                 elif event_type == "ai":
-                    # Buffer AI content — only show if no final_answer follows
-                    last_ai_content = str(data.get("content", data.get("message", "")))
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        # Buffer AI content — only show if no final_answer follows
+                        last_ai_content = str(data.get("content", data.get("message", "")))
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                 # tool_result, system, human, meta — silent in chat mode
 
                 data_buffer = ""
                 event_type = None
+                event_id = None
 
     return stats
 
@@ -699,8 +815,30 @@ def chat(
             execution_id = resp.json()["execution_id"]
             turns += 1
 
+            answered: set = set()
+            seen: set = set()
+            turn_stats: dict = {}
             try:
-                turn_stats = _stream_chat_turn(client, execution_id, console)
+                while True:
+                    res = _stream_chat_turn(client, execution_id, console, answered, seen)
+                    if res and res.get("interrupt"):
+                        data = res["interrupt"]
+                        rid = data.get("request_id")
+                        if rid in answered:
+                            break
+                        _prompt_and_respond(client, execution_id, console, data)
+                        answered.add(rid)
+                        continue
+                    if res and res.get("waiting"):
+                        pend = client.get(f"/executions/{execution_id}/pending")
+                        if pend.status_code == 200 and pend.json().get("request_id") not in answered:
+                            p = pend.json()
+                            _prompt_and_respond(client, execution_id, console, p)
+                            answered.add(p.get("request_id"))
+                            continue
+                        break
+                    turn_stats = res or {}
+                    break
                 total_tokens += turn_stats.get("total_tokens") or 0
                 total_cost += turn_stats.get("cost_usd") or 0
                 total_duration_ms += turn_stats.get("duration_ms") or 0
@@ -1054,6 +1192,92 @@ def validate(
 
 
 # ---------------------------------------------------------------------------
+# agentmd pending
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def pending(
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+):
+    """List executions waiting for a HILT response."""
+    from rich.console import Console
+    from rich.table import Table
+    from agent_md.cli.spawn import ensure_backend
+
+    console = Console()
+    try:
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    resp = client.get("/executions", params={"status": "waiting", "limit": 100})
+    rows = resp.json() if resp.status_code == 200 else []
+    if not rows:
+        console.print("[dim]No executions waiting for a response.[/dim]")
+        return
+
+    table = Table()
+    table.add_column("#", style="cyan")
+    table.add_column("Agent")
+    table.add_column("Question")
+    for r in rows:
+        pend = client.get(f"/executions/{r['id']}/pending")
+        q = pend.json().get("message", "") if pend.status_code == 200 else ""
+        table.add_row(str(r["id"]), r["agent_id"], q[:60])
+    console.print(table)
+
+
+@app.command()
+def respond(
+    execution_id: Annotated[int, typer.Argument()],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+    no: Annotated[bool, typer.Option("--no")] = False,
+    reason: Annotated[Optional[str], typer.Option("--reason")] = None,
+    text: Annotated[Optional[str], typer.Option("--text")] = None,
+    choice: Annotated[Optional[str], typer.Option("--choice")] = None,
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+):
+    """Respond to a waiting execution (interactive, or via flags)."""
+    from rich.console import Console
+    from agent_md.cli.spawn import ensure_backend
+
+    console = Console()
+    try:
+        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    pend = client.get(f"/executions/{execution_id}/pending")
+    if pend.status_code != 200:
+        console.print(f"[red]No pending request for execution {execution_id}.[/red]")
+        raise typer.Exit(1)
+    payload = pend.json()
+
+    if yes or no:
+        response = {"approved": bool(yes), "reason": reason}
+    elif text is not None:
+        response = {"text": text}
+    elif choice is not None:
+        response = {"selected": [choice]}
+    else:
+        _prompt_and_respond(client, execution_id, console, payload)
+        console.print("[green]Response sent.[/green]")
+        return
+
+    r = client.post(
+        f"/executions/{execution_id}/respond", json={"request_id": payload["request_id"], "response": response}
+    )
+    if r.status_code == 200:
+        console.print("[green]Response sent.[/green]")
+    else:
+        console.print(f"[red]{r.text}[/red]")
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # agentmd status
 # ---------------------------------------------------------------------------
 
@@ -1062,7 +1286,7 @@ def validate(
 def status(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Check the AgentMD backend status."""
+    """Check the Agentmd backend status."""
     from rich.console import Console
     from rich.table import Table
     from agent_md.cli.client import BackendClient, get_log_path
@@ -1109,10 +1333,48 @@ def status(
 
 
 @app.command()
+def checkpoint(
+    stats: Annotated[bool, typer.Option("--stats")] = False,
+    purge: Annotated[bool, typer.Option("--purge")] = False,
+    agent: Annotated[Optional[str], typer.Option("--agent")] = None,
+    force: Annotated[bool, typer.Option("--force")] = False,
+):
+    """Inspect or purge the LangGraph checkpoint database."""
+    import asyncio
+    from rich.console import Console
+    from agent_md.db.database import Database
+    from agent_md.config.settings import get_state_dir
+    from agent_md.execution import checkpoint_maint as cm
+
+    console = Console()
+    db_path = get_state_dir() / "agentmd.db"
+
+    async def _go():
+        db = Database(db_path)
+        await db.connect()
+        try:
+            if purge:
+                removed = await cm.purge_checkpoints(db, db_path, agent=agent, force=force)
+                console.print(f"[green]Removed {removed} checkpoint thread(s).[/green]")
+            else:
+                s = await cm.checkpoint_stats(db, db_path)
+                console.print(f"[bold]Checkpoint DB[/bold]: {s['path']}")
+                console.print(f"Size: {s['size_bytes'] / 1024:.1f} KiB  |  Threads: {s['threads']}")
+                for ag, n in sorted(s["per_agent"].items()):
+                    console.print(f"  {ag}: {n}")
+        finally:
+            await db.close()
+
+    if not stats and not purge:
+        stats = True
+    asyncio.run(_go())
+
+
+@app.command()
 def stop(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Stop the AgentMD backend."""
+    """Stop the Agentmd backend."""
     from rich.console import Console
     from agent_md.cli.client import BackendClient
 

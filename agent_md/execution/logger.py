@@ -135,6 +135,10 @@ class ExecutionLogger:
             else:
                 await self.log_message(msg)
 
+    async def log_event(self, event_type: str, message: str, metadata: dict | None = None) -> int:
+        """Persist a synthetic event (e.g. HILT interrupt) and return its log id."""
+        return await self.db.add_log(self.execution_id, event_type, message, metadata)
+
     async def _persist(self, event_type: str, message: str) -> int:
         """Write a log entry to the database. Returns the log entry ID."""
         return await self.db.add_log(

@@ -6,7 +6,7 @@ REPO="https://github.com/z-fab/agentmd.git"
 header() { printf "\n\033[1;32m%s\033[0m\n\n" "$1"; }
 warn()   { printf "\033[0;33m⚠ %s\033[0m\n" "$1"; }
 
-header "🤖 Agent.md — Installer"
+header "🤖 Agentmd — Installer"
 
 # Install uv if needed
 if ! command -v uv &>/dev/null; then
