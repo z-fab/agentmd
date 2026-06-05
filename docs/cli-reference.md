@@ -596,7 +596,7 @@ Displays:
 ```
   agentmd v0.2.3
 
-╭─────────────── Agent.md Configuration ───────────────╮
+╭─────────────── Agentmd Configuration ───────────────╮
 │   Config file      ~/.config/agentmd/config.yaml     │
 │   Env file         /home/user/agentmd/.env           │
 │   Workspace        /home/user/agentmd                │

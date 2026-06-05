@@ -360,7 +360,7 @@ def start(
     internal_backend: Annotated[bool, typer.Option("--internal-backend", hidden=True)] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ):
-    """Start the AgentMD backend."""
+    """Start the Agentmd backend."""
     from rich.console import Console
 
     console = Console()
@@ -381,7 +381,7 @@ def start(
         return
 
     if not quiet and not internal_backend:
-        console.print("[bold]AgentMD Backend[/bold]")
+        console.print("[bold]Agentmd Backend[/bold]")
 
     asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
 
@@ -1286,7 +1286,7 @@ def respond(
 def status(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Check the AgentMD backend status."""
+    """Check the Agentmd backend status."""
     from rich.console import Console
     from rich.table import Table
     from agent_md.cli.client import BackendClient, get_log_path
@@ -1374,7 +1374,7 @@ def checkpoint(
 def stop(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Stop the AgentMD backend."""
+    """Stop the Agentmd backend."""
     from rich.console import Console
     from agent_md.cli.client import BackendClient
 

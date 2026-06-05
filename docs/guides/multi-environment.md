@@ -95,7 +95,7 @@ data/production/
 OPENAI_API_KEY=sk-proj-your-key-here
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 
-# Agent.md Runtime
+# Agentmd Runtime
 WORKSPACE_DIR=/workspace/production
 OUTPUT_DIR=/output/production
 DATABASE_PATH=/data/production/executions.db

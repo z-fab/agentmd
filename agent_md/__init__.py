@@ -1,4 +1,4 @@
-"""Agent.md — Markdown-first agent runtime."""
+"""Agentmd — Markdown-first agent runtime."""
 
 from importlib.metadata import PackageNotFoundError, version
 

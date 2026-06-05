@@ -1,4 +1,4 @@
-"""Setup wizard, config display, and update commands for Agent.md."""
+"""Setup wizard, config display, and update commands for Agentmd."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def _write_config_yaml(workspace: Path, provider: str, model: str, defaults: dic
 
 def _build_env_content(api_key: str | None, env_var: str | None) -> str:
     """Build .env file content."""
-    lines = ["# Agent.md — API Keys"]
+    lines = ["# Agentmd — API Keys"]
     if api_key and env_var:
         lines.append(f"{env_var}={api_key}")
     else:
@@ -169,7 +169,7 @@ def _build_config_panel():
     table.add_row("Default model", f"{current.defaults_provider} / {current.defaults_model}")
     table.add_row("API keys", ", ".join(providers) if providers else "[yellow]none configured[/]")
 
-    return make_panel(table, title="Agent.md Configuration")
+    return make_panel(table, title="Agentmd Configuration")
 
 
 @app.command(name="info")
@@ -187,14 +187,14 @@ def info():
 
 @app.command()
 def setup():
-    """Interactive setup wizard for Agent.md."""
+    """Interactive setup wizard for Agentmd."""
     from agent_md import __version__
     from agent_md.config.settings import _get_config_path
 
     console.print()
     console.print(
         make_panel(
-            f"[bold]Agent.md[/bold] v{__version__}\nMarkdown-first agent runtime",
+            f"[bold]Agentmd[/bold] v{__version__}\nMarkdown-first agent runtime",
             title="Setup Wizard",
         )
     )
@@ -326,7 +326,7 @@ def setup():
 
 @app.command()
 def update():
-    """Update Agent.md to the latest version."""
+    """Update Agentmd to the latest version."""
     from agent_md import __version__
 
     console.print(f"\n[bold]Current version:[/] {__version__}\n")

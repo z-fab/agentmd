@@ -136,7 +136,7 @@ name: hello-world
 
 Write a greeting to `greeting.txt`.
 ```
-The agent will call `file_write("greeting.txt", "Hello from Agent.md!")` → `workspace/greeting.txt`
+The agent will call `file_write("greeting.txt", "Hello from Agentmd!")` → `workspace/greeting.txt`
 
 **Generate timestamped reports:**
 ```yaml
