@@ -82,8 +82,8 @@ def create_app(
     from agent_md.api.routes import info, agents, executions, scheduler, events
 
     app = FastAPI(
-        title="AgentMD",
-        description="Agent.md HTTP Backend",
+        title="Agentmd",
+        description="Agentmd HTTP Backend",
         lifespan=_lifespan,
     )
 
