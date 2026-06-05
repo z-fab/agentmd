@@ -1,0 +1,9 @@
+/* Adicionar margem/padding */
+.md-header__button.md-logo {
+  padding: 0.2rem 0rem;
+}
+
+.md-header__button.md-logo img {
+  width: 48px;
+  height: 48px;
+}
