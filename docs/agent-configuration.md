@@ -21,7 +21,7 @@ trigger:
 Your system prompt goes here...
 ```
 
-> **Note:** The `model` field is optional. When omitted, Agent.md uses the default provider and model from your `config.yaml`.
+> **Note:** The `model` field is optional. When omitted, Agentmd uses the default provider and model from your `config.yaml`.
 
 ## Required Fields
 

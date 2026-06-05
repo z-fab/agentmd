@@ -1,6 +1,6 @@
 # Multi-Environment Setup
 
-Configure and manage Agent.md across development, staging, and production environments.
+Configure and manage Agentmd across development, staging, and production environments.
 
 ## Overview
 

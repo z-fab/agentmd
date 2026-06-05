@@ -1,6 +1,6 @@
 # Providers
 
-Agent.md supports five LLM providers: Google, OpenAI, Anthropic, Ollama, and Local (self-hosted). Each provider is an optional dependency—install only what you need.
+Agentmd supports five LLM providers: Google, OpenAI, Anthropic, Ollama, and Local (self-hosted). Each provider is an optional dependency—install only what you need.
 
 ## Supported Providers
 
@@ -50,7 +50,7 @@ OPENAI_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here
 ```
 
-Agent.md automatically loads `.env` at startup via `python-dotenv`.
+Agentmd automatically loads `.env` at startup via `python-dotenv`.
 
 ### Get Your API Keys
 

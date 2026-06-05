@@ -1,6 +1,6 @@
 # Debugging
 
-Troubleshooting guide for common Agent.md errors and issues.
+Troubleshooting guide for common Agentmd errors and issues.
 
 ## Common Errors
 

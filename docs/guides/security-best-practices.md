@@ -1,6 +1,6 @@
 # Security Best Practices
 
-Practical security guidelines for building and deploying Agent.md agents safely.
+Practical security guidelines for building and deploying Agentmd agents safely.
 
 ## Core Principles
 

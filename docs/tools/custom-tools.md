@@ -1,6 +1,6 @@
 # Custom Tools
 
-Extend Agent.md with custom Python tools that add domain-specific capabilities beyond the built-in tools. Custom tools are Python files with `@tool`-decorated functions that agents can call during execution.
+Extend Agentmd with custom Python tools that add domain-specific capabilities beyond the built-in tools. Custom tools are Python files with `@tool`-decorated functions that agents can call during execution.
 
 ## Quick Start
 

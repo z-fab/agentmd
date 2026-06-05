@@ -1,4 +1,4 @@
-# Agent.md Examples
+# Agentmd Examples
 
 Copy-paste ready examples for common use cases. Each example is a complete, runnable agent file.
 

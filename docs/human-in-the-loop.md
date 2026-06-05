@@ -1,6 +1,6 @@
 # Human-in-the-Loop
 
-Agent.md supports pausing an execution mid-run to ask the user a question, then resuming from exactly where it left off — even after a backend restart. This is called a **HILT interaction** (Human-In-The-Loop).
+Agentmd supports pausing an execution mid-run to ask the user a question, then resuming from exactly where it left off — even after a backend restart. This is called a **HILT interaction** (Human-In-The-Loop).
 
 ## Concept
 
@@ -178,9 +178,9 @@ defaults:
 
 ## CLI Usage
 
-### During `agentmd run`
+### During `agentmd run` and `agentmd chat`
 
-When a guarded tool fires or `ask_user` is called, Agent.md pauses the stream and prompts inline:
+HILT works in **both** `agentmd run` (one-shot) and `agentmd chat` (interactive sessions). When a guarded tool fires or `ask_user` is called, Agentmd pauses the stream and prompts inline — in a chat session the prompt appears mid-turn, and the agent continues the turn once you answer:
 
 ```
 ▶ Running cleaner  google/gemini-2.5-flash

@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete reference for all Agent.md CLI commands, options, and examples.
+Complete reference for all Agentmd CLI commands, options, and examples.
 
 ## Command Overview
 
@@ -12,6 +12,9 @@ Complete reference for all Agent.md CLI commands, options, and examples.
 | `agentmd chat [agent]` | Interactive chat session | Multi-turn conversation with an agent |
 | `agentmd list` | List all agents in workspace | Discover agents, check status |
 | `agentmd logs <agent>` | View execution history | Debug failures, review outputs |
+| `agentmd pending` | List executions awaiting a response | Find paused (HILT) executions |
+| `agentmd respond <id>` | Answer a waiting execution | Approve/deny or provide input |
+| `agentmd checkpoint` | Inspect / purge checkpoint storage | Manage `agentmd_checkpoints.db` |
 | `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD |
 | `agentmd status` | Check if runtime is running | Monitor daemon state |
 | `agentmd stop` | Stop background runtime | Gracefully stop daemon |
@@ -100,7 +103,7 @@ When using `--template` or without an AI provider configured, the command asks:
 
 ## agentmd start
 
-Start the Agent.md runtime with scheduler and file watcher.
+Start the Agentmd runtime with scheduler and file watcher.
 
 ### Purpose
 
@@ -196,6 +199,10 @@ agentmd run my-agent --quiet
 | 📎 | Tool response | Tool execution result |
 | ✅ | Final answer | Agent's final output |
 
+### Human-in-the-Loop prompts
+
+If the agent calls a guarded tool (e.g. `file_delete`, `file_write`) or `ask_user`, `agentmd run` pauses and prompts you inline for a confirmation, free-text answer, or choice, then resumes. If you are not watching the terminal, the execution enters `waiting` state and can be answered later with [`agentmd respond`](#agentmd-respond-id). See [Human-in-the-Loop](human-in-the-loop.md).
+
 ---
 
 ## agentmd chat [agent]
@@ -247,6 +254,8 @@ agentmd chat my-agent -w /data/agents
 | `Ctrl+C` | End session gracefully |
 | `Ctrl+D` (EOF) | End session gracefully |
 | Empty input | Ignored (re-prompts) |
+
+Like `agentmd run`, a chat session also prompts inline for [Human-in-the-Loop](human-in-the-loop.md) requests: when a guarded tool or `ask_user` fires mid-turn, you answer in the terminal and the agent continues.
 
 ### Example Session
 
@@ -345,6 +354,129 @@ agentmd logs -e 42
 
 # Follow daemon logs (like tail -f)
 agentmd logs -f
+```
+
+---
+
+## agentmd pending
+
+List executions that are paused, waiting for a Human-in-the-Loop response.
+
+### Usage
+
+```bash
+agentmd pending [OPTIONS]
+```
+
+### Options
+
+| Option | Short | Type | Default | Description |
+|--------|-------|------|---------|-------------|
+| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+
+### Example output
+
+```
+ #   Agent      Question
+ ──────────────────────────────────────────────────────────────
+ 42  cleaner    Confirm file_delete {"path": "output/stale.log"}
+ 51  reporter   Enter the report title:
+```
+
+Use the execution `#` with `agentmd respond` to answer. See [Human-in-the-Loop](human-in-the-loop.md).
+
+---
+
+## agentmd respond <id>
+
+Answer a waiting execution. Resumes the run automatically once answered.
+
+### Usage
+
+```bash
+agentmd respond <EXECUTION_ID> [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `EXECUTION_ID` | Integer (required) | The waiting execution's id (from `agentmd pending`) |
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--yes` | Flag | Approve a `confirm` request |
+| `--no` | Flag | Deny a `confirm` request |
+| `--reason TEXT` | String | Optional reason to attach to `--yes`/`--no` |
+| `--text TEXT` | String | Answer for an `input` request |
+| `--choice VALUE` | String | Selected option for a `choice` request |
+| `--workspace PATH` | Path | Override workspace directory |
+
+With no response flags, the command prompts interactively based on the pending request kind.
+
+### Examples
+
+```bash
+# Interactive (prompts for the response)
+agentmd respond 42
+
+# Approve / deny a confirmation
+agentmd respond 42 --yes
+agentmd respond 42 --no --reason "file is still needed"
+
+# Provide text for an input request
+agentmd respond 51 --text "Monthly Summary"
+
+# Select a choice
+agentmd respond 55 --choice staging
+```
+
+---
+
+## agentmd checkpoint
+
+Inspect or purge the LangGraph checkpoint database (`agentmd_checkpoints.db`). The checkpointer is always on (it is the durability substrate for Human-in-the-Loop and history seeding), so it grows one thread per execution. A retention sweep runs automatically on startup (`defaults.checkpoint_retention_days`, default 30); this command is for manual inspection and cleanup.
+
+### Usage
+
+```bash
+agentmd checkpoint [OPTIONS]
+```
+
+### Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--stats` | Flag | Show DB size and thread count, grouped per agent (default when no flag given) |
+| `--purge` | Flag | Delete eligible checkpoint threads |
+| `--agent NAME` | String | Limit `--purge` to a single agent |
+| `--force` | Flag | Ignore the keep-set (also removes latest-per-agent and `waiting` threads) |
+
+### Keep-set
+
+`--purge` (without `--force`) always preserves:
+
+- the **latest execution per agent** (needed to seed `history` on the next run), and
+- any **`waiting` execution** (needed to resume a paused run).
+
+`--force` is the explicit "wipe everything" escape hatch.
+
+### Examples
+
+```bash
+# Size + thread count per agent
+agentmd checkpoint --stats
+
+# Delete eligible old threads (respects the keep-set)
+agentmd checkpoint --purge
+
+# Purge for one agent only
+agentmd checkpoint --purge --agent cleaner
+
+# Wipe everything, including latest/waiting threads
+agentmd checkpoint --purge --force
 ```
 
 ---
@@ -507,7 +639,7 @@ agentmd setup
 
 ## agentmd update
 
-Update Agent.md to the latest version.
+Update Agentmd to the latest version.
 
 ### Usage
 
@@ -521,7 +653,7 @@ Tries `uv tool upgrade` first, falls back to `pip install --upgrade`. Shows curr
 
 ## Configuration Files
 
-Agent.md uses two configuration files:
+Agentmd uses two configuration files:
 
 ### `config.yaml` — Application settings
 

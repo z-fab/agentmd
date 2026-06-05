@@ -1,8 +1,8 @@
-# Agent.md
+# Agentmd
 
 <div align="center" markdown>
 
-<img src="assets/agentmd_banner.png" alt="Agent.md" width="400">
+<img src="assets/agentmd_banner.png" alt="Agentmd" width="400">
 
 **Markdown-first runtime for AI agents**
 
@@ -21,9 +21,9 @@ No boilerplate. No frameworks to learn. Just Markdown.
 
 ---
 
-## :sparkles: Why Agent.md?
+## :sparkles: Why Agentmd?
 
-Most agent frameworks require dozens of files, complex configurations, and deep knowledge of LLM internals. **Agent.md takes a different approach:**
+Most agent frameworks require dozens of files, complex configurations, and deep knowledge of LLM internals. **Agentmd takes a different approach:**
 
 <div class="grid cards" markdown>
 
@@ -238,7 +238,7 @@ custom_tools:
 
     ---
 
-    Install Agent.md and run your first agent in 5 minutes.
+    Install Agentmd and run your first agent in 5 minutes.
 
 -   :fontawesome-solid-book:{ .lg .middle } **[Agent Configuration](agent-configuration.md)**
 

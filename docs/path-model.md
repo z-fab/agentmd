@@ -1,6 +1,6 @@
 # Path Model
 
-AgentMD agents declare the directories they need access to via the
+Agentmd agents declare the directories they need access to via the
 `paths` field in the frontmatter. Each entry is a **named alias** that
 the agent (and you, in the prompt) can reference using `{alias}` syntax.
 

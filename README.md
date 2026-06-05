@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/agentmd_banner.png" alt="Agent.md" width="800"/>
+<img src="assets/agentmd_banner.png" alt="Agentmd" width="800"/>
 
 <br>
 <br>
@@ -20,7 +20,7 @@ No boilerplate. No frameworks to learn. Just Markdown.
 
 ---
 
-## ✨ Why Agent.md?
+## ✨ Why Agentmd?
 
 - **📄 One file = One agent** — YAML frontmatter for config, Markdown body for the prompt
 - **⚡ Zero boilerplate** — No classes, decorators, or complex frameworks
@@ -83,7 +83,7 @@ You are a friendly assistant. When asked to execute your task,
 write a creative greeting and save it to 'greeting.txt'.
 ```
 
-> **Note:** No `model` needed — Agent.md uses the default provider/model you configured during setup.
+> **Note:** No `model` needed — Agentmd uses the default provider/model you configured during setup.
 
 Agent names may contain spaces and accented characters (e.g. `Daily Processor`, `Résumé Builder`). The `name` field is the agent's identifier — not the filename. Quote names with spaces on the CLI:
 
@@ -143,7 +143,7 @@ That's it! 🎉
 
 ## ⚙️ Configuration
 
-Agent.md uses two configuration files:
+Agentmd uses two configuration files:
 
 | File | Purpose |
 |------|---------|

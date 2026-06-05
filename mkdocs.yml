@@ -1,4 +1,4 @@
-site_name: Agent.md
+site_name: Agentmd
 site_description: Markdown-first runtime for AI agents
 site_url: https://z-fab.github.io/agentmd
 repo_url: https://github.com/z-fab/agentmd
@@ -96,7 +96,7 @@ extra:
 extra_css:
   - stylesheets/extra.css
 
-copyright: Copyright &copy; 2024 Agent.md
+copyright: Copyright &copy; 2024 Agentmd
 
 nav:
   - Home: index.md

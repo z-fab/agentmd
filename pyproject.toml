@@ -4,7 +4,7 @@ version = "0.15.0"
 authors = [
     { name = "Fabricio Zillig", email = "me@zfab.me" },
 ]
-description = "Agent.md is a markdown-first runtime for AI agents."
+description = "Agentmd is a markdown-first runtime for AI agents."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

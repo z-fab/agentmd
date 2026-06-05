@@ -1,6 +1,6 @@
 # Performance
 
-Optimize token usage, response time, and cost for Agent.md agents.
+Optimize token usage, response time, and cost for Agentmd agents.
 
 ## Token Optimization
 

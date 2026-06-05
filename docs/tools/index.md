@@ -1,6 +1,6 @@
 # Tools
 
-Agent.md provides three types of tools for your agents.
+Agentmd provides three types of tools for your agents.
 
 ## Built-in Tools
 

@@ -6,7 +6,7 @@ via the `custom_tools` (or `tools`) frontmatter field.
 ## Adding external dependencies
 
 If your custom tool needs a Python package that isn't already in the
-AgentMD core install, reinstall the CLI with the `--with` flag:
+Agentmd core install, reinstall the CLI with the `--with` flag:
 
     uv tool install agentmd --with python-frontmatter --force
 
@@ -17,7 +17,7 @@ The `--force` flag is required to replace the existing install. Pass
 
 ## Sandbox and custom tools
 
-Custom tools run with full process permissions. AgentMD does **not**
+Custom tools run with full process permissions. Agentmd does **not**
 enforce the agent's `paths` whitelist on them — they are your code and
 your responsibility.
 

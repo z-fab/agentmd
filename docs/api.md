@@ -1,6 +1,6 @@
 # REST API Reference
 
-AgentMD exposes an HTTP API over a Unix domain socket. The CLI uses this
+Agentmd exposes an HTTP API over a Unix domain socket. The CLI uses this
 API internally — you can also use it directly for integrations.
 
 ## Connection

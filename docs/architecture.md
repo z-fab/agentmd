@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Agent.md is a markdown-first runtime for AI agents. Each agent is a single `.md` file with YAML frontmatter (config) and a Markdown body (system prompt). The runtime parses these files, builds a LangGraph ReAct agent, and executes it with tool support, scheduling, and execution tracking.
+Agentmd is a markdown-first runtime for AI agents. Each agent is a single `.md` file with YAML frontmatter (config) and a Markdown body (system prompt). The runtime parses these files, builds a LangGraph ReAct agent, and executes it with tool support, scheduling, and execution tracking.
 
 ## Tech Stack
 

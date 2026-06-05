@@ -1,6 +1,6 @@
 # Memory System
 
-Agent.md provides two complementary memory systems that allow agents to persist knowledge across executions:
+Agentmd provides two complementary memory systems that allow agents to persist knowledge across executions:
 
 1. **Session History** — Automatic conversation history via LangGraph checkpointing
 2. **Long-term Memory** — Structured knowledge stored in `.memory.md` files via built-in tools

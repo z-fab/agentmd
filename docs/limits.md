@@ -1,6 +1,6 @@
 # Execution Limits
 
-AgentMD enforces hard limits to prevent runaway agents from consuming
+Agentmd enforces hard limits to prevent runaway agents from consuming
 unbounded resources. All limits are optional and configurable per agent.
 
 ## Configuration
