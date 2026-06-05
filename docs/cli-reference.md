@@ -28,7 +28,7 @@ These options are available for **all commands** via the app callback:
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--quiet` | `-q` | Suppress output except errors |
+| `--quiet` | `-q` | Print only the final answer (on `run`) |
 | `--verbose` | `-v` | Show debug output |
 
 ```bash
@@ -175,7 +175,8 @@ agentmd run [AGENT] [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
-| `--quiet` | `-q` | Flag | false | Suppress output except result |
+| `--quiet` | `-q` | Flag | false | Print only the final answer (no steps, no summary) |
+| `--detach` | `-d` | Flag | false | Run in the background and return immediately |
 
 ### Examples
 
@@ -186,8 +187,11 @@ agentmd run my-agent
 # Interactive picker (when no name given)
 agentmd run
 
-# Quiet mode (result only)
+# Quiet mode (final answer only — pipe-friendly)
 agentmd run my-agent --quiet
+
+# Background mode (returns immediately; check progress with `agentmd logs`)
+agentmd run my-agent --detach
 ```
 
 ### Event Icons
@@ -201,7 +205,7 @@ agentmd run my-agent --quiet
 
 ### Human-in-the-Loop prompts
 
-If the agent calls a guarded tool (e.g. `file_delete`, `file_write`) or `ask_user`, `agentmd run` pauses and prompts you inline for a confirmation, free-text answer, or choice, then resumes. If you are not watching the terminal, the execution enters `waiting` state and can be answered later with [`agentmd respond`](#agentmd-respond-id). See [Human-in-the-Loop](human-in-the-loop.md).
+If the agent calls a guarded tool (e.g. `file_delete`, `file_write`) or `ask_user`, `agentmd run` pauses and prompts you inline for a confirmation, free-text answer, or choice, then resumes. If you are not watching the terminal, the execution enters `waiting` state and can be answered later with [`agentmd respond`](#agentmd-respond-id). With `--detach`, the run never prompts inline — any request goes straight to `waiting` and shows up in [`agentmd pending`](#agentmd-pending). See [Human-in-the-Loop](human-in-the-loop.md).
 
 ---
 

@@ -14,6 +14,7 @@ from agent_md.cli.theme import (
     EVENT_DISPLAY,
     agent_status_dot,
     console,
+    display_icon,
     format_duration,
     format_relative_time,
     format_tokens,
@@ -450,7 +451,11 @@ def run(
     ctx: typer.Context,
     agent: Annotated[Optional[str], typer.Argument()] = None,
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Print only the final answer")] = False,
+    detach: Annotated[
+        bool,
+        typer.Option("--detach", "-d", help="Run in the background; if it needs input it appears in 'agentmd pending'"),
+    ] = False,
 ):
     """Execute a single agent."""
     from rich.console import Console
@@ -481,6 +486,12 @@ def run(
         raise typer.Exit(1)
 
     execution_id = resp.json()["execution_id"]
+
+    if detach:
+        console.print(f"[green]Execution {execution_id} started in background.[/green]")
+        console.print("  [dim]Follow it with: agentmd logs  |  if it needs input: agentmd pending[/dim]")
+        return
+
     if not quiet:
         console.print(f"[dim]Execution {execution_id} started[/dim]")
 
@@ -597,12 +608,15 @@ def _stream_execution(
                     break
                 elif event_type == "final_answer":
                     got_final_answer = True
-                    if not quiet:
-                        already_seen = seen is not None and event_id is not None and event_id in seen
-                        if not already_seen:
+                    already_seen = seen is not None and event_id is not None and event_id in seen
+                    if not already_seen:
+                        if quiet:
+                            # Quiet mode: print only the final answer, undecorated (pipe-friendly).
+                            console.print(str(data.get("content", data.get("message", ""))))
+                        else:
                             _print_event(console, event_type, data)
-                            if seen is not None and event_id is not None:
-                                seen.add(event_id)
+                        if seen is not None and event_id is not None:
+                            seen.add(event_id)
                 elif event_type == "interrupt":
                     rid = data.get("request_id")
                     if answered is not None and rid in answered:
@@ -901,7 +915,7 @@ def list_agents(
 
     for config in agents:
         last_run = format_relative_time(last_runs.get(config.name))
-        icon = resolve_agent_icon(config.name, config.icon)
+        icon = display_icon(resolve_agent_icon(config.name, config.icon))
         table.add_row(
             icon,
             config.name,
@@ -953,7 +967,7 @@ def logs(
         print_warning(f"No executions found for '{agent}'.")
         return
 
-    console.print(f"\n  [bold]Recent executions \u2014 {agent_icon} {agent}[/bold]\n")
+    console.print(f"\n  [bold]Recent executions \u2014 {display_icon(agent_icon)} {agent}[/bold]\n")
 
     status_style = {
         "success": "green",
@@ -1202,7 +1216,6 @@ def pending(
 ):
     """List executions waiting for a HILT response."""
     from rich.console import Console
-    from rich.table import Table
     from agent_md.cli.spawn import ensure_backend
 
     console = Console()
@@ -1218,15 +1231,25 @@ def pending(
         console.print("[dim]No executions waiting for a response.[/dim]")
         return
 
-    table = Table()
-    table.add_column("#", style="cyan")
-    table.add_column("Agent")
-    table.add_column("Question")
+    # Resolve agent icons once (name -> already-resolved icon).
+    agents_resp = client.get("/agents")
+    icons = {a["name"]: a.get("icon") for a in agents_resp.json()} if agents_resp.status_code == 200 else {}
+
+    console.print()
+    table = make_table(
+        ("#", {"style": "dim"}),
+        ("", {}),
+        ("Agent", {"style": "cyan"}),
+        ("Question", {}),
+    )
     for r in rows:
         pend = client.get(f"/executions/{r['id']}/pending")
         q = pend.json().get("message", "") if pend.status_code == 200 else ""
-        table.add_row(str(r["id"]), r["agent_id"], q[:60])
+        name = r["agent_id"]
+        icon = display_icon(resolve_agent_icon(name, icons.get(name)))
+        table.add_row(str(r["id"]), icon, name, q[:60])
     console.print(table)
+    console.print()
 
 
 @app.command()

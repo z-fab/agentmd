@@ -3,6 +3,18 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.1] — 2026-06-05
+
+### Added
+- **`agentmd run --detach` / `-d`** — fire-and-forget background runs. The CLI dispatches the execution, prints its id, and returns immediately. If the agent needs input (HILT), it enters `waiting` instead of prompting inline and appears in `agentmd pending` (consistent with `agentmd start -d`).
+
+### Changed
+- **`agentmd run --quiet` / `-q` now prints only the final answer** — intermediate steps, the "execution started" line, and the summary line are suppressed, and the answer is printed undecorated (pipe-friendly). Previously `-q` suppressed the final answer too.
+
+### Fixed
+- **Standardized CLI tables** — `agentmd pending` now uses the same table style as `agentmd list`/`agentmd logs` and shows the agent icon next to its name.
+- **Agent icon alignment** — single-codepoint symbol emoji (e.g. `☀`, `⚙`) are normalized to their emoji presentation (`U+FE0F` appended) so they render two cells wide and table columns no longer drift out of alignment in `list`, `pending`, and `logs`.
+
 ## [0.15.0] — 2026-06-05
 
 ### Added

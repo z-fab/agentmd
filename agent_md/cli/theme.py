@@ -116,6 +116,21 @@ def agent_status_dot(enabled: bool) -> str:
     return "[green]\u25cf[/green]"
 
 
+def display_icon(icon: str) -> str:
+    """Normalise an agent icon for terminal display.
+
+    Single-codepoint BMP symbols (e.g. ``\u2600`` sun, ``\u2699`` gear) default to a
+    *text* presentation that many terminals render one cell wide, which knocks
+    table columns out of alignment. Appending the emoji variation selector
+    (``U+FE0F``) forces the two-cell emoji presentation so icon columns line up.
+    Multi-codepoint emoji (which already carry a selector or are in the
+    supplementary plane) are returned unchanged.
+    """
+    if len(icon) == 1 and 0x2000 <= ord(icon) < 0x1F000:
+        return icon + "\ufe0f"
+    return icon
+
+
 # ---------------------------------------------------------------------------
 # Event display mapping (emoji + Rich style per event type)
 # ---------------------------------------------------------------------------
