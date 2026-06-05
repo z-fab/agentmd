@@ -114,12 +114,18 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
         logs = await db.get_logs(exec_id, limit=10000)
         for log in logs:
             seen_seq = log.id
+            payload = {
+                "event_type": log.event_type,
+                "message": log.message,
+                "timestamp": log.timestamp,
+            }
+            if log.event_type == "interrupt" and log.metadata:
+                try:
+                    payload.update(json.loads(log.metadata))
+                except Exception:
+                    pass
             yield ServerSentEvent(
-                data={
-                    "event_type": log.event_type,
-                    "message": log.message,
-                    "timestamp": log.timestamp,
-                },
+                data=payload,
                 event=log.event_type,
                 id=str(seen_seq),
             )

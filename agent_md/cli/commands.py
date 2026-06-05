@@ -470,17 +470,26 @@ def run(
     if not quiet:
         console.print(f"[dim]Execution {execution_id} started[/dim]")
 
+    answered: set = set()
     try:
         while True:
-            result = _stream_execution(client, execution_id, console, quiet)
+            result = _stream_execution(client, execution_id, console, quiet, answered)
             if result and result.get("interrupt"):
-                _prompt_and_respond(client, execution_id, console, result["interrupt"])
+                data = result["interrupt"]
+                rid = data.get("request_id")
+                if rid in answered:
+                    break  # safety: already answered, nothing new
+                _prompt_and_respond(client, execution_id, console, data)
+                answered.add(rid)
                 continue  # re-open the stream to observe the resume
             if result and result.get("waiting"):
                 pend = client.get(f"/executions/{execution_id}/pending")
-                if pend.status_code == 200:
-                    _prompt_and_respond(client, execution_id, console, pend.json())
+                if pend.status_code == 200 and pend.json().get("request_id") not in answered:
+                    p = pend.json()
+                    _prompt_and_respond(client, execution_id, console, p)
+                    answered.add(p.get("request_id"))
                     continue
+                break
             break
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelling...[/yellow]")
@@ -520,7 +529,7 @@ def _prompt_and_respond(client, execution_id: int, console, payload: dict) -> No
     client.post(f"/executions/{execution_id}/respond", json={"request_id": request_id, "response": response})
 
 
-def _stream_execution(client, execution_id: int, console, quiet: bool):
+def _stream_execution(client, execution_id: int, console, quiet: bool, answered: set | None = None):
     """Stream SSE events from an execution and print them."""
     import json
 
@@ -570,9 +579,15 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
                     got_final_answer = True
                     if not quiet:
                         _print_event(console, event_type, data)
-                elif event_type in ("interrupt", "waiting"):
-                    if event_type == "interrupt":
-                        return {"interrupt": data}
+                elif event_type == "interrupt":
+                    rid = data.get("request_id")
+                    if answered is not None and rid in answered:
+                        # already handled this pause on a previous pass; skip and keep reading
+                        data_buffer = ""
+                        event_type = None
+                        continue
+                    return {"interrupt": data}
+                elif event_type == "waiting":
                     return {"waiting": True}
                 elif not quiet:
                     _print_event(console, event_type, data)
@@ -583,7 +598,7 @@ def _stream_execution(client, execution_id: int, console, quiet: bool):
     return None
 
 
-def _stream_chat_turn(client, execution_id: int, console) -> dict:
+def _stream_chat_turn(client, execution_id: int, console, answered: set | None = None) -> dict:
     """Stream a single chat turn — discrete display, return stats.
 
     Shows tools and thinking in dim gray; only the final answer is prominent.
@@ -619,6 +634,16 @@ def _stream_chat_turn(client, execution_id: int, console) -> dict:
                     if status in ("aborted", "error", "timeout", "cancelled") and error:
                         console.print(f"  [red]{error}[/red]")
                     break
+                elif event_type == "interrupt":
+                    rid = data.get("request_id")
+                    if answered is not None and rid in answered:
+                        # already handled this pause on a previous pass; skip and keep reading
+                        data_buffer = ""
+                        event_type = None
+                        continue
+                    return {"interrupt": data}
+                elif event_type == "waiting":
+                    return {"waiting": True}
                 elif event_type == "final_answer":
                     content = str(data.get("content", data.get("message", "")))
                     if content:
@@ -743,8 +768,29 @@ def chat(
             execution_id = resp.json()["execution_id"]
             turns += 1
 
+            answered: set = set()
+            turn_stats: dict = {}
             try:
-                turn_stats = _stream_chat_turn(client, execution_id, console)
+                while True:
+                    res = _stream_chat_turn(client, execution_id, console, answered)
+                    if res and res.get("interrupt"):
+                        data = res["interrupt"]
+                        rid = data.get("request_id")
+                        if rid in answered:
+                            break
+                        _prompt_and_respond(client, execution_id, console, data)
+                        answered.add(rid)
+                        continue
+                    if res and res.get("waiting"):
+                        pend = client.get(f"/executions/{execution_id}/pending")
+                        if pend.status_code == 200 and pend.json().get("request_id") not in answered:
+                            p = pend.json()
+                            _prompt_and_respond(client, execution_id, console, p)
+                            answered.add(p.get("request_id"))
+                            continue
+                        break
+                    turn_stats = res or {}
+                    break
                 total_tokens += turn_stats.get("total_tokens") or 0
                 total_cost += turn_stats.get("cost_usd") or 0
                 total_duration_ms += turn_stats.get("duration_ms") or 0

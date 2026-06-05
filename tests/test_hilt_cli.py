@@ -48,6 +48,60 @@ def test_prompt_and_respond_input(monkeypatch):
     assert client.posted[0][1] == {"request_id": "r2", "response": {"text": "Ana"}}
 
 
+class _FakeSSE:
+    def __init__(self, lines):
+        self._lines = lines
+
+    def iter_lines(self):
+        yield from self._lines
+
+
+class _StreamClient:
+    def __init__(self, lines):
+        self._lines = lines
+
+    def stream_sse(self, path):
+        import contextlib
+
+        @contextlib.contextmanager
+        def _cm():
+            yield _FakeSSE(self._lines)
+
+        return _cm()
+
+
+def test_stream_execution_skips_answered_interrupt():
+    from agent_md.cli import commands
+    from rich.console import Console
+
+    # an interrupt event for rid 'r1' followed by a complete event
+    lines = [
+        "event: interrupt",
+        'data: {"request_id": "r1", "kind": "confirm", "message": "ok?"}',
+        "",
+        "event: complete",
+        'data: {"status": "success"}',
+        "",
+    ]
+    # when r1 is already answered, the function must NOT return the interrupt;
+    # it should reach complete and return None
+    res = commands._stream_execution(_StreamClient(lines), 1, Console(), quiet=True, answered={"r1"})
+    assert res is None
+
+
+def test_stream_execution_returns_new_interrupt():
+    from agent_md.cli import commands
+    from rich.console import Console
+
+    lines = [
+        "event: interrupt",
+        'data: {"request_id": "r2", "kind": "confirm", "message": "ok?"}',
+        "",
+    ]
+    res = commands._stream_execution(_StreamClient(lines), 1, Console(), quiet=True, answered=set())
+    assert res["interrupt"]["request_id"] == "r2"
+
+
 def test_respond_flags_yes(monkeypatch):
     from agent_md.cli import commands
 
