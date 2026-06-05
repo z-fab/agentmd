@@ -1,9 +1,9 @@
 # Changelog
 
-All notable changes to Agent.md are documented here.
+All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.15.0] — 2026-06-04
+## [0.15.0] — 2026-06-05
 
 ### Added
 - **Human-in-the-loop (HILT):** agents can pause to ask the user for confirmation, free-text input, or a choice, then resume.
@@ -12,11 +12,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
   - New built-in tool `ask_user` and SDK primitives `request_confirmation` / `request_input` / `request_choice` for custom tools.
   - Survives backend restart: paused executions resume when answered.
   - API: `interrupt` SSE event, `POST /executions/{id}/respond`, `GET /executions/{id}/pending`.
-  - CLI: inline prompt during `agentmd run`, plus `agentmd pending` and `agentmd respond`.
+  - CLI: inline prompt during both `agentmd run` and `agentmd chat`, plus `agentmd pending` and `agentmd respond` (`--yes/--no/--reason/--text/--choice`).
 - **Checkpoint cleanup** (issue #12): startup retention sweep (`defaults.checkpoint_retention_days`, default 30) and `agentmd checkpoint --stats/--purge/--agent/--force`.
+- `agentmd new`'s AI generation prompt now teaches the model about icons, skills, MCP, custom tools, and HILT, so generated agents can use the current feature set.
 
 ### Changed
 - The LangGraph checkpointer is now always on (durability substrate for HILT). `history` only controls how much prior context is seeded into a new run; each execution uses its own checkpoint thread.
+- Standardized the project name to **Agentmd** across the documentation, site, and API title (the CLI/package `agentmd` and module `agent_md` are unchanged).
 
 ## [0.14.0] — 2026-06-03
 

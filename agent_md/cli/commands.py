@@ -544,7 +544,9 @@ def _prompt_and_respond(client, execution_id: int, console, payload: dict) -> No
     client.post(f"/executions/{execution_id}/respond", json={"request_id": request_id, "response": response})
 
 
-def _stream_execution(client, execution_id: int, console, quiet: bool, answered: set | None = None, seen: set | None = None):
+def _stream_execution(
+    client, execution_id: int, console, quiet: bool, answered: set | None = None, seen: set | None = None
+):
     """Stream SSE events from an execution and print them."""
     import json
 
