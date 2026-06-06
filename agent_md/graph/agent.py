@@ -1,10 +1,37 @@
+import httpx
+
 from agent_md.graph.state import AgentState
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.runnables import Runnable
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 
 _TOOL_RESULT_TRUNCATE_THRESHOLD = 500
+
+# Transient transport-level failures (e.g. a preview endpoint dropping the
+# connection mid-request: "Server disconnected without sending a response").
+# These are network blips, not real API errors, so a short retry recovers the
+# call instead of failing the whole execution. `httpx.TransportError` is the
+# base class for ConnectError, ReadError, RemoteProtocolError, timeouts, etc.
+_TRANSIENT_RETRY_ATTEMPTS = 3
+
+
+def with_transient_retry(model):
+    """Wrap a model runnable so transient transport errors are retried.
+
+    Only `httpx.TransportError` subclasses are retried — genuine API errors
+    (bad request, auth, etc.) surface immediately so they are not masked.
+    Non-`Runnable` models (e.g. lightweight test doubles) are returned as-is,
+    since `.with_retry()` is only available on real LangChain runnables.
+    """
+    if not isinstance(model, Runnable):
+        return model
+    return model.with_retry(
+        retry_if_exception_type=(httpx.TransportError,),
+        wait_exponential_jitter=True,
+        stop_after_attempt=_TRANSIENT_RETRY_ATTEMPTS,
+    )
 
 
 def _compact_messages(messages: list) -> list:
@@ -101,7 +128,7 @@ class ReactAgent:
         memory_limit: int | None = None,
         post_tool_processor=None,
     ):
-        self.model = chat_model.bind_tools(tools) if tools else chat_model
+        self.model = with_transient_retry(chat_model.bind_tools(tools) if tools else chat_model)
         self.tools = tools
         self.memory_limit = memory_limit
         self.post_tool_processor = post_tool_processor

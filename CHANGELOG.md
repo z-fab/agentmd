@@ -3,6 +3,12 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.2] — 2026-06-05
+
+### Fixed
+- **Transient transport drops no longer kill a run** — model calls now retry on transport-level errors (e.g. `RemoteProtocolError: Server disconnected without sending a response`, a flaky preview endpoint dropping the connection) up to 3 times with exponential backoff, instead of failing the whole execution. This was most visible during HILT: a dropped connection on resume would error the execution and the conversation only "continued" via history-seeding on a manual re-run. Genuine API errors (bad request, auth) are not retried. Applies to both `run` and `resume`.
+- **Resume errors now log a traceback** — `AgentRunner.resume()` logs the full exception (parity with `run()`), making backend-side failures diagnosable in `backend.log`.
+
 ## [0.15.1] — 2026-06-05
 
 ### Added

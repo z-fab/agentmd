@@ -848,13 +848,15 @@ class AgentRunner:
             return result
         except Exception as e:
             duration_ms = int((time.monotonic() - start_time) * 1000)
+            error_msg = f"{type(e).__name__}: {e}"
+            logger.exception(f"Resume error: {config.name} — {error_msg}")
             result = await self._finish_execution(
                 execution_id,
                 "error",
                 duration_ms,
                 total_input_tokens,
                 total_output_tokens,
-                error=f"{type(e).__name__}: {e}",
+                error=error_msg,
                 cost_usd=cost_usd,
             )
             await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
