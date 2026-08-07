@@ -15,6 +15,7 @@ from agent_md.cli.theme import (
     agent_status_dot,
     console,
     display_icon,
+    format_agent_label,
     format_duration,
     format_relative_time,
     format_tokens,
@@ -37,7 +38,7 @@ from agent_md.config.models import AgentConfig
 
 
 def _agent_path(agent: str, suffix: str = "") -> str:
-    """Build an /agents/<encoded-name><suffix> request path (handles spaces)."""
+    """Build an /agents/<encoded-id><suffix> request path (handles spaces)."""
     return f"/agents/{quote(agent, safe='')}{suffix}"
 
 
@@ -60,14 +61,35 @@ def _get_agents_for_picker(workspace: Path | None) -> list[AgentConfig]:
     return asyncio.run(svc_list(workspace))
 
 
-def _pick_or_resolve_agent(agent: str | None, workspace: Path | None) -> str:
-    """Resolve agent id: if None, use interactive picker (returns canonical id)."""
-    if agent is not None:
-        return agent
+def _lookup_agent(agent_id: str, workspace: Path | None) -> AgentConfig | None:
+    """Return the agent config for a canonical id, or None if missing."""
+    agents = _get_agents_for_picker(workspace)
+    for cfg in agents:
+        if cfg.id == agent_id:
+            return cfg
+    return None
 
+
+def _pick_or_resolve_agent(agent: str | None, workspace: Path | None) -> str:
+    """Resolve agent id: picker when omitted; validate canonical id when given.
+
+    Display names are not accepted as aliases — the argument must be the
+    filename stem (canonical id).
+    """
     agents = _get_agents_for_picker(workspace)
     if not agents:
         print_error("No agents found in workspace.", "Create an agent in agents/ directory.")
+        raise typer.Exit(1)
+
+    if agent is not None:
+        for cfg in agents:
+            if cfg.id == agent:
+                return cfg.id
+        known = ", ".join(sorted(cfg.id for cfg in agents))
+        print_error(
+            f"Agent '{agent}' not found.",
+            f"Pass a canonical id (filename stem). Available: {known}",
+        )
         raise typer.Exit(1)
 
     selected = select_agent(agents)
@@ -485,20 +507,17 @@ def run(
         typer.Option("--detach", "-d", help="Run in the background; if it needs input it appears in 'agentmd pending'"),
     ] = False,
 ):
-    """Execute a single agent."""
+    """Execute a single agent by canonical id (filename stem)."""
     from rich.console import Console
     from agent_md.cli.spawn import ensure_backend
 
     console = Console()
 
-    if not agent:
-        ws = Path(workspace) if workspace else None
-        agent = _pick_or_resolve_agent(None, ws)
-        if not agent:
-            return
+    ws = Path(workspace) if workspace else None
+    agent = _pick_or_resolve_agent(agent, ws)
 
     try:
-        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+        client = ensure_backend(workspace=ws)
     except RuntimeError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
@@ -820,31 +839,30 @@ def chat(
     agent: Annotated[Optional[str], typer.Argument()] = None,
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
-    """Start an interactive chat session with an agent."""
+    """Start an interactive chat session with an agent by canonical id."""
     from rich.console import Console
     from agent_md.cli.spawn import ensure_backend
 
     console = Console()
 
-    if not agent:
-        ws = Path(workspace) if workspace else None
-        agent = _pick_or_resolve_agent(None, ws)
-        if not agent:
-            return
+    ws = Path(workspace) if workspace else None
+    agent = _pick_or_resolve_agent(agent, ws)
+    local = _lookup_agent(agent, ws)
+    agent_label = format_agent_label(agent, local.name if local else None)
 
     try:
-        client = ensure_backend(workspace=Path(workspace) if workspace else None)
+        client = ensure_backend(workspace=ws)
     except RuntimeError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
 
     resp = client.get(_agent_path(agent))
     if resp.status_code == 404:
-        console.print(f"[red]Agent '{agent}' not found.[/red]")
+        console.print(f"[red]Agent '{agent_label}' not found.[/red]")
         raise typer.Exit(1)
     agent_info = resp.json()
     model_info = f"{agent_info.get('model_provider', '')}/{agent_info.get('model_name', '')}"
-    console.print(f"[bold]Chat with {agent}[/bold] [dim]({model_info})[/dim]")
+    console.print(f"[bold]Chat with {agent_label}[/bold] [dim]({model_info})[/dim]")
     console.print("[dim]Type /exit to end the session[/dim]\n")
 
     turns = 0
@@ -950,7 +968,8 @@ def list_agents(
 
     table = make_table(
         ("", {}),
-        ("Name", {"style": "cyan"}),
+        ("Id", {"style": "cyan"}),
+        ("Display Name", {}),
         ("Trigger", {}),
         ("Last Run", {"style": "dim"}),
         ("Status", {"justify": "center"}),
@@ -959,9 +978,11 @@ def list_agents(
     for config in agents:
         last_run = format_relative_time(last_runs.get(config.id))
         icon = display_icon(resolve_agent_icon(config.id, config.icon))
+        display = config.name if config.name != config.id else "\u2014"
         table.add_row(
             icon,
-            config.name,
+            config.id,
+            display,
             format_trigger(config),
             last_run,
             agent_status_dot(config.enabled),
@@ -978,18 +999,19 @@ def list_agents(
 
 @app.command()
 def logs(
-    agent: str = typer.Argument(None, help="Agent name (all agents if omitted)"),
+    agent: str = typer.Argument(None, help="Agent id / filename stem (required unless -e/-f)"),
     last: int = typer.Option(10, "--last", "-n", help="Number of recent executions"),
     execution: int = typer.Option(None, "--execution", "-e", help="Show details for execution ID"),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output in real-time"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show full system prompt in execution detail"),
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
-    """Show recent execution history for an agent."""
+    """Show recent execution history for an agent by canonical id."""
 
     # Follow mode
     if follow:
-        _follow_logs(workspace, agent=agent)
+        resolved = _pick_or_resolve_agent(agent, workspace) if agent else None
+        _follow_logs(workspace, agent=resolved)
         return
 
     # Execution detail mode
@@ -999,18 +1021,22 @@ def logs(
 
     # List executions
     if agent is None:
-        print_error("Agent name required for execution list.", "Usage: agentmd logs <agent-name>")
+        print_error("Agent id required for execution list.", "Usage: agentmd logs <agent-id>")
         raise typer.Exit(1)
+
+    agent = _pick_or_resolve_agent(agent, workspace)
+    local = _lookup_agent(agent, workspace)
+    agent_label = format_agent_label(agent, local.name if local else None)
 
     from agent_md.workspace.services import get_agent_logs
 
     executions, agent_icon = asyncio.run(get_agent_logs(agent, last, workspace))
 
     if not executions:
-        print_warning(f"No executions found for '{agent}'.")
+        print_warning(f"No executions found for '{agent_label}'.")
         return
 
-    console.print(f"\n  [bold]Recent executions \u2014 {display_icon(agent_icon)} {agent}[/bold]\n")
+    console.print(f"\n  [bold]Recent executions \u2014 {display_icon(agent_icon)} {agent_label}[/bold]\n")
 
     status_style = {
         "success": "green",
@@ -1144,7 +1170,7 @@ def _follow_logs(workspace: Path | None, agent: str | None = None) -> None:
 
 @app.command()
 def validate(
-    agent: str = typer.Argument(None, help="Agent name (interactive picker if omitted)"),
+    agent: str = typer.Argument(None, help="Agent id / filename stem (interactive picker if omitted)"),
     workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
 ):
     """Validate an agent file without executing it."""
@@ -1163,9 +1189,10 @@ def validate(
 
     config = result.config
     errors = 0
+    agent_label = format_agent_label(config.id, config.name)
 
     console.print()
-    console.print(f"  [green]\u2713[/green] [bold]{config.name}[/bold]")
+    console.print(f"  [green]\u2713[/green] [bold]{agent_label}[/bold]")
     console.print()
 
     # Model + API key
@@ -1258,6 +1285,48 @@ def validate(
 
 
 # ---------------------------------------------------------------------------
+# agentmd migrate
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def migrate(
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show planned actions without modifying the database or filesystem",
+    ),
+    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
+):
+    """Migrate legacy display-name keys to canonical agent ids.
+
+    Updates executions.agent_id and renames {display}.memory.md → {id}.memory.md.
+    Never modifies agent .md files. Safe to re-run (idempotent).
+    """
+    from agent_md.workspace.migrate import format_migrate_report, migrate_workspace
+
+    report = asyncio.run(migrate_workspace(workspace, dry_run=dry_run))
+
+    console.print()
+    if dry_run:
+        console.print("  [bold]Migrate (dry-run)[/bold] — no changes will be written\n")
+    else:
+        console.print("  [bold]Migrate[/bold]\n")
+
+    for line in format_migrate_report(report):
+        if line.startswith("  warning:"):
+            console.print(f"  [yellow]{line.strip()}[/yellow]")
+        elif line.startswith("  error:"):
+            console.print(f"  [red]{line.strip()}[/red]")
+        else:
+            console.print(line)
+    console.print()
+
+    if not report.ok:
+        raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # agentmd pending
 # ---------------------------------------------------------------------------
 
@@ -1283,9 +1352,9 @@ def pending(
         console.print("[dim]No executions waiting for a response.[/dim]")
         return
 
-    # Resolve agent icons once (name -> already-resolved icon).
-    agents_resp = client.get("/agents")
-    icons = {a["name"]: a.get("icon") for a in agents_resp.json()} if agents_resp.status_code == 200 else {}
+    # Resolve labels/icons from local registry by canonical id (API still exposes display name only).
+    ws = Path(workspace) if workspace else None
+    local_by_id = {cfg.id: cfg for cfg in _get_agents_for_picker(ws)}
 
     console.print()
     table = make_table(
@@ -1297,9 +1366,11 @@ def pending(
     for r in rows:
         pend = client.get(f"/executions/{r['id']}/pending")
         q = pend.json().get("message", "") if pend.status_code == 200 else ""
-        name = r["agent_id"]
-        icon = display_icon(resolve_agent_icon(name, icons.get(name)))
-        table.add_row(str(r["id"]), icon, name, q[:60])
+        agent_id = r["agent_id"]
+        cfg = local_by_id.get(agent_id)
+        label = format_agent_label(agent_id, cfg.name if cfg else None)
+        icon = display_icon(resolve_agent_icon(agent_id, cfg.icon if cfg else None))
+        table.add_row(str(r["id"]), icon, label, q[:60])
     console.print(table)
     console.print()
 
