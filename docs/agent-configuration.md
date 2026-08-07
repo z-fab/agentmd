@@ -8,7 +8,7 @@ Every agent is defined in a `.md` file with YAML frontmatter and a Markdown body
 
 ```yaml
 ---
-name: my-agent
+name: Friendly Helper
 description: What this agent does
 settings:
   temperature: 0.7
@@ -23,39 +23,51 @@ Your system prompt goes here...
 
 > **Note:** The `model` field is optional. When omitted, Agentmd uses the default provider and model from your `config.yaml`.
 
-## Required Fields
+## Identity (filename stem)
 
-### `name`
+The agent's **canonical id** is the stem of its `.md` file:
+
+| File | Id |
+|------|-----|
+| `agents/pesquisador.md` | `pesquisador` |
+| `agents/Daily Processor.md` | `Daily Processor` |
+
+Uniqueness comes from the filesystem. You run, schedule, list, and call agents by this id (`agentmd run pesquisador`, `GET /agents/pesquisador`, allowlist `agents: [pesquisador]`).
+
+**Stem rules** (validated on load): letters (including accented), digits, spaces, hyphens, underscores; no leading/trailing spaces; no slashes. Invalid stems fail parse with a clear error.
+
+Renaming identity means renaming the **file** (`mv`). Editing frontmatter does not change the id. A later `mv` does **not** move execution history or the memory file automatically — see [Migration v0.16](migration-0.16.md).
+
+Declaring `id:` in frontmatter is **rejected** — identity is never taken from YAML.
+
+## Optional Fields
+
+### `name` (display name)
 
 | Property | Value |
 |----------|-------|
 | **Type** | string |
-| **Required** | Yes |
-| **Pattern** | Letters (including accented), digits, spaces, hyphens, underscores; non-empty; no leading/trailing spaces |
-| **Default** | None |
+| **Required** | No |
+| **Pattern** | Same character rules as the filename stem |
+| **Default** | The agent id (filename stem) |
 
-Unique identifier for the agent. This is the canonical name used everywhere: CLI commands, HTTP API paths, logs, SSE events, the scheduler, and the `agents` allowlist for delegation.
+Human-facing label shown in `agentmd list` (Display Name column), API `display_name`, and UI banners. It is **never** used as a lookup key. Changing `name:` only changes presentation; history, memory path, and schedule stay on the id.
 
-**Allowed characters:** letters (including accented, e.g. `é`, `ñ`), digits (`0-9`), spaces, hyphens (`-`), and underscores (`_`). No leading or trailing spaces. Slashes (`/`, `\`) and control characters are not allowed.
+```yaml
+# File: agents/pesquisador.md  →  id = pesquisador
+name: Research Bot
+```
 
-Names may include spaces. When using a spaced name on the CLI, quote it:
+```bash
+agentmd run pesquisador          # id
+# agentmd run "Research Bot"   # fails — display names are not aliases
+```
+
+Quote ids that contain spaces:
 
 ```bash
 agentmd run "Daily Processor"
-agentmd logs "Daily Processor"
 ```
-
-> **Name vs. filename:** The agent is identified by its `name` field, **not** by the filename. The filename is only used internally by the file-watcher to track changes on disk. You run, schedule, and reference an agent by `name` — the `.md` filename is irrelevant and can differ from the name.
-
-```yaml
-name: file-summarizer
-name: daily-report-generator
-name: api_poller
-name: Daily Processor
-name: Résumé Builder
-```
-
-## Optional Fields
 
 ### `model`
 
@@ -168,11 +180,11 @@ description: Analyzes CSV files and generates statistical reports
 |----------|-------|
 | **Type** | string |
 | **Required** | No |
-| **Default** | Auto-derived from name |
+| **Default** | Auto-derived from id |
 
-An emoji or short string displayed next to the agent. When set, it is used verbatim. When omitted, agentmd derives a **stable emoji from the agent's name** — the same name always produces the same emoji (deterministic hash). The resolved icon (explicit or auto-derived) is:
+An emoji or short string displayed next to the agent. When set, it is used verbatim. When omitted, agentmd derives a **stable emoji from the agent's id** — the same id always produces the same emoji (deterministic hash). The resolved icon (explicit or auto-derived) is:
 
-- Returned by `GET /agents` and `GET /agents/{name}`
+- Returned by `GET /agents` and `GET /agents/{id}`
 - Shown in the Obsidian plugin
 - Shown in the CLI (`agentmd list`, `agentmd logs`)
 
@@ -180,7 +192,7 @@ An emoji or short string displayed next to the agent. When set, it is used verba
 icon: "📅"
 ```
 
-If you omit `icon`, the CLI and plugin will still show a consistent emoji for that agent based on its name.
+If you omit `icon`, the CLI and plugin will still show a consistent emoji for that agent based on its id.
 
 ### `trigger`
 
@@ -393,7 +405,7 @@ When skills are enabled, three tools are added: `skill_use`, `skill_read_file`, 
 | **Required** | No |
 | **Default** | `[]` |
 
-List of agent names this agent is allowed to call via the `run_agent` tool. Agents are referenced by their frontmatter `name`. See [Agent Delegation](tools/run-agent.md) for full documentation.
+List of agent **ids** (filename stems) this agent is allowed to call via the `run_agent` tool. Display names are not accepted. See [Agent Delegation](tools/run-agent.md) for full documentation.
 
 ```yaml
 agents:

@@ -29,18 +29,28 @@ curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/agents` | List all agents |
-| GET | `/agents/{name}` | Agent detail (config + last_run + next_run) |
-| POST | `/agents/{name}/run` | Start execution, returns `{execution_id}` |
-| GET | `/agents/{name}/runs` | Execution history for agent |
+| GET | `/agents` | List all agents (`id`, `display_name`, …) |
+| GET | `/agents/{id}` | Agent detail (config + last_run + next_run); `{id}` is the filename stem |
+| POST | `/agents/{id}/run` | Start execution, returns `{execution_id}` |
+| GET | `/agents/{id}/runs` | Execution history for agent |
 | POST | `/agents/reload` | Re-parse agent files from disk |
+
+Path segments with spaces must be URL-encoded (e.g. `/agents/Daily%20Processor`). Lookup is by **id only** — a distinct display name does not resolve.
+
+**Agent list/detail fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Canonical filename stem |
+| `display_name` | string | Frontmatter `name:` or id |
+| `name` | string | Alias of `display_name` (compat; not a route key) |
 
 **Run request body:**
 ```json
 {"args": ["arg1"], "message": "optional user message"}
 ```
 
-When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message. With `history` enabled, the runner seeds the next execution from the most recent finished execution for that agent.
+When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message. With `history` enabled, the runner seeds the next execution from the most recent finished execution for that agent id.
 
 ### Executions
 
@@ -57,7 +67,7 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | int | Execution ID |
-| `agent_id` | string | Agent name |
+| `agent_id` | string | Canonical agent id (filename stem) |
 | `status` | string | `running`, `waiting`, `success`, `error`, `aborted`, `timeout`, `orphaned` |
 | `trigger` | string | `manual`, `schedule`, `watch`, `agent` |
 | `parent_execution_id` | int \| null | Parent execution ID when triggered by `run_agent` |
@@ -70,7 +80,15 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 
 The `agent` trigger type indicates the execution was started by another agent via the `run_agent` tool. Use `parent_execution_id` to trace delegation chains.
 
-**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`
+**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`, `waiting`
+
+Per-execution stream payloads include identity fields:
+
+| Field | Meaning |
+|-------|---------|
+| `agent_id` | Canonical stem |
+| `display_name` | Human label |
+| `agent_name` | Same as `agent_id` (compat alias; **not** the display label) |
 
 ### Scheduler
 
@@ -91,9 +109,9 @@ The `agent` trigger type indicates the execution was started by another agent vi
 | Event | When | Data fields |
 |-------|------|-------------|
 | `heartbeat` | 10s of inactivity | `timestamp` |
-| `execution_started` | Execution begins | `execution_id`, `agent_name`, `trigger` |
-| `execution_completed` | Execution finishes | `execution_id`, `agent_name`, `status`, `duration_ms` |
-| `agents_changed` | Agent file added/modified/deleted | `event` (`loaded`/`updated`/`removed`), `agent_name` |
+| `execution_started` | Execution begins | `execution_id`, `agent_id`, `display_name`, `agent_name` (= id), `trigger` |
+| `execution_completed` | Execution finishes | `execution_id`, `agent_id`, `display_name`, `agent_name` (= id), `status`, `duration_ms` |
+| `agents_changed` | Agent file added/modified/deleted | `event` (`loaded`/`updated`/`removed`), `agent_id`, `display_name`, `agent_name` (= id) |
 | `scheduler_changed` | Scheduler paused/resumed | `status` (`paused`/`running`) |
 
 **Connection:**

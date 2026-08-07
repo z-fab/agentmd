@@ -69,8 +69,8 @@ def _hash_name(name: str) -> int:
     return h
 
 
-def resolve_agent_icon(name: str, icon: str | None) -> str:
-    """Return the explicit icon if set, else a stable name-derived palette emoji."""
+def resolve_agent_icon(agent_id: str, icon: str | None) -> str:
+    """Return the explicit icon if set, else a stable id-derived palette emoji."""
     if icon and icon.strip():
         return icon
-    return AGENT_EMOJI_PALETTE[_hash_name(name) % len(AGENT_EMOJI_PALETTE)]
+    return AGENT_EMOJI_PALETTE[_hash_name(agent_id) % len(AGENT_EMOJI_PALETTE)]

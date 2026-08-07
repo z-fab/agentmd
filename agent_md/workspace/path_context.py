@@ -39,8 +39,8 @@ class PathContext:
         return list(dict.fromkeys(paths))
 
     def get_memory_file_path(self, config) -> Path:
-        """Return the path to the agent's .memory.md file."""
-        return self.agents_dir / f"{config.name}.memory.md"
+        """Return the path to the agent's .memory.md file (keyed by canonical id)."""
+        return self.agents_dir / f"{config.id}.memory.md"
 
     def resolve_alias(self, name: str, config) -> Path:
         """Return the absolute Path for a declared alias.
@@ -48,7 +48,7 @@ class PathContext:
         Raises KeyError if the alias is not declared on this agent.
         """
         if name not in config.paths:
-            raise KeyError(f"path alias '{name}' is not declared on agent '{config.name}'")
+            raise KeyError(f"path alias '{name}' is not declared on agent '{config.id}'")
         return self._resolve_relative(config.paths[name].path)
 
     def expand(self, value: str, config) -> Path:

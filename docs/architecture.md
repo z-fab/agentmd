@@ -39,11 +39,11 @@ Execution Logger (SQLite + Console)
 ## Key Components
 
 ### 1. Parser (`agent_md/workspace/parser.py`)
-Extracts YAML frontmatter (config) and Markdown body (system prompt) from `.md` files. Validates config against Pydantic models. Computes config hash for change detection (hot-reload).
+Extracts YAML frontmatter (config) and Markdown body (system prompt) from `.md` files. Derives the canonical **agent id** from the filename stem (rejects a frontmatter `id:` field). Treats optional `name:` as display-only. Validates config against Pydantic models. Computes config hash for change detection (hot-reload).
 
 ### 2. AgentConfig (`agent_md/config/models.py`)
 Pydantic models validating:
-- **AgentConfig** — Top-level agent configuration
+- **AgentConfig** — Top-level agent configuration (`id` from path; `name` = display label)
 - **ModelConfig** — LLM provider settings (model name, API key, temperature, etc.)
 - **SettingsConfig** — Runtime settings (timeout, max retries)
 - **ToolsConfig** — Tool definitions and parameters

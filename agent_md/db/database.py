@@ -207,6 +207,15 @@ class Database:
         rows = await cursor.fetchall()
         return [ExecutionRecord(**dict(row)) for row in rows]
 
+    async def count_executions_by_agent_id(self, agent_id: str) -> int:
+        """Count executions keyed by ``agent_id``."""
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) AS n FROM executions WHERE agent_id = ?",
+            (agent_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row["n"] if row else 0)
+
     async def get_last_execution(self, agent_id: str) -> Optional[ExecutionRecord]:
         """Get the most recent execution for an agent."""
         results = await self.get_executions(agent_id, limit=1)

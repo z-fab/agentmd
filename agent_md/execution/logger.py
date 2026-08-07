@@ -34,6 +34,19 @@ def _extract_text(content) -> str:
     return str(content).strip() if content else ""
 
 
+def agent_identity_payload(agent_id: str, display_name: str | None = None) -> dict:
+    """Canonical identity fields for SSE / EventBus / log metadata.
+
+    ``agent_name`` mirrors ``agent_id`` for schema compatibility with existing clients.
+    """
+    label = display_name if display_name is not None else agent_id
+    return {
+        "agent_id": agent_id,
+        "display_name": label,
+        "agent_name": agent_id,
+    }
+
+
 class ExecutionLogger:
     """Processes LangChain messages and persists structured log entries."""
 
@@ -41,18 +54,25 @@ class ExecutionLogger:
         self,
         db: Database,
         execution_id: int,
-        agent_name: str,
+        agent_id: str,
         on_event: Callable[[str, dict], None] | None = None,
+        display_name: str | None = None,
     ):
         self.db = db
         self.execution_id = execution_id
-        self.agent_name = agent_name
+        self.agent_id = agent_id
+        self.display_name = display_name if display_name is not None else agent_id
+        # Log prefix prefers presentation label; event payloads use canonical id.
+        self.agent_name = self.display_name
         self.on_event = on_event
+
+    def _identity_fields(self) -> dict:
+        return agent_identity_payload(self.agent_id, self.display_name)
 
     def _emit(self, event_type: str, data: dict) -> None:
         """Fire the on_event callback if one is registered."""
         if self.on_event is not None:
-            self.on_event(event_type, data)
+            self.on_event(event_type, {**self._identity_fields(), **data})
 
     async def log_message(self, msg) -> int:
         """Classify a single LangChain message and persist it.
@@ -75,16 +95,14 @@ class ExecutionLogger:
             reasoning = _extract_text(getattr(msg, "content", ""))
             if reasoning:
                 logger.info(f"[{self.agent_name}] 🤖 {reasoning[:200]}")
-                self._emit("ai", {"content": reasoning[:200], "agent_name": self.agent_name})
+                self._emit("ai", {"content": reasoning[:200]})
                 log_id = await self._persist("ai", reasoning[:500])
 
             for tc in msg.tool_calls:
                 tool_name = tc.get("name", "unknown")
                 tool_args = str(tc.get("args", {}))[:300]
                 logger.info(f"[{self.agent_name}] 🔧 {tool_name}({tool_args[:80]})")
-                self._emit(
-                    "tool_call", {"tool_name": tool_name, "tool_args": tool_args[:80], "agent_name": self.agent_name}
-                )
+                self._emit("tool_call", {"tool_name": tool_name, "tool_args": tool_args[:80]})
                 log_id = await self._persist("tool_call", f"{tool_name} — args: {tool_args}")
 
         # --- Tool response ---
@@ -92,16 +110,14 @@ class ExecutionLogger:
             tool_name = getattr(msg, "name", "unknown")
             tool_content = _extract_text(getattr(msg, "content", ""))[:500]
             logger.info(f"[{self.agent_name}] 📎 {tool_name} → {tool_content[:100]}")
-            self._emit(
-                "tool_result", {"tool_name": tool_name, "content": tool_content[:100], "agent_name": self.agent_name}
-            )
+            self._emit("tool_result", {"tool_name": tool_name, "content": tool_content[:100]})
             log_id = await self._persist("tool_result", f"{tool_name} — {tool_content}")
 
         # --- AI without tool calls (reasoning or final answer) ---
         elif msg_type == "ai":
             content = _extract_text(getattr(msg, "content", ""))[:500]
             logger.info(f"[{self.agent_name}] 🤖 {content[:200]}")
-            self._emit("ai", {"content": content[:200], "agent_name": self.agent_name})
+            self._emit("ai", {"content": content[:200]})
             log_id = await self._persist("ai", content)
 
         # --- System / Human / other ---
@@ -115,7 +131,7 @@ class ExecutionLogger:
         """Persist the last AI message as a final_answer event. Returns the log entry ID."""
         content = _extract_text(getattr(msg, "content", ""))
         logger.info(f"[{self.agent_name}] ✅ {content[:200]}")
-        self._emit("final_answer", {"content": content, "agent_name": self.agent_name})
+        self._emit("final_answer", {"content": content})
         return await self._persist("final_answer", content[:500])
 
     async def log_messages(self, messages: list) -> None:
@@ -137,7 +153,8 @@ class ExecutionLogger:
 
     async def log_event(self, event_type: str, message: str, metadata: dict | None = None) -> int:
         """Persist a synthetic event (e.g. HILT interrupt) and return its log id."""
-        return await self.db.add_log(self.execution_id, event_type, message, metadata)
+        merged = {**self._identity_fields(), **(metadata or {})}
+        return await self.db.add_log(self.execution_id, event_type, message, merged)
 
     async def _persist(self, event_type: str, message: str) -> int:
         """Write a log entry to the database. Returns the log entry ID."""
@@ -145,4 +162,5 @@ class ExecutionLogger:
             execution_id=self.execution_id,
             event_type=event_type,
             message=message,
+            metadata=self._identity_fields(),
         )

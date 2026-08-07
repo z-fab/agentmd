@@ -26,6 +26,20 @@ RESERVED_ALIASES = {"workspace", "skill_dir", "today", "now", "agents", "tools",
 
 ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
+# Shared identity/display-name character rule (filename stem and name:).
+AGENT_IDENTITY_PATTERN = re.compile(r"^[\w \-]+$", re.UNICODE)
+
+
+def validate_agent_identity(value: str, *, field: str = "id") -> str:
+    """Validate an agent id or display name against the shared character rule."""
+    if not value or value != value.strip():
+        raise ValueError(f"Agent {field} must be non-empty and have no leading/trailing spaces.")
+    if not AGENT_IDENTITY_PATTERN.match(value):
+        raise ValueError(
+            f"Agent {field} may contain only letters, numbers, spaces, hyphens, and underscores. Got: '{value}'"
+        )
+    return value
+
 
 class PathEntry(BaseModel):
     """A named path entry in an agent's `paths` dict.
@@ -168,9 +182,14 @@ class ModelConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """Complete validated configuration for a single agent."""
+    """Complete validated configuration for a single agent.
 
-    name: str
+    ``id`` is the canonical identity (filename stem). ``name`` is an optional
+    display label that defaults to ``id`` when omitted.
+    """
+
+    id: str = ""
+    name: str = ""  # display name; defaults to id when omitted
     description: str = ""
     icon: str | None = None  # optional emoji/icon for UIs (e.g. Obsidian plugin)
     model: ModelConfig | None = None
@@ -178,7 +197,7 @@ class AgentConfig(BaseModel):
     custom_tools: list[str] = []
     mcp: list[str] = []
     skills: list[str] = []
-    agents: list[str] = []
+    agents: list[str] = []  # allowlist of peer agent ids (filename stems)
     settings: SettingsConfig = SettingsConfig()
     enabled: bool = True
     history: str = "low"  # 'low', 'medium', 'high', 'off'
@@ -216,6 +235,31 @@ class AgentConfig(BaseModel):
         """Accept 'tools' in YAML frontmatter as alias for 'custom_tools'."""
         if isinstance(data, dict) and "tools" in data and "custom_tools" not in data:
             data["custom_tools"] = data.pop("tools")
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_identity(cls, data):
+        """Derive id/name so programmatic construction and parse stay consistent.
+
+        - Parser always supplies ``id`` (stem); ``name`` may be absent → display = id.
+        - Tests/helpers that only pass ``name`` get ``id = name`` (legacy convenience).
+        """
+        if not isinstance(data, dict):
+            return data
+        if "id" in data and data["id"] == "":
+            raise ValueError("Agent id must be non-empty and have no leading/trailing spaces.")
+        if "name" in data and data["name"] == "":
+            raise ValueError("Agent name must be non-empty and have no leading/trailing spaces.")
+        agent_id = data.get("id", None)
+        name = data.get("name", None)
+        if agent_id is None and name is not None:
+            data["id"] = name
+            agent_id = name
+        if name is None and agent_id is not None:
+            data["name"] = agent_id
+        if data.get("id") in (None, "") and data.get("name") in (None, ""):
+            raise ValueError("Agent id is required (filename stem), or provide name for programmatic use.")
         return data
 
     @model_validator(mode="before")
@@ -272,16 +316,15 @@ class AgentConfig(BaseModel):
                 raise ValueError(f"path alias '{alias}' is invalid. Aliases must match [a-z][a-z0-9_]*.")
         return v
 
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str) -> str:
+        return validate_agent_identity(v, field="id")
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        if not v or v != v.strip():
-            raise ValueError("Agent name must be non-empty and have no leading/trailing spaces.")
-        if not re.match(r"^[\w \-]+$", v, re.UNICODE):
-            raise ValueError(
-                f"Agent name may contain only letters, numbers, spaces, hyphens, and underscores. Got: '{v}'"
-            )
-        return v
+        return validate_agent_identity(v, field="name")
 
     @field_validator("confirm", mode="before")
     @classmethod

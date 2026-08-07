@@ -26,12 +26,12 @@ def create_run_agent_tool(
     """Create a run_agent tool bound to the caller's context."""
 
     async def _run_agent(agent_name: str, arguments: str = "") -> dict[str, Any]:
-        # Validate allowlist
+        # Validate allowlist (entries are canonical agent ids / filename stems)
         if agent_name not in caller_config.agents:
             return {"error": f"Agent '{agent_name}' is not in the allowed agents list"}
 
         # Validate self-call
-        if agent_name == caller_config.name:
+        if agent_name == caller_config.id:
             return {"error": "Agent cannot call itself"}
 
         # Validate depth
@@ -47,13 +47,13 @@ def create_run_agent_tool(
         if not target_config.enabled:
             return {"error": f"Agent '{agent_name}' is not enabled"}
 
-        logger.info(f"Agent '{caller_config.name}' calling '{agent_name}' (depth={depth + 1})")
+        logger.info(f"Agent '{caller_config.id}' calling '{agent_name}' (depth={depth + 1})")
 
         try:
             result = await runner.run(
                 config=target_config,
                 trigger_type="agent",
-                trigger_context=f"Called by {caller_config.name}",
+                trigger_context=f"Called by {caller_config.id}",
                 arguments=arguments,
                 event_bus=event_bus,
                 global_event_bus=global_event_bus,

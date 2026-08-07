@@ -43,7 +43,9 @@ async def test_list_agents(client):
     assert resp.status_code == 200
     agents = resp.json()
     assert len(agents) >= 1
-    assert any(a["name"] == "test-agent" for a in agents)
+    test_agent = next(a for a in agents if a["id"] == "test-agent")
+    assert test_agent["display_name"] == "test-agent"
+    assert test_agent["name"] == "test-agent"
 
 
 @pytest.mark.asyncio
@@ -51,6 +53,8 @@ async def test_get_agent_detail(client):
     resp = await client.get("/agents/test-agent")
     assert resp.status_code == 200
     data = resp.json()
+    assert data["id"] == "test-agent"
+    assert data["display_name"] == "test-agent"
     assert data["name"] == "test-agent"
     assert data["model_provider"] == "google"
 

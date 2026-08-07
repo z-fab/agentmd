@@ -38,7 +38,18 @@ class ShutdownResponse(BaseModel):
 
 
 class AgentSummary(BaseModel):
-    name: str
+    """Public agent listing.
+
+    ``id`` is the filename stem (canonical key). ``display_name`` is the
+    presentation label from frontmatter ``name:`` (defaults to id).
+
+    ``name`` is retained as an alias of ``display_name`` for schema
+    compatibility with older clients; it is not a route key.
+    """
+
+    id: str
+    display_name: str
+    name: str  # alias of display_name (schema compat; not a route key)
     description: str
     icon: str | None = None
     enabled: bool
@@ -97,7 +108,15 @@ class LogEntry(BaseModel):
 
 
 class SchedulerJob(BaseModel):
-    agent_name: str
+    """Scheduled job identity.
+
+    ``agent_id`` is canonical. ``agent_name`` mirrors ``agent_id`` for schema
+    compatibility with existing clients until ticket 03.
+    """
+
+    agent_id: str
+    display_name: str
+    agent_name: str  # alias of agent_id (schema compat until ticket 03)
     trigger_type: str
     next_run: str | None = None
 

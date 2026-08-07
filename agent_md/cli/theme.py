@@ -258,6 +258,14 @@ def format_trigger(config: AgentConfig) -> str:
 # ---------------------------------------------------------------------------
 
 
+def format_agent_label(agent_id: str, display_name: str | None = None) -> str:
+    """Return an unequivocal agent label: display name plus id when they differ."""
+    name = display_name if display_name is not None else agent_id
+    if name == agent_id:
+        return agent_id
+    return f"{name} ({agent_id})"
+
+
 def format_duration(ms: int | None) -> str:
     """Format milliseconds into a compact human-readable string."""
     if ms is None:
@@ -313,21 +321,26 @@ def format_relative_time(iso_str: str | None) -> str:
 def select_agent(agents: list[AgentConfig], prompt: str = "Select an agent") -> AgentConfig | None:
     """Interactive agent picker using questionary.
 
-    Falls back to text input when stdin is not a TTY.
+    Always shows id; when display name differs from id, both appear
+    (``Display Name (id)``). Falls back to text input when stdin is not a TTY.
     """
     if not agents:
         return None
 
     if len(agents) == 1:
-        console.print(f"  Auto-selected [bold]{agents[0].name}[/bold]")
-        return agents[0]
+        only = agents[0]
+        label = format_agent_label(only.id, only.name)
+        console.print(f"  Auto-selected [bold]{label}[/bold]")
+        return only
 
-    # Build choices
+    # Build choices — visible text is id (+ display when different); value via agent_map.
     choices = []
     agent_map: dict[str, AgentConfig] = {}
-    max_name = max(len(a.name) for a in agents)
-    for a in agents:
-        label = f"{a.name:<{max_name}}  {a.description}" if a.description else a.name
+    visible_labels = [format_agent_label(a.id, a.name) for a in agents]
+
+    max_name = max(len(v) for v in visible_labels)
+    for a, visible in zip(agents, visible_labels, strict=True):
+        label = f"{visible:<{max_name}}  {a.description}" if a.description else visible
         choices.append(label)
         agent_map[label] = a
 

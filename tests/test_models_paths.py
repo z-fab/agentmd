@@ -89,3 +89,13 @@ def test_name_with_backslash_rejected():
 def test_name_empty_rejected():
     with pytest.raises(ValidationError):
         AgentConfig(name="")
+
+
+def test_id_with_slash_rejected():
+    with pytest.raises(ValidationError):
+        AgentConfig(id="a/b")
+
+
+def test_optional_name_defaults_to_id():
+    cfg = AgentConfig(id="pesquisador")
+    assert cfg.name == "pesquisador"

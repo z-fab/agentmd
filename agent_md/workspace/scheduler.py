@@ -54,23 +54,23 @@ class AgentScheduler:
         self.scheduler = AsyncIOScheduler()
         self.observer = Observer()
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._watch_handlers: dict[str, list] = {}  # agent_name -> list of (handler, watch_id)
+        self._watch_handlers: dict[str, list] = {}  # agent_id -> list of watch_ids
         self._paused = False
 
     def schedule_agent(self, config: AgentConfig) -> None:
         """Schedule an agent based on its trigger config."""
-        job_id = f"agent_{config.name}"
+        job_id = f"agent_{config.id}"
 
         if not config.enabled:
-            logger.info(f"Agent '{config.name}' is disabled, skipping schedule")
+            logger.info(f"Agent '{config.id}' is disabled, skipping schedule")
             return
 
         if config.trigger.type == "manual":
-            logger.info(f"Agent '{config.name}' is manual-only, skipping schedule")
+            logger.info(f"Agent '{config.id}' is manual-only, skipping schedule")
             return
 
         if config.trigger.type == "watch":
-            logger.info(f"Agent '{config.name}' is watch-only, skipping APScheduler (handled by watchdog)")
+            logger.info(f"Agent '{config.id}' is watch-only, skipping APScheduler (handled by watchdog)")
             return
 
         if config.trigger.type == "schedule":
@@ -82,7 +82,7 @@ class AgentScheduler:
                 trigger = IntervalTrigger(**kwargs)
                 trigger_desc = f"every({config.trigger.every})"
             else:
-                logger.warning(f"Schedule trigger for '{config.name}' has neither 'every' nor 'cron'")
+                logger.warning(f"Schedule trigger for '{config.id}' has neither 'every' nor 'cron'")
                 return
         else:
             logger.warning(f"Unknown trigger type: {config.trigger.type}")
@@ -92,32 +92,32 @@ class AgentScheduler:
             self._execute_agent,
             trigger=trigger,
             id=job_id,
-            args=[config.name, config.trigger.type],
+            args=[config.id, config.trigger.type],
             replace_existing=True,
             misfire_grace_time=60,
         )
-        logger.info(f"Scheduled agent '{config.name}': {trigger_desc}")
+        logger.info(f"Scheduled agent '{config.id}': {trigger_desc}")
 
-    def unschedule_agent(self, name: str) -> None:
+    def unschedule_agent(self, agent_id: str) -> None:
         """Remove an agent's scheduled job and watch handlers."""
-        job_id = f"agent_{name}"
+        job_id = f"agent_{agent_id}"
         if self.scheduler.get_job(job_id):
             self.scheduler.remove_job(job_id)
-            logger.info(f"Unscheduled agent: {name}")
+            logger.info(f"Unscheduled agent: {agent_id}")
 
-        self._remove_watch_handlers(name)
+        self._remove_watch_handlers(agent_id)
 
     async def _execute_agent(self, agent_id: str, trigger_type: str, trigger_context: str | None = None) -> None:
         """Callback for scheduled execution."""
         config = self.registry.get(agent_id)
         if config and config.enabled:
-            if config.on_pending == "skip" and await self.runner.db.has_waiting_execution(config.name):
+            if config.on_pending == "skip" and await self.runner.db.has_waiting_execution(config.id):
                 logger.info(f"Skipping '{agent_id}': a session is waiting for a response")
                 return
             cancel_event = asyncio.Event()
             # Pre-create execution so we can register the cancel_event
             execution_id = await self.runner.db.create_execution(
-                agent_id=config.name, trigger=trigger_type, status="running"
+                agent_id=config.id, trigger=trigger_type, status="running"
             )
             self.cancel_events[execution_id] = cancel_event
             try:
@@ -141,9 +141,9 @@ class AgentScheduler:
     def _add_watch_handler(self, config: AgentConfig) -> None:
         """Register watchdog handlers for a single watch agent."""
         resolved_paths = [self.path_context._resolve_relative(p) for p in config.trigger.paths]
-        logger.info(f"Setting up watch for agent '{config.name}': {resolved_paths}")
+        logger.info(f"Setting up watch for agent '{config.id}': {resolved_paths}")
 
-        handler = _AgentWatchHandler(config.name, resolved_paths, self._execute_agent, self._loop)
+        handler = _AgentWatchHandler(config.id, resolved_paths, self._execute_agent, self._loop)
         watch_ids = []
 
         for path in resolved_paths:
@@ -153,19 +153,19 @@ class AgentScheduler:
                 watch_id = self.observer.schedule(handler, str(path.parent), recursive=False)
             watch_ids.append(watch_id)
 
-        self._watch_handlers[config.name] = watch_ids
+        self._watch_handlers[config.id] = watch_ids
 
-    def _remove_watch_handlers(self, name: str) -> None:
+    def _remove_watch_handlers(self, agent_id: str) -> None:
         """Unregister watchdog handlers for a watch agent."""
-        if name not in self._watch_handlers:
+        if agent_id not in self._watch_handlers:
             return
 
-        for watch_id in self._watch_handlers.pop(name):
+        for watch_id in self._watch_handlers.pop(agent_id):
             try:
                 self.observer.unschedule(watch_id)
             except Exception:
                 pass  # Already unscheduled
-        logger.info(f"Removed watch handlers for: {name}")
+        logger.info(f"Removed watch handlers for: {agent_id}")
 
     def start(self, agents_dir: Path) -> None:
         """Start scheduler, file watcher, and agent watchers.
@@ -180,7 +180,13 @@ class AgentScheduler:
         logger.info("Scheduler started")
 
         # 2. Register hot-reload handler for .md files
-        reload_handler = _AgentFileHandler(self.registry, self, self._loop, global_event_bus=self.global_event_bus)
+        reload_handler = _AgentFileHandler(
+            self.registry,
+            self,
+            self._loop,
+            agents_dir=agents_dir,
+            global_event_bus=self.global_event_bus,
+        )
         self.observer.schedule(reload_handler, str(agents_dir), recursive=False)
         logger.info(f"Watching workspace for changes: {agents_dir}")
 
@@ -192,9 +198,9 @@ class AgentScheduler:
         # 4. Start observer once (all handlers already registered)
         self.observer.start()
 
-    def get_next_run(self, agent_name: str) -> str | None:
-        """Return ISO timestamp of next scheduled run for *agent_name*, or None."""
-        job = self.scheduler.get_job(agent_name)
+    def get_next_run(self, agent_id: str) -> str | None:
+        """Return ISO timestamp of next scheduled run for *agent_id*, or None."""
+        job = self.scheduler.get_job(f"agent_{agent_id}")
         if job and job.next_run_time:
             return job.next_run_time.isoformat()
         return None
@@ -203,9 +209,14 @@ class AgentScheduler:
         """Return list of scheduled jobs with next_run times."""
         jobs = []
         for job in self.scheduler.get_jobs():
+            bare_id = job.id.removeprefix("agent_") if job.id.startswith("agent_") else job.id
+            config = self.registry.get(bare_id)
+            display_name = config.name if config else bare_id
             jobs.append(
                 {
-                    "agent_name": job.id,
+                    "agent_id": bare_id,
+                    "display_name": display_name,
+                    "agent_name": bare_id,  # schema compat alias of agent_id
                     "trigger_type": "schedule",
                     "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
                 }
@@ -241,28 +252,51 @@ class _AgentFileHandler(FileSystemEventHandler):
         registry: AgentRegistry,
         scheduler: AgentScheduler,
         loop: asyncio.AbstractEventLoop | None,
+        agents_dir: Path | None = None,
         global_event_bus=None,
     ):
         self.registry = registry
         self.scheduler = scheduler
         self._loop = loop
+        self.agents_dir = agents_dir.resolve() if agents_dir is not None else None
         self.global_event_bus = global_event_bus
 
-    def _publish_event(self, event: str, agent_name: str) -> None:
-        """Publish agents_changed event to global bus from watchdog thread."""
+    def _publish_event(self, event: str, agent_id: str, display_name: str | None = None) -> None:
+        """Publish agents_changed event to global bus from watchdog thread.
+
+        ``agent_name`` mirrors ``agent_id`` for SSE schema compatibility; callers
+        that have the config should pass ``display_name``.
+        """
         if self.global_event_bus and self._loop:
+            label = display_name if display_name is not None else agent_id
             asyncio.run_coroutine_threadsafe(
                 self.global_event_bus.publish(
                     {
                         "type": "agents_changed",
-                        "data": {"event": event, "agent_name": agent_name},
+                        "data": {
+                            "event": event,
+                            "agent_id": agent_id,
+                            "display_name": label,
+                            "agent_name": agent_id,
+                        },
                     }
                 ),
                 self._loop,
             )
 
+    def _is_managed_agent_path(self, path: Path) -> bool:
+        """True when *path* is an agent .md directly under the watched agents_dir."""
+        if not is_agent_file(path):
+            return False
+        if self.agents_dir is None:
+            return True
+        try:
+            return path.resolve().parent == self.agents_dir
+        except OSError:
+            return False
+
     def _is_agent_file(self, event) -> bool:
-        return not event.is_directory and is_agent_file(Path(event.src_path))
+        return not event.is_directory and self._is_managed_agent_path(Path(event.src_path))
 
     def on_modified(self, event):
         if self._is_agent_file(event):
@@ -274,32 +308,54 @@ class _AgentFileHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         if not event.is_directory and is_agent_file(Path(event.src_path)):
-            name = self.registry.remove_by_path(event.src_path)
-            if name:
-                self.scheduler.unschedule_agent(name)
-                logger.info(f"Agent file deleted: {name}")
-                self._publish_event("removed", name)
+            existing = self.registry.get_by_path(event.src_path)
+            display_name = existing.name if existing else None
+            agent_id = self.registry.remove_by_path(event.src_path)
+            if agent_id:
+                self.scheduler.unschedule_agent(agent_id)
+                logger.info(f"Agent file deleted: {agent_id}")
+                self._publish_event("removed", agent_id, display_name)
+
+    def on_moved(self, event):
+        """Handle rename/move: drop the old id; reload only if dest stays in agents_dir."""
+        if event.is_directory:
+            return
+
+        src = Path(event.src_path)
+        dest = Path(event.dest_path)
+
+        if is_agent_file(src):
+            existing = self.registry.get_by_path(event.src_path)
+            display_name = existing.name if existing else None
+            old_id = self.registry.remove_by_path(event.src_path)
+            if old_id:
+                self.scheduler.unschedule_agent(old_id)
+                logger.info(f"Agent file moved away: {old_id}")
+                self._publish_event("removed", old_id, display_name)
+
+        if self._is_managed_agent_path(dest):
+            self._reload(dest)
 
     def _reload(self, path: Path) -> None:
         try:
             config = parse_agent_file(path)
-            old = self.registry.get(config.name)
+            old = self.registry.get(config.id)
 
             if old and old.config_hash == config.config_hash:
                 # Only the body (system prompt) changed
                 self.registry.register(config)
-                logger.info(f"Hot-reloaded prompt for: {config.name}")
-                self._publish_event("updated", config.name)
+                logger.info(f"Hot-reloaded prompt for: {config.id}")
+                self._publish_event("updated", config.id, config.name)
             else:
                 # Frontmatter changed — full reload (reschedule + recreate watchers)
                 self.registry.register(config)
-                self.scheduler.unschedule_agent(config.name)
+                self.scheduler.unschedule_agent(config.id)
                 self.scheduler.schedule_agent(config)
                 if config.trigger.type == "watch" and config.enabled:
                     self.scheduler._add_watch_handler(config)
-                logger.info(f"Hot-reloaded agent (full): {config.name}")
+                logger.info(f"Hot-reloaded agent (full): {config.id}")
                 event_type = "loaded" if old is None else "updated"
-                self._publish_event(event_type, config.name)
+                self._publish_event(event_type, config.id, config.name)
 
         except Exception as e:
             logger.warning(f"Failed to reload {path.name}: {e}")
@@ -310,12 +366,12 @@ class _AgentWatchHandler(FileSystemEventHandler):
 
     def __init__(
         self,
-        agent_name: str,
+        agent_id: str,
         watch_paths: list[Path],
         execute_fn,
         loop: asyncio.AbstractEventLoop | None,
     ):
-        self.agent_name = agent_name
+        self.agent_id = agent_id
         self.watch_paths = watch_paths
         self._execute_fn = execute_fn  # async fn(agent_id, trigger_type, trigger_context)
         self._loop = loop
@@ -351,10 +407,10 @@ class _AgentWatchHandler(FileSystemEventHandler):
 
         if context and self._loop:
             asyncio.run_coroutine_threadsafe(
-                self._execute_fn(self.agent_name, "watch", trigger_context=context),
+                self._execute_fn(self.agent_id, "watch", trigger_context=context),
                 self._loop,
             )
-            logger.info(f"Triggered agent '{self.agent_name}': {context}")
+            logger.info(f"Triggered agent '{self.agent_id}': {context}")
 
     def _schedule_trigger(self, event) -> None:
         """Schedule agent trigger with debounce based on file path.

@@ -150,7 +150,7 @@ Reads the content of a named section. Use for:
 
 ### Memory File Format
 
-Each agent's memory is stored in `agents/{agent-name}.memory.md`:
+Each agent's memory is stored in `agents/{id}.memory.md` (filename stem, not display name):
 
 ```markdown
 # user_preferences
@@ -359,4 +359,4 @@ agentmd validate my-agent
 - **Be explicit in prompts** — Tell the agent _when_ and _what_ to save to memory for best results
 - **Organize by topic** — Use meaningful section names like `"user_preferences"`, not `"data"`
 - **Summarize proactively** — Instruct agents to summarize long sections to keep memory focused
-- **Memory is per-agent** — Each agent has its own `.memory.md` file; agents don't share memory
+- **Memory is per-agent** — Each agent has its own `{id}.memory.md` file keyed by filename stem; agents don't share memory. Renaming the `.md` file changes the id and does not move the memory file automatically.

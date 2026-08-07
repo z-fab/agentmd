@@ -6,16 +6,16 @@ Complete reference for all Agentmd CLI commands, options, and examples.
 
 | Command | Description | Use Case |
 |---------|-------------|----------|
-| `agentmd new <name>` | Scaffold a new agent | Create agents via AI or interactive questionnaire |
+| `agentmd new <name>` | Scaffold a new agent | Create agents via AI or interactive questionnaire (`<name>` becomes the filename / id) |
 | `agentmd start` | Start runtime with scheduler + watcher | Long-running process for scheduled agents |
-| `agentmd run [agent]` | Execute single agent (one-shot) | Manual execution, testing, debugging |
+| `agentmd run [agent]` | Execute single agent (one-shot) | Manual execution by **id** (filename stem) |
 | `agentmd chat [agent]` | Interactive chat session | Multi-turn conversation with an agent |
-| `agentmd list` | List all agents in workspace | Discover agents, check status |
-| `agentmd logs <agent>` | View execution history | Debug failures, review outputs |
+| `agentmd list` | List all agents in workspace | Shows **Id** and **Display Name** columns |
+| `agentmd logs <agent>` | View execution history | Debug failures, review outputs (by id) |
 | `agentmd pending` | List executions awaiting a response | Find paused (HILT) executions |
 | `agentmd respond <id>` | Answer a waiting execution | Approve/deny or provide input |
 | `agentmd checkpoint` | Inspect / purge checkpoint storage | Manage `agentmd_checkpoints.db` |
-| `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD |
+| `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD (by id) |
 | `agentmd status` | Check if runtime is running | Monitor daemon state |
 | `agentmd stop` | Stop background runtime | Gracefully stop daemon |
 | `agentmd info` | Show effective configuration | Verify paths, API keys, defaults |
@@ -62,7 +62,7 @@ agentmd new <AGENT_NAME> [OPTIONS]
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `AGENT_NAME` | String (required) | Name for the agent (alphanumeric, hyphens, underscores) |
+| `AGENT_NAME` | String (required) | Filename stem / id for the new agent (alphanumeric, hyphens, underscores, spaces) |
 
 ### Options
 
@@ -168,7 +168,7 @@ agentmd run [AGENT] [OPTIONS]
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `[AGENT]` | String (optional) | Agent name. If omitted, shows an interactive picker |
+| `[AGENT]` | String (optional) | Agent id (filename stem). If omitted, shows an interactive picker |
 
 ### Options
 
@@ -181,10 +181,10 @@ agentmd run [AGENT] [OPTIONS]
 ### Examples
 
 ```bash
-# Run agent by name
+# Run agent by id (filename stem)
 agentmd run my-agent
 
-# Interactive picker (when no name given)
+# Interactive picker (when no id given)
 agentmd run
 
 # Quiet mode (final answer only — pipe-friendly)
@@ -229,7 +229,7 @@ agentmd chat [AGENT] [OPTIONS]
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `[AGENT]` | String (optional) | Agent name. If omitted, shows an interactive picker |
+| `[AGENT]` | String (optional) | Agent id (filename stem). If omitted, shows an interactive picker |
 
 ### Options
 
@@ -240,10 +240,10 @@ agentmd chat [AGENT] [OPTIONS]
 ### Examples
 
 ```bash
-# Chat with an agent by name
+# Chat with an agent by id
 agentmd chat my-agent
 
-# Interactive picker (when no name given)
+# Interactive picker (when no id given)
 agentmd chat
 
 # Custom workspace
@@ -315,7 +315,8 @@ agentmd list [OPTIONS]
 
 | Column | Example |
 |--------|---------|
-| **Name** | `daily-report` |
+| **Id** | `pesquisador` (filename stem) |
+| **Display Name** | `Research Bot` or `—` when equal to id |
 | **Trigger** | `cron (0 9 * * *)`, `every 1h`, `manual` |
 | **Last Run** | `2h ago`, `never` |
 | **Status** | `●` (enabled) / `○` (disabled) |
@@ -338,7 +339,7 @@ agentmd logs -f [OPTIONS]
 
 | Item | Type | Default | Description |
 |------|------|---------|-------------|
-| `<AGENT>` | String | — | Agent name (required for execution list) |
+| `<AGENT>` | String | — | Agent id / filename stem (required for execution list) |
 | `-n` / `--last NUM` | Integer | 10 | Number of recent executions |
 | `-e` / `--execution ID` | Integer | — | Show messages for specific execution ID |
 | `-f` / `--follow` | Flag | false | Follow daemon log output in real-time |
@@ -499,7 +500,7 @@ agentmd validate [AGENT] [OPTIONS]
 
 | Item | Type | Description |
 |------|------|-------------|
-| `[AGENT]` | String (optional) | Agent name or path. Interactive picker if omitted |
+| `[AGENT]` | String (optional) | Agent id or path to `.md`. Interactive picker if omitted |
 | `--workspace PATH` | Path | Override workspace directory |
 
 ### What it checks
@@ -515,7 +516,7 @@ agentmd validate [AGENT] [OPTIONS]
 ### Examples
 
 ```bash
-# Validate by name
+# Validate by id
 agentmd validate my-agent
 
 # Interactive picker
@@ -610,6 +611,7 @@ Displays:
 ```
 
 ---
+
 
 ## agentmd setup
 
@@ -716,7 +718,7 @@ GOOGLE_API_KEY=AIza...
 ├── .env                    # API keys (secrets)
 ├── agents/                 # Agent .md files
 │   ├── hello-world.md
-│   ├── hello-world.memory.md  # Long-term memory (auto-created)
+│   ├── hello-world.memory.md  # Long-term memory keyed by id (auto-created)
 │   ├── mcp-servers.json    # MCP servers config (optional)
 │   └── tools/              # Custom tools (Python modules)
 └── data/

@@ -59,7 +59,7 @@ async def test_logger_tool_message_emits_tool_result():
     logger = ExecutionLogger(
         db=db,
         execution_id=1,
-        agent_name="test-agent",
+        agent_id="test-agent",
         on_event=lambda event_type, data: emitted.append((event_type, data)),
     )
 

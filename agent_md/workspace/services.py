@@ -249,7 +249,8 @@ async def get_agent_logs(
     async with _runtime(workspace, readonly=True) as rt:
         executions = await rt.db.get_executions(agent_name, limit=n)
         config = rt.registry.get(agent_name)
-        icon = resolve_agent_icon(agent_name, config.icon if config else None)
+        identity = config.id if config else agent_name
+        icon = resolve_agent_icon(identity, config.icon if config else None)
         return executions, icon
 
 

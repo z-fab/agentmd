@@ -19,45 +19,43 @@ from agent_md.api.schemas import (
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
+def _summary_fields(config) -> dict:
+    """Shared id / display_name / name fields for agent API responses."""
+    return {
+        "id": config.id,
+        "display_name": config.name,
+        "name": config.name,  # schema compat alias of display_name (ticket 03)
+        "description": config.description,
+        "icon": resolve_agent_icon(config.id, config.icon),
+        "enabled": config.enabled,
+        "trigger_type": config.trigger.type,
+        "model_provider": config.model.provider if config.model else None,
+        "model_name": config.model.name if config.model else None,
+    }
+
+
 @router.get("", response_model=list[AgentSummary])
 async def list_agents(request: Request):
     rt = request.app.state.runtime
-    return [
-        AgentSummary(
-            name=c.name,
-            description=c.description,
-            icon=resolve_agent_icon(c.name, c.icon),
-            enabled=c.enabled,
-            trigger_type=c.trigger.type,
-            model_provider=c.model.provider if c.model else None,
-            model_name=c.model.name if c.model else None,
-        )
-        for c in rt.registry.all()
-    ]
+    return [AgentSummary(**_summary_fields(c)) for c in rt.registry.all()]
 
 
-@router.get("/{name}", response_model=AgentDetail)
-async def get_agent(name: str, request: Request):
+@router.get("/{agent_id}", response_model=AgentDetail)
+async def get_agent(agent_id: str, request: Request):
     rt = request.app.state.runtime
-    config = rt.registry.get(name)
+    config = rt.registry.get(agent_id)
     if not config:
-        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    last_exec = await rt.db.get_last_execution(name)
+    last_exec = await rt.db.get_last_execution(config.id)
     next_run = None
     if rt.scheduler and config.trigger.type == "schedule":
-        next_run = rt.scheduler.get_next_run(name)
+        next_run = rt.scheduler.get_next_run(config.id)
 
     resolved_paths = {alias: str(rt.path_context.resolve_alias(alias, config)) for alias in config.paths}
 
     return AgentDetail(
-        name=config.name,
-        description=config.description,
-        icon=resolve_agent_icon(config.name, config.icon),
-        enabled=config.enabled,
-        trigger_type=config.trigger.type,
-        model_provider=config.model.provider if config.model else None,
-        model_name=config.model.name if config.model else None,
+        **_summary_fields(config),
         last_run=last_exec.started_at if last_exec else None,
         next_run=next_run,
         history=config.history,
@@ -79,7 +77,7 @@ async def reload_agents(request: Request):
     from agent_md.workspace.parser import is_agent_file, parse_agent_file
 
     agents_dir = rt.path_context.agents_dir
-    loaded_names: set[str] = set()
+    loaded_ids: set[str] = set()
     errors: list[str] = []
     count = 0
 
@@ -89,10 +87,10 @@ async def reload_agents(request: Request):
         try:
             config = parse_agent_file(f)
             rt.registry.register(config)
-            loaded_names.add(config.name)
+            loaded_ids.add(config.id)
             count += 1
             if rt.scheduler is not None:
-                rt.scheduler.unschedule_agent(config.name)
+                rt.scheduler.unschedule_agent(config.id)
                 rt.scheduler.schedule_agent(config)
                 if config.trigger.type == "watch" and config.enabled:
                     rt.scheduler._add_watch_handler(config)
@@ -101,32 +99,32 @@ async def reload_agents(request: Request):
 
     removed = 0
     for existing in list(rt.registry.all()):
-        if existing.name not in loaded_names:
+        if existing.id not in loaded_ids:
             if rt.scheduler is not None:
-                rt.scheduler.unschedule_agent(existing.name)
-            rt.registry.remove(existing.name)
+                rt.scheduler.unschedule_agent(existing.id)
+            rt.registry.remove(existing.id)
             removed += 1
 
     return ReloadResponse(agents_loaded=count, agents_removed=removed, errors=errors)
 
 
-@router.post("/{name}/run", response_model=RunResponse)
-async def run_agent(name: str, request: Request, body: RunRequest | None = None):
+@router.post("/{agent_id}/run", response_model=RunResponse)
+async def run_agent(agent_id: str, request: Request, body: RunRequest | None = None):
     """Start an agent execution."""
     rt = request.app.state.runtime
     state = request.app.state
-    config = rt.registry.get(name)
+    config = rt.registry.get(agent_id)
     if not config:
-        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    if config.on_pending == "skip" and await rt.db.has_waiting_execution(config.name):
-        raise HTTPException(status_code=409, detail=f"Agent '{name}' has a session waiting for a response")
+    if config.on_pending == "skip" and await rt.db.has_waiting_execution(config.id):
+        raise HTTPException(status_code=409, detail=f"Agent '{agent_id}' has a session waiting for a response")
 
     body = body or RunRequest()
     arguments = body.args or []
 
     cancel_event = asyncio.Event()
-    execution_id = await rt.db.create_execution(agent_id=config.name, trigger="manual", status="running")
+    execution_id = await rt.db.create_execution(agent_id=config.id, trigger="manual", status="running")
     state.cancel_events[execution_id] = cancel_event
 
     model_info = f"{config.model.provider}/{config.model.name}" if config.model else None
@@ -154,13 +152,13 @@ async def _run_in_background(rt, config, execution_id, state, arguments, message
         state.cancel_events.pop(execution_id, None)
 
 
-@router.get("/{name}/runs", response_model=list[ExecutionSummary])
-async def agent_runs(name: str, request: Request, limit: int = 10):
+@router.get("/{agent_id}/runs", response_model=list[ExecutionSummary])
+async def agent_runs(agent_id: str, request: Request, limit: int = 10):
     rt = request.app.state.runtime
-    config = rt.registry.get(name)
+    config = rt.registry.get(agent_id)
     if not config:
-        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
-    execs = await rt.db.get_executions(name, limit=limit)
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
+    execs = await rt.db.get_executions(config.id, limit=limit)
     return [
         ExecutionSummary(
             id=e.id,

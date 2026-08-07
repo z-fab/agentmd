@@ -18,8 +18,37 @@ from agent_md.api.schemas import (
     RespondRequest,
     RespondResponse,
 )
+from agent_md.execution.logger import agent_identity_payload
 
 router = APIRouter(prefix="/executions", tags=["executions"])
+
+
+def _durable_display_name(logs) -> str | None:
+    """Most recent display name recorded in log metadata, if any."""
+    for log in reversed(logs):
+        if not log.metadata:
+            continue
+        try:
+            display_name = json.loads(log.metadata).get("display_name")
+        except Exception:
+            continue
+        if display_name:
+            return display_name
+    return None
+
+
+def _execution_identity(execution, registry, logs=()) -> dict:
+    """Identity for SSE replay: prefer durable log metadata; fall back here.
+
+    The durable name keeps every frame of a stream consistent — including the
+    synthetic terminal ones — after the agent is renamed or removed.
+    """
+    agent_id = execution.agent_id
+    display_name = _durable_display_name(logs)
+    if not display_name:
+        config = registry.get(agent_id) if registry is not None else None
+        display_name = config.name if config is not None else agent_id
+    return agent_identity_payload(agent_id, display_name)
 
 
 @router.get("", response_model=list[ExecutionSummary])
@@ -109,19 +138,25 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
     # Subscribe BEFORE replay to avoid missing live events
     queue = event_bus.subscribe(exec_id)
     try:
-        # Replay historical logs from DB
+        # Replay historical logs from DB — include the same identity fields live events carry.
         seen_seq = -1
         logs = await db.get_logs(exec_id, limit=10000)
+        identity = _execution_identity(e, request.app.state.runtime.registry, logs)
         for log in logs:
             seen_seq = log.id
             payload = {
                 "event_type": log.event_type,
                 "message": log.message,
                 "timestamp": log.timestamp,
+                **identity,
             }
-            if log.event_type == "interrupt" and log.metadata:
+            if log.metadata:
                 try:
-                    payload.update(json.loads(log.metadata))
+                    meta = json.loads(log.metadata)
+                    payload.update(meta)
+                    # Keep fallback identity when older rows lack these keys.
+                    for key, value in identity.items():
+                        payload.setdefault(key, value)
                 except Exception:
                     pass
             yield ServerSentEvent(
@@ -133,10 +168,10 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
         # Check if already finished
         execution = await db.get_execution(exec_id)
         if execution and execution.status == "waiting":
-            yield ServerSentEvent(data={"status": "waiting"}, event="waiting")
+            yield ServerSentEvent(data={"status": "waiting", **identity}, event="waiting")
             return
         if execution and execution.status not in ("running", "pending"):
-            yield ServerSentEvent(data={"status": execution.status}, event="complete")
+            yield ServerSentEvent(data={"status": execution.status, **identity}, event="complete")
             return
 
         # Drain live events (dedup against replay)
@@ -148,7 +183,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 if not execution or execution.status not in ("running", "pending"):
                     ev = "waiting" if execution and execution.status == "waiting" else "complete"
                     yield ServerSentEvent(
-                        data={"status": execution.status if execution else "unknown"},
+                        data={"status": execution.status if execution else "unknown", **identity},
                         event=ev,
                     )
                     return
