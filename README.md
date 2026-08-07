@@ -85,13 +85,15 @@ write a creative greeting and save it to 'greeting.txt'.
 
 > **Note:** No `model` needed — Agentmd uses the default provider/model you configured during setup.
 
-Agent names may contain spaces and accented characters (e.g. `Daily Processor`, `Résumé Builder`). The `name` field is the agent's identifier — not the filename. Quote names with spaces on the CLI:
+The agent's **id** is the filename stem (`hello-world.md` → `hello-world`). Optional frontmatter `name:` is only a display label (defaults to the id). Stems may include spaces and accented characters; quote them on the CLI:
 
 ```bash
 agentmd run "Daily Processor"
 ```
 
-Each agent also has an icon shown in the CLI and the Obsidian plugin. Set it explicitly with `icon: "📅"` in frontmatter, or let agentmd derive a stable emoji from the name automatically.
+Each agent also has an icon shown in the CLI and the Obsidian plugin. Set it explicitly with `icon: "📅"` in frontmatter, or let agentmd derive a stable emoji from the id automatically.
+
+Upgrading from ≤0.15 where `name:` differed from the filename? See [Migration v0.16](docs/migration-0.16.md) and run `agentmd migrate --dry-run` first.
 
 ### Run It
 

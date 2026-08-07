@@ -543,6 +543,9 @@ echo "All agents validated successfully!"
 ### Integration Tests
 
 **`scripts/test-staging.sh`:**
+
+Agent **id** is the filename stem (`basename`), not frontmatter `name:`. These scripts already use the correct key.
+
 ```bash
 #!/bin/bash
 # Run all staging agents and check for errors

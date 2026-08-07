@@ -111,7 +111,8 @@ under 3 sentences and mention the date if possible.
 ```
 
 **What this means:**
-- **YAML frontmatter** (between `---`) = agent configuration
+- **Filename stem** = agent id (`hello.md` → run with `agentmd run hello`)
+- **YAML frontmatter** (between `---`) = agent configuration (`name:` is an optional display label)
 - **Markdown body** = system prompt (what the agent does)
 - **No `model` needed** — uses the default from `config.yaml`
 

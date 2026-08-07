@@ -17,7 +17,7 @@ agents:
 Research the topic, then summarize the findings.
 ```
 
-Agents are referenced by their `name` field (not filename). Only agents listed in `agents` can be called.
+Agents are referenced by their **id** (filename stem), not by display `name:`. Only agents listed in `agents` can be called.
 
 ## Tool Signature
 
@@ -27,7 +27,7 @@ def run_agent(agent_name: str, arguments: str = "") -> dict
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `agent_name` | `str` | Yes | Name of the target agent (must be in `agents` allowlist) |
+| `agent_name` | `str` | Yes | Id (filename stem) of the target agent (must be in `agents` allowlist) |
 | `arguments` | `str` | No | Arguments passed to the target agent |
 
 ## Return Value
@@ -82,7 +82,7 @@ defaults:
 - **Allowlist only** — agents can only call agents listed in their `agents` field
 - **No self-calls** — an agent cannot call itself
 - **Own sandbox** — the target agent uses its own `paths`, tools, and model config
-- **Name-based** — agents are referenced by their frontmatter `name`, not by filename
+- **Id-based** — agents are referenced by filename stem (canonical id), not by display `name:`
 
 ## Example: Orchestrator Pattern
 

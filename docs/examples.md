@@ -629,7 +629,7 @@ agentmd --help
 1. Choose an example that matches your use case
 2. Copy the agent file to `workspace/agents/`
 3. Customize the prompt for your needs
-4. Run with `agentmd run <name>`
+4. Run with `agentmd run <id>` (filename stem)
 5. Check output in `workspace/output/`
 
 For more details, see:

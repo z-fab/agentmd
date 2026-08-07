@@ -682,6 +682,8 @@ done
 
 ### Integration Tests
 
+Agent identity is the filename stem — `basename` is the correct CLI argument. Renaming a tracked `.md` file changes the id; history/memory do not follow automatically (see [Migration v0.16](../migration-0.16.md)).
+
 ```bash
 # Test agents before merge
 for agent in workspace/staging/*.md; do

@@ -3,6 +3,13 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking — filename stem is the canonical agent id** — identity comes from `agents/<id>.md` (e.g. `pesquisador.md` → id `pesquisador`), not from frontmatter `name:`. `name:` is an optional display label (defaults to the id). Declaring `id:` in frontmatter is rejected. Memory files are `{id}.memory.md`. API routes, CLI commands, scheduler jobs, `executions.agent_id`, allowlists `agents:`, and `run_agent` all resolve by id. Public API exposes `id` + `display_name`. In SSE events, `agent_name` now mirrors the **id** (breaking for clients that treated it as a label); use `display_name` for the human title. Renaming the file changes identity; a later `mv` does **not** carry execution history or memory automatically. See [Migration v0.16](docs/migration-0.16.md).
+- **`agentmd migrate [--dry-run]`** — one-shot workspace upgrade: rekeys `executions.agent_id`, renames `{display}.memory.md` → `{id}.memory.md`, never edits agent `.md` files, blocks with an error when two agents share a display name, and reports allowlist entries that still use display names for manual fix. Idempotent; prefer `--dry-run` first.
+
 ## [0.15.3] — 2026-08-07
 
 ### Fixed

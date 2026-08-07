@@ -43,13 +43,13 @@ class AgentSummary(BaseModel):
     ``id`` is the filename stem (canonical key). ``display_name`` is the
     presentation label from frontmatter ``name:`` (defaults to id).
 
-    ``name`` is retained as an alias of ``display_name`` so existing CLI
-    clients keep working until ticket 03 migrates them; it is not a route key.
+    ``name`` is retained as an alias of ``display_name`` for schema
+    compatibility with older clients; it is not a route key.
     """
 
     id: str
     display_name: str
-    name: str  # alias of display_name (schema compat for CLI until ticket 03)
+    name: str  # alias of display_name (schema compat; not a route key)
     description: str
     icon: str | None = None
     enabled: bool

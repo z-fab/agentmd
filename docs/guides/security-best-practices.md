@@ -483,7 +483,7 @@ If an agent is compromised or leaking data:
 3. **Audit logs:**
    ```bash
    # Check what the agent did
-   agentmd logs <agent-name> --verbose
+   agentmd logs <agent-id> --verbose
 
    # Check file system
    ls -la /output/

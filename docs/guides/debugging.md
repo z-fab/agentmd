@@ -536,7 +536,7 @@ agentmd run my-agent --debug
 Output:
 ```
 [DEBUG] Loading agent from: /workspace/my-agent.md
-[DEBUG] Parsed config: AgentConfig(name='my-agent', ...)
+[DEBUG] Parsed config: AgentConfig(id='my-agent', name='my-agent', ...)
 [DEBUG] Creating chat model: provider=openai, name=gpt-4
 [DEBUG] Building ReAct graph...
 [DEBUG] Starting execution...
