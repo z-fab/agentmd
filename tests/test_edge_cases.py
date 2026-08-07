@@ -165,10 +165,12 @@ def test_build_event_data_tool_result_long_content():
 
 
 def test_build_event_data_includes_agent_name():
-    """Event data should always include agent_name and event_type."""
+    """Event data should always include agent identity fields and event_type."""
     msg = _make_ai_msg(content="hello")
     data = _build_event_data(msg, "ai", "test-agent")
     assert data["agent_name"] == "test-agent"
+    assert data["agent_id"] == "test-agent"
+    assert data["display_name"] == "test-agent"
     assert data["event_type"] == "ai"
 
 
