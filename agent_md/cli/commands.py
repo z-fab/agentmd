@@ -1285,48 +1285,6 @@ def validate(
 
 
 # ---------------------------------------------------------------------------
-# agentmd migrate
-# ---------------------------------------------------------------------------
-
-
-@app.command()
-def migrate(
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show planned actions without modifying the database or filesystem",
-    ),
-    workspace: Path = typer.Option(None, "--workspace", "-w", help="Override workspace directory"),
-):
-    """Migrate legacy display-name keys to canonical agent ids.
-
-    Updates executions.agent_id and renames {display}.memory.md → {id}.memory.md.
-    Never modifies agent .md files. Safe to re-run (idempotent).
-    """
-    from agent_md.workspace.migrate import format_migrate_report, migrate_workspace
-
-    report = asyncio.run(migrate_workspace(workspace, dry_run=dry_run))
-
-    console.print()
-    if dry_run:
-        console.print("  [bold]Migrate (dry-run)[/bold] — no changes will be written\n")
-    else:
-        console.print("  [bold]Migrate[/bold]\n")
-
-    for line in format_migrate_report(report):
-        if line.startswith("  warning:"):
-            console.print(f"  [yellow]{line.strip()}[/yellow]")
-        elif line.startswith("  error:"):
-            console.print(f"  [red]{line.strip()}[/red]")
-        else:
-            console.print(line)
-    console.print()
-
-    if not report.ok:
-        raise typer.Exit(1)
-
-
-# ---------------------------------------------------------------------------
 # agentmd pending
 # ---------------------------------------------------------------------------
 

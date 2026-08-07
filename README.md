@@ -93,7 +93,7 @@ agentmd run "Daily Processor"
 
 Each agent also has an icon shown in the CLI and the Obsidian plugin. Set it explicitly with `icon: "📅"` in frontmatter, or let agentmd derive a stable emoji from the id automatically.
 
-Upgrading from ≤0.15 where `name:` differed from the filename? See [Migration v0.16](docs/migration-0.16.md) and run `agentmd migrate --dry-run` first.
+Upgrading from ≤0.15 where `name:` differed from the filename? That agent's history and memory are orphaned by the new identity model, and there is no automatic migration — see [Migration v0.16](docs/migration-0.16.md).
 
 ### Run It
 

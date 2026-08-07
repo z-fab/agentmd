@@ -216,17 +216,6 @@ class Database:
         row = await cursor.fetchone()
         return int(row["n"] if row else 0)
 
-    async def rekey_agent_id(self, old_agent_id: str, new_agent_id: str) -> int:
-        """Rewrite ``executions.agent_id`` from *old* to *new*. Returns rows updated."""
-        if old_agent_id == new_agent_id:
-            return 0
-        cursor = await self.db.execute(
-            "UPDATE executions SET agent_id = ? WHERE agent_id = ?",
-            (new_agent_id, old_agent_id),
-        )
-        await self.db.commit()
-        return cursor.rowcount
-
     async def get_last_execution(self, agent_id: str) -> Optional[ExecutionRecord]:
         """Get the most recent execution for an agent."""
         results = await self.get_executions(agent_id, limit=1)

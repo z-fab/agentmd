@@ -16,7 +16,6 @@ Complete reference for all Agentmd CLI commands, options, and examples.
 | `agentmd respond <id>` | Answer a waiting execution | Approve/deny or provide input |
 | `agentmd checkpoint` | Inspect / purge checkpoint storage | Manage `agentmd_checkpoints.db` |
 | `agentmd validate [agent]` | Validate agent configuration | Pre-deployment checks, CI/CD (by id) |
-| `agentmd migrate` | Rekey history/memory to filename ids | Upgrade from ≤0.15 identity model |
 | `agentmd status` | Check if runtime is running | Monitor daemon state |
 | `agentmd stop` | Stop background runtime | Gracefully stop daemon |
 | `agentmd info` | Show effective configuration | Verify paths, API keys, defaults |
@@ -613,40 +612,6 @@ Displays:
 
 ---
 
-## agentmd migrate
-
-One-shot migration from the ≤0.15 identity model (frontmatter `name:` as key) to filename-stem ids.
-
-### Purpose
-
-- Rekey `executions.agent_id` from old display names to stems
-- Rename `{display}.memory.md` → `{id}.memory.md` when they differ
-- Report `agents:` allowlist entries that still use display names (never rewrites agent `.md` files)
-- Error out when two agents share the same display name (ambiguous rekey)
-
-Idempotent. Prefer `--dry-run` first. Full procedure: [Migration v0.16](migration-0.16.md).
-
-### Usage
-
-```bash
-agentmd migrate [OPTIONS]
-```
-
-### Options
-
-| Option | Short | Type | Default | Description |
-|--------|-------|------|---------|-------------|
-| `--dry-run` | | Flag | false | Print planned actions without writing |
-| `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
-
-### Examples
-
-```bash
-agentmd migrate --dry-run
-agentmd migrate
-```
-
----
 
 ## agentmd setup
 
