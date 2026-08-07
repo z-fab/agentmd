@@ -309,3 +309,89 @@ def test_format_agent_label_includes_both_when_distinct():
 
     assert format_agent_label("pesquisador", "Research Bot") == "Research Bot (pesquisador)"
     assert format_agent_label("pesquisador", "pesquisador") == "pesquisador"
+
+
+# ---------------------------------------------------------------------------
+# Display-name edit preserves identity / schedule / history keys
+# ---------------------------------------------------------------------------
+
+
+def test_on_modified_display_name_edit_reschedules_same_id(tmp_path):
+    """Editing name: must not invent a new schedule key — job stays agent_{id}."""
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    path = _write_agent(agents / "pesquisador.md", name="Old Label")
+
+    reg = AgentRegistry()
+    reg.register(parse_agent_file(path))
+
+    scheduler = MagicMock()
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
+
+    _write_agent(path, name="New Label")
+    event = MagicMock()
+    event.is_directory = False
+    event.src_path = str(path)
+    handler.on_modified(event)
+
+    assert reg.get("pesquisador") is not None
+    assert reg.get("pesquisador").name == "New Label"
+    assert reg.get("Old Label") is None
+    assert reg.get("New Label") is None
+    scheduler.unschedule_agent.assert_called_with("pesquisador")
+    scheduled = scheduler.schedule_agent.call_args[0][0]
+    assert scheduled.id == "pesquisador"
+    assert scheduled.name == "New Label"
+
+
+@pytest.mark.asyncio
+async def test_editing_display_name_keeps_execution_history_by_id(tmp_path):
+    """History stays keyed by stem when only the display label changes."""
+    from agent_md.db.database import Database
+
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    path = _write_agent(agents / "pesquisador.md", name="Old Label")
+    cfg = parse_agent_file(path)
+    assert cfg.id == "pesquisador"
+
+    db = Database(tmp_path / "agentmd.db")
+    await db.connect()
+    try:
+        eid = await db.create_execution(cfg.id, "manual", status="success")
+        assert await db.count_executions_by_agent_id("pesquisador") == 1
+
+        _write_agent(path, name="New Label")
+        after = parse_agent_file(path)
+        assert after.id == "pesquisador"
+        assert after.name == "New Label"
+
+        rows = await db.list_executions(agent_id="pesquisador")
+        assert len(rows) == 1
+        assert rows[0].id == eid
+        assert await db.count_executions_by_agent_id("Old Label") == 0
+        assert await db.count_executions_by_agent_id("New Label") == 0
+    finally:
+        await db.close()
+
+
+def test_file_rename_leaves_memory_file_behind(tmp_path):
+    """mv changes id/memory path; existing memory file is not moved automatically."""
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    src = _write_agent(agents / "old-id.md", name="Label")
+    mem = agents / "old-id.memory.md"
+    mem.write_text("# notes\n", encoding="utf-8")
+
+    pc = _path_context(tmp_path)
+    before = parse_agent_file(src)
+    assert pc.get_memory_file_path(before) == mem
+
+    dest = agents / "new-id.md"
+    src.rename(dest)
+    after = parse_agent_file(dest)
+
+    assert after.id == "new-id"
+    assert pc.get_memory_file_path(after) == agents / "new-id.memory.md"
+    assert mem.exists()
+    assert not (agents / "new-id.memory.md").exists()
