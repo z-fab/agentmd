@@ -148,10 +148,10 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
         # Check if already finished
         execution = await db.get_execution(exec_id)
         if execution and execution.status == "waiting":
-            yield ServerSentEvent(data={"status": "waiting"}, event="waiting")
+            yield ServerSentEvent(data={"status": "waiting", **identity}, event="waiting")
             return
         if execution and execution.status not in ("running", "pending"):
-            yield ServerSentEvent(data={"status": execution.status}, event="complete")
+            yield ServerSentEvent(data={"status": execution.status, **identity}, event="complete")
             return
 
         # Drain live events (dedup against replay)
@@ -163,7 +163,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 if not execution or execution.status not in ("running", "pending"):
                     ev = "waiting" if execution and execution.status == "waiting" else "complete"
                     yield ServerSentEvent(
-                        data={"status": execution.status if execution else "unknown"},
+                        data={"status": execution.status if execution else "unknown", **identity},
                         event=ev,
                     )
                     return
