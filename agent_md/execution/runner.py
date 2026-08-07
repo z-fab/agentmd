@@ -84,10 +84,31 @@ def _classify_event_type(msg) -> str:
     return msg_type
 
 
-def _build_event_data(msg, event_type: str, agent_name: str) -> dict:
-    """Build structured event data for the EventBus, including tool details."""
+def _agent_identity_fields(config: AgentConfig) -> dict:
+    """Canonical identity fields for public SSE / EventBus payloads.
+
+    ``agent_id`` is the filename stem. ``display_name`` is the presentation
+    label. ``agent_name`` mirrors ``agent_id`` for schema compatibility with
+    existing SSE clients until ticket 03 migrates them.
+    """
+    return {
+        "agent_id": config.id,
+        "display_name": config.name,
+        "agent_name": config.id,
+    }
+
+
+def _build_event_data(msg, event_type: str, agent: AgentConfig | str) -> dict:
+    """Build structured event data for the EventBus, including tool details.
+
+    *agent* may be an ``AgentConfig`` or a plain id string (tests / simple callers).
+    """
     content = _extract_text(getattr(msg, "content", ""))[:500]
-    data: dict = {"event_type": event_type, "agent_name": agent_name}
+    if isinstance(agent, str):
+        identity = {"agent_id": agent, "display_name": agent, "agent_name": agent}
+    else:
+        identity = _agent_identity_fields(agent)
+    data: dict = {"event_type": event_type, **identity}
 
     if event_type == "tool_call" and hasattr(msg, "tool_calls") and msg.tool_calls:
         tools = []
@@ -247,7 +268,7 @@ class AgentRunner:
         if event_bus is not None:
             await event_bus.publish(
                 execution_id,
-                {"type": "interrupt", "seq": log_id, "data": {**request, "agent_name": config.name}},
+                {"type": "interrupt", "seq": log_id, "data": {**request, **_agent_identity_fields(config)}},
             )
 
         secs = self._parse_timeout_seconds(config.confirm_timeout)
@@ -277,7 +298,7 @@ class AgentRunner:
                     "type": "execution_completed",
                     "data": {
                         "execution_id": execution_id,
-                        "agent_name": config.name,
+                        **_agent_identity_fields(config),
                         "status": result["status"],
                         "duration_ms": result.get("duration_ms", 0),
                     },
@@ -461,7 +482,7 @@ class AgentRunner:
                 parent_execution_id=parent_execution_id,
             )
 
-        ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=on_event)
+        ex_logger = ExecutionLogger(self.db, execution_id, config.id, display_name=config.name, on_event=on_event)
 
         if global_event_bus is not None:
             await global_event_bus.publish(
@@ -469,7 +490,7 @@ class AgentRunner:
                     "type": "execution_started",
                     "data": {
                         "execution_id": execution_id,
-                        "agent_name": config.name,
+                        **_agent_identity_fields(config),
                         "trigger": trigger_type,
                     },
                 }
@@ -566,7 +587,7 @@ class AgentRunner:
 
                         if event_bus is not None:
                             event_type = _classify_event_type(msg)
-                            event_data = _build_event_data(msg, event_type, config.name)
+                            event_data = _build_event_data(msg, event_type, config)
                             await event_bus.publish(
                                 execution_id,
                                 {"type": event_type, "seq": log_id, "data": event_data},
@@ -658,7 +679,7 @@ class AgentRunner:
                             {
                                 "type": "final_answer",
                                 "seq": log_id,
-                                "data": {"content": output, "agent_name": config.name},
+                                "data": {"content": output, **_agent_identity_fields(config)},
                             },
                         )
 
@@ -699,7 +720,7 @@ class AgentRunner:
                     await global_event_bus.publish(
                         {
                             "type": "execution_waiting",
-                            "data": {"execution_id": execution_id, "agent_name": config.name},
+                            "data": {"execution_id": execution_id, **_agent_identity_fields(config)},
                         }
                     )
                 logger.info(f"Execution {execution_id} paused (HILT {paused.request.get('kind')})")
@@ -789,12 +810,16 @@ class AgentRunner:
         if not await self.db.claim_execution_for_resume(execution_id):
             logger.info(f"Resume skipped for {execution_id}: no longer waiting (already resumed or cancelled)")
             return {"status": "skipped", "execution_id": execution_id}
-        ex_logger = ExecutionLogger(self.db, execution_id, config.name, on_event=None)
+        ex_logger = ExecutionLogger(self.db, execution_id, config.id, display_name=config.name, on_event=None)
         if global_event_bus is not None:
             await global_event_bus.publish(
                 {
                     "type": "execution_started",
-                    "data": {"execution_id": execution_id, "agent_name": config.name, "trigger": "resume"},
+                    "data": {
+                        "execution_id": execution_id,
+                        **_agent_identity_fields(config),
+                        "trigger": "resume",
+                    },
                 }
             )
 
@@ -863,7 +888,7 @@ class AgentRunner:
                     if event_bus is not None:
                         et = _classify_event_type(msg)
                         await event_bus.publish(
-                            execution_id, {"type": et, "seq": log_id, "data": _build_event_data(msg, et, config.name)}
+                            execution_id, {"type": et, "seq": log_id, "data": _build_event_data(msg, et, config)}
                         )
                     if cancel_event is not None and cancel_event.is_set():
                         raise LimitExceeded("cancelled", "Execution cancelled by user")
@@ -938,7 +963,11 @@ class AgentRunner:
                 if event_bus is not None:
                     await event_bus.publish(
                         execution_id,
-                        {"type": "final_answer", "seq": log_id, "data": {"content": output, "agent_name": config.name}},
+                        {
+                            "type": "final_answer",
+                            "seq": log_id,
+                            "data": {"content": output, **_agent_identity_fields(config)},
+                        },
                     )
             result = await self._finish_execution(
                 execution_id,

@@ -210,9 +210,13 @@ class AgentScheduler:
         jobs = []
         for job in self.scheduler.get_jobs():
             bare_id = job.id.removeprefix("agent_") if job.id.startswith("agent_") else job.id
+            config = self.registry.get(bare_id)
+            display_name = config.name if config else bare_id
             jobs.append(
                 {
-                    "agent_name": bare_id,
+                    "agent_id": bare_id,
+                    "display_name": display_name,
+                    "agent_name": bare_id,  # schema compat alias of agent_id
                     "trigger_type": "schedule",
                     "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
                 }
@@ -257,14 +261,24 @@ class _AgentFileHandler(FileSystemEventHandler):
         self.agents_dir = agents_dir.resolve() if agents_dir is not None else None
         self.global_event_bus = global_event_bus
 
-    def _publish_event(self, event: str, agent_id: str) -> None:
-        """Publish agents_changed event to global bus from watchdog thread."""
+    def _publish_event(self, event: str, agent_id: str, display_name: str | None = None) -> None:
+        """Publish agents_changed event to global bus from watchdog thread.
+
+        ``agent_name`` mirrors ``agent_id`` for SSE schema compatibility; callers
+        that have the config should pass ``display_name``.
+        """
         if self.global_event_bus and self._loop:
+            label = display_name if display_name is not None else agent_id
             asyncio.run_coroutine_threadsafe(
                 self.global_event_bus.publish(
                     {
                         "type": "agents_changed",
-                        "data": {"event": event, "agent_name": agent_id},
+                        "data": {
+                            "event": event,
+                            "agent_id": agent_id,
+                            "display_name": label,
+                            "agent_name": agent_id,
+                        },
                     }
                 ),
                 self._loop,
@@ -327,7 +341,7 @@ class _AgentFileHandler(FileSystemEventHandler):
                 # Only the body (system prompt) changed
                 self.registry.register(config)
                 logger.info(f"Hot-reloaded prompt for: {config.id}")
-                self._publish_event("updated", config.id)
+                self._publish_event("updated", config.id, config.name)
             else:
                 # Frontmatter changed — full reload (reschedule + recreate watchers)
                 self.registry.register(config)
@@ -337,7 +351,7 @@ class _AgentFileHandler(FileSystemEventHandler):
                     self.scheduler._add_watch_handler(config)
                 logger.info(f"Hot-reloaded agent (full): {config.id}")
                 event_type = "loaded" if old is None else "updated"
-                self._publish_event(event_type, config.id)
+                self._publish_event(event_type, config.id, config.name)
 
         except Exception as e:
             logger.warning(f"Failed to reload {path.name}: {e}")
