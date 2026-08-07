@@ -262,6 +262,50 @@ async def test_migrate_reports_allowlist_display_names(ws):
     assert (agents / "orquestrador.md").read_text(encoding="utf-8") == before
 
 
+@pytest.mark.asyncio
+async def test_migrate_duplicate_display_name_blocks_rekey_and_memory(ws):
+    """Shared display name must not move history/memory to an arbitrary stem."""
+    agents = ws / "agents"
+    _write_agent(agents / "alpha.md", name="Shared")
+    _write_agent(agents / "beta.md", name="Shared")
+    mem = agents / "Shared.memory.md"
+    mem.write_text("shared-mem\n", encoding="utf-8")
+    alpha_md = (agents / "alpha.md").read_text(encoding="utf-8")
+    beta_md = (agents / "beta.md").read_text(encoding="utf-8")
+
+    db = _db(ws)
+    await db.connect()
+    for _ in range(3):
+        await db.create_execution("Shared", "manual")
+    await db.close()
+
+    dry = await migrate_workspace(ws, dry_run=True)
+    real = await migrate_workspace(ws, dry_run=False)
+
+    for report in (dry, real):
+        assert not report.ok
+        assert report.actions == []
+        errs = [i for i in report.errors if i.kind == "ambiguous"]
+        assert {i.agent_id for i in errs} >= {"alpha", "beta"}
+        joined = " ".join(i.message for i in errs)
+        assert "Shared" in joined
+        assert "alpha" in joined and "beta" in joined
+
+    db = _db(ws)
+    await db.connect()
+    assert await db.count_executions_by_agent_id("Shared") == 3
+    assert await db.count_executions_by_agent_id("alpha") == 0
+    assert await db.count_executions_by_agent_id("beta") == 0
+    await db.close()
+
+    assert mem.exists()
+    assert mem.read_text(encoding="utf-8") == "shared-mem\n"
+    assert not (agents / "alpha.memory.md").exists()
+    assert not (agents / "beta.memory.md").exists()
+    assert (agents / "alpha.md").read_text(encoding="utf-8") == alpha_md
+    assert (agents / "beta.md").read_text(encoding="utf-8") == beta_md
+
+
 def test_migrate_cli_dry_run(ws):
     agents = ws / "agents"
     _write_agent(agents / "pesquisador.md", name="Research Bot")
