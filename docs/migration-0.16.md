@@ -23,6 +23,19 @@ Agent identity is now the **filename stem**, not the frontmatter `name:` field.
 
 ## Upgrade procedure
 
+### 0. Stop the backend first
+
+```bash
+agentmd stop
+```
+
+**Do not skip this.** A backend started before the upgrade keeps the *old* registry in memory, keyed by display name. If it is still running you get:
+
+- `agentmd run <id>` → `Agent '<id>' not found.` — the new CLI asks the old backend for a stem it has never heard of.
+- Scheduled agents keep writing `executions.agent_id` under the **old display name**, re-orphaning history you just migrated.
+
+`agentmd status` shows the running version; if it is 0.15.x, stop it before going further.
+
 ### 1. Back up
 
 ```bash
@@ -72,6 +85,10 @@ agentmd list          # Id + Display Name columns
 agentmd validate
 agentmd run <id>      # use the stem, not the old display name
 ```
+
+`agentmd list` is a good smoke test: before migrating, an agent whose `name:` differed from its stem shows **Last Run: never** because the history is still filed under the old key. After migrating it shows the real timestamp again.
+
+If `agentmd run <id>` still reports the agent as not found while `agentmd validate <id>` succeeds, a stale backend is serving the old registry — go back to step 0.
 
 API: `GET /agents` returns `id` and `display_name`. `GET /agents/{display_name}` no longer resolves when display name ≠ id.
 
