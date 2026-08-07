@@ -272,10 +272,24 @@ def test_pick_or_resolve_agent_returns_id_when_display_name_differs(monkeypatch)
     assert cli_commands._pick_or_resolve_agent(None, None) == "pesquisador"
 
 
-def test_pick_or_resolve_agent_passthrough_explicit_id():
-    from agent_md.cli.commands import _pick_or_resolve_agent
+def test_pick_or_resolve_agent_accepts_canonical_id(monkeypatch):
+    from agent_md.cli import commands as cli_commands
 
-    assert _pick_or_resolve_agent("pesquisador", None) == "pesquisador"
+    cfg = AgentConfig(id="pesquisador", name="Research Bot")
+    monkeypatch.setattr(cli_commands, "_get_agents_for_picker", lambda workspace: [cfg])
+
+    assert cli_commands._pick_or_resolve_agent("pesquisador", None) == "pesquisador"
+
+
+def test_pick_or_resolve_agent_rejects_display_name(monkeypatch):
+    import typer
+    from agent_md.cli import commands as cli_commands
+
+    cfg = AgentConfig(id="pesquisador", name="Research Bot")
+    monkeypatch.setattr(cli_commands, "_get_agents_for_picker", lambda workspace: [cfg])
+
+    with pytest.raises(typer.Exit):
+        cli_commands._pick_or_resolve_agent("Research Bot", None)
 
 
 def test_select_agent_auto_select_shows_display_and_returns_config(capsys):
@@ -288,3 +302,10 @@ def test_select_agent_auto_select_shows_display_and_returns_config(capsys):
     out = capsys.readouterr().out
     assert "Research Bot" in out
     assert "pesquisador" in out
+
+
+def test_format_agent_label_includes_both_when_distinct():
+    from agent_md.cli.theme import format_agent_label
+
+    assert format_agent_label("pesquisador", "Research Bot") == "Research Bot (pesquisador)"
+    assert format_agent_label("pesquisador", "pesquisador") == "pesquisador"

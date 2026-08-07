@@ -258,6 +258,14 @@ def format_trigger(config: AgentConfig) -> str:
 # ---------------------------------------------------------------------------
 
 
+def format_agent_label(agent_id: str, display_name: str | None = None) -> str:
+    """Return an unequivocal agent label: display name plus id when they differ."""
+    name = display_name if display_name is not None else agent_id
+    if name == agent_id:
+        return agent_id
+    return f"{name} ({agent_id})"
+
+
 def format_duration(ms: int | None) -> str:
     """Format milliseconds into a compact human-readable string."""
     if ms is None:
@@ -313,33 +321,22 @@ def format_relative_time(iso_str: str | None) -> str:
 def select_agent(agents: list[AgentConfig], prompt: str = "Select an agent") -> AgentConfig | None:
     """Interactive agent picker using questionary.
 
-    Shows display names; when display name differs from id (or names collide),
-    the id is included in the visible label for disambiguation.
-    Falls back to text input when stdin is not a TTY.
+    Always shows id; when display name differs from id, both appear
+    (``Display Name (id)``). Falls back to text input when stdin is not a TTY.
     """
     if not agents:
         return None
 
     if len(agents) == 1:
         only = agents[0]
-        label = only.name if only.name == only.id else f"{only.name} ({only.id})"
+        label = format_agent_label(only.id, only.name)
         console.print(f"  Auto-selected [bold]{label}[/bold]")
         return only
 
-    # Build choices — visible text is display name; value recovered via agent_map.
-    name_counts: dict[str, int] = {}
-    for a in agents:
-        name_counts[a.name] = name_counts.get(a.name, 0) + 1
-
+    # Build choices — visible text is id (+ display when different); value via agent_map.
     choices = []
     agent_map: dict[str, AgentConfig] = {}
-    visible_labels = []
-    for a in agents:
-        if a.name != a.id or name_counts[a.name] > 1:
-            visible = f"{a.name} ({a.id})"
-        else:
-            visible = a.name
-        visible_labels.append(visible)
+    visible_labels = [format_agent_label(a.id, a.name) for a in agents]
 
     max_name = max(len(v) for v in visible_labels)
     for a, visible in zip(agents, visible_labels, strict=True):
