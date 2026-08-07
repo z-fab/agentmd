@@ -65,11 +65,35 @@ def _plan_agent(
     stem = config.id
     old_name = config.name
 
-    # --- executions.agent_id ---
+    # --- executions.agent_id + memory ---
     if old_name != stem:
+        stems_sharing_name = sorted(display_to_stems.get(old_name, [stem]))
+        # Duplicate display names: legacy agent_id / memory key is ambiguous —
+        # never rekey or rename for any of the competing stems.
+        if len(stems_sharing_name) > 1:
+            count = execution_counts.get(old_name, 0)
+            mem_exists = (agents_dir / f"{old_name}.memory.md").exists()
+            detail_parts = []
+            if count:
+                detail_parts.append(f"{count} execution(s)")
+            if mem_exists:
+                detail_parts.append(f"memory file {old_name}.memory.md")
+            detail = f" ({', '.join(detail_parts)} left untouched)" if detail_parts else ""
+            items.append(
+                MigrateItem(
+                    kind="ambiguous",
+                    agent_id=stem,
+                    level="error",
+                    message=(
+                        f"cannot rekey/rename display name {old_name!r} → {stem!r}: "
+                        f"shared by ids {', '.join(stems_sharing_name)}; "
+                        f"resolve ownership manually{detail}"
+                    ),
+                )
+            )
         # If another agent already owns this string as its id, legacy rows
         # keyed by old_name are ambiguous with that agent's current rows.
-        if old_name in id_set:
+        elif old_name in id_set:
             count = execution_counts.get(old_name, 0)
             if count:
                 items.append(
@@ -95,23 +119,8 @@ def _plan_agent(
                         ),
                     )
                 )
-        else:
-            count = execution_counts.get(old_name, 0)
-            if count:
-                items.append(
-                    MigrateItem(
-                        kind="rekey",
-                        agent_id=stem,
-                        level="action",
-                        message=f"rekey {count} execution(s): agent_id {old_name!r} → {stem!r}",
-                    )
-                )
-
-        # --- memory file ---
-        old_mem = agents_dir / f"{old_name}.memory.md"
-        new_mem = agents_dir / f"{stem}.memory.md"
-        # If old_name is another agent's id, {old_name}.memory.md belongs to them.
-        if old_name in id_set:
+            old_mem = agents_dir / f"{old_name}.memory.md"
+            new_mem = agents_dir / f"{stem}.memory.md"
             if old_mem.exists():
                 items.append(
                     MigrateItem(
@@ -124,28 +133,42 @@ def _plan_agent(
                         ),
                     )
                 )
-        elif old_mem.exists():
-            if new_mem.exists():
+        else:
+            count = execution_counts.get(old_name, 0)
+            if count:
                 items.append(
                     MigrateItem(
-                        kind="collision",
-                        agent_id=stem,
-                        level="error",
-                        message=(
-                            f"memory collision: both {old_mem.name} and {new_mem.name} exist; "
-                            "refusing to overwrite"
-                        ),
-                    )
-                )
-            else:
-                items.append(
-                    MigrateItem(
-                        kind="rename_memory",
+                        kind="rekey",
                         agent_id=stem,
                         level="action",
-                        message=f"rename memory {old_mem.name} → {new_mem.name}",
+                        message=f"rekey {count} execution(s): agent_id {old_name!r} → {stem!r}",
                     )
                 )
+
+            old_mem = agents_dir / f"{old_name}.memory.md"
+            new_mem = agents_dir / f"{stem}.memory.md"
+            if old_mem.exists():
+                if new_mem.exists():
+                    items.append(
+                        MigrateItem(
+                            kind="collision",
+                            agent_id=stem,
+                            level="error",
+                            message=(
+                                f"memory collision: both {old_mem.name} and {new_mem.name} exist; "
+                                "refusing to overwrite"
+                            ),
+                        )
+                    )
+                else:
+                    items.append(
+                        MigrateItem(
+                            kind="rename_memory",
+                            agent_id=stem,
+                            level="action",
+                            message=f"rename memory {old_mem.name} → {new_mem.name}",
+                        )
+                    )
 
     # --- allowlist agents: still using display names ---
     for peer in config.agents:
