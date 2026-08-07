@@ -9,8 +9,9 @@ from agent_md.workspace.path_context import PathContext
 
 
 class FakeConfig:
-    def __init__(self, name="test-agent", paths=None):
+    def __init__(self, name="test-agent", agent_id=None, paths=None):
         self.name = name
+        self.id = agent_id if agent_id is not None else name
         self.paths = paths or {}
 
         class FakeTrigger:
@@ -59,6 +60,12 @@ class TestSDKOutsideExecution:
 
         with pytest.raises(RuntimeError, match="agent execution"):
             agent_name()
+
+    def test_agent_id_raises_outside_execution(self):
+        from agent_md.sdk import agent_id
+
+        with pytest.raises(RuntimeError, match="agent execution"):
+            agent_id()
 
     def test_agent_paths_raises_outside_execution(self):
         from agent_md.sdk import agent_paths
@@ -125,6 +132,17 @@ class TestSDKWithinExecution:
         token = _set_context(config, path_context)
         try:
             assert agent_name() == "my-agent"
+        finally:
+            _reset_context(token)
+
+    def test_agent_id(self, workspace, path_context):
+        from agent_md.sdk import _set_context, _reset_context, agent_id, agent_name
+
+        config = FakeConfig(name="Display Name", agent_id="pesquisador")
+        token = _set_context(config, path_context)
+        try:
+            assert agent_id() == "pesquisador"
+            assert agent_name() == "Display Name"
         finally:
             _reset_context(token)
 

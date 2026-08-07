@@ -668,12 +668,12 @@ async def test_agents_reload_filters_memory_reschedules_removes(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Bug 17 — duplicate name warning
+# Duplicate display names coexist under filename-as-id
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_warns_on_duplicate_agent_name(tmp_path, caplog):
+async def test_bootstrap_allows_duplicate_display_names(tmp_path, caplog):
     from agent_md.workspace.bootstrap import bootstrap
 
     agents = tmp_path / "agents"
@@ -685,7 +685,10 @@ async def test_bootstrap_warns_on_duplicate_agent_name(tmp_path, caplog):
         )
     with caplog.at_level(logging.WARNING):
         rt = await bootstrap(workspace=tmp_path, agents_dir=agents, db_path=tmp_path / "db.db")
-    assert any("Duplicate agent name" in r.message for r in caplog.records)
+    assert not any("Duplicate agent name" in r.message for r in caplog.records)
+    assert len(rt.registry) == 2
+    assert rt.registry.get("a").name == "same"
+    assert rt.registry.get("b").name == "same"
     await rt.aclose()
 
 

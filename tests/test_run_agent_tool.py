@@ -9,6 +9,7 @@ from agent_md.tools.agents.run_agent import create_run_agent_tool
 @pytest.fixture
 def caller_config():
     cfg = MagicMock()
+    cfg.id = "orchestrator"
     cfg.name = "orchestrator"
     cfg.agents = ["worker-a", "worker-b"]
     return cfg
@@ -17,6 +18,7 @@ def caller_config():
 @pytest.fixture
 def worker_a_config():
     cfg = MagicMock()
+    cfg.id = "worker-a"
     cfg.name = "worker-a"
     cfg.enabled = True
     return cfg
@@ -25,6 +27,7 @@ def worker_a_config():
 @pytest.fixture
 def worker_b_config():
     cfg = MagicMock()
+    cfg.id = "worker-b"
     cfg.name = "worker-b"
     cfg.enabled = True
     return cfg
@@ -33,6 +36,7 @@ def worker_b_config():
 @pytest.fixture
 def disabled_config():
     cfg = MagicMock()
+    cfg.id = "disabled-agent"
     cfg.name = "disabled-agent"
     cfg.enabled = False
     return cfg
