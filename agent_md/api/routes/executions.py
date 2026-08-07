@@ -23,11 +23,31 @@ from agent_md.execution.logger import agent_identity_payload
 router = APIRouter(prefix="/executions", tags=["executions"])
 
 
-def _execution_identity(execution, registry) -> dict:
-    """Identity for SSE replay: prefer durable log metadata; fall back here."""
+def _durable_display_name(logs) -> str | None:
+    """Most recent display name recorded in log metadata, if any."""
+    for log in reversed(logs):
+        if not log.metadata:
+            continue
+        try:
+            display_name = json.loads(log.metadata).get("display_name")
+        except Exception:
+            continue
+        if display_name:
+            return display_name
+    return None
+
+
+def _execution_identity(execution, registry, logs=()) -> dict:
+    """Identity for SSE replay: prefer durable log metadata; fall back here.
+
+    The durable name keeps every frame of a stream consistent — including the
+    synthetic terminal ones — after the agent is renamed or removed.
+    """
     agent_id = execution.agent_id
-    config = registry.get(agent_id) if registry is not None else None
-    display_name = config.name if config is not None else agent_id
+    display_name = _durable_display_name(logs)
+    if not display_name:
+        config = registry.get(agent_id) if registry is not None else None
+        display_name = config.name if config is not None else agent_id
     return agent_identity_payload(agent_id, display_name)
 
 
@@ -119,9 +139,9 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
     queue = event_bus.subscribe(exec_id)
     try:
         # Replay historical logs from DB — include the same identity fields live events carry.
-        identity = _execution_identity(e, request.app.state.runtime.registry)
         seen_seq = -1
         logs = await db.get_logs(exec_id, limit=10000)
+        identity = _execution_identity(e, request.app.state.runtime.registry, logs)
         for log in logs:
             seen_seq = log.id
             payload = {

@@ -118,6 +118,36 @@ async def test_stream_replay_identity_survives_agent_removal(app_client):
 
 
 @pytest.mark.asyncio
+async def test_terminal_frame_identity_matches_replay_after_removal(app_client):
+    """Every frame of one stream agrees, including the synthetic terminal one.
+
+    Without the durable name the replayed logs would say "Research Bot" while
+    the synthetic complete fell back to the id — the same stream contradicting
+    itself once the agent left the registry.
+    """
+    app, client = app_client
+    db = app.state.db
+    eid = await db.create_execution("pesquisador", "manual", status="success")
+    logger = ExecutionLogger(db, eid, "pesquisador", display_name="Research Bot")
+    await logger._persist("ai", "hello")
+
+    app.state.runtime.registry.remove("pesquisador")
+
+    lines: list[str] = []
+    async with client.stream("GET", f"/executions/{eid}/stream") as resp:
+        async for line in resp.aiter_lines():
+            lines.append(line)
+
+    frames = _parse_sse(lines)
+    complete = next(data for event, data in frames if event == "complete")
+    assert complete["display_name"] == "Research Bot"
+    assert complete["agent_id"] == "pesquisador"
+    assert complete["agent_name"] == "pesquisador"
+
+    assert {data["display_name"] for _, data in frames} == {"Research Bot"}
+
+
+@pytest.mark.asyncio
 async def test_stream_replay_fallback_when_metadata_missing(app_client):
     """Older log rows without metadata still get identity from execution + registry."""
     app, client = app_client
