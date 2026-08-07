@@ -45,7 +45,7 @@ async def info(request: Request):
 @router.post("/shutdown", response_model=ShutdownResponse)
 async def shutdown(request: Request):
     state = request.app.state
-    asyncio.get_event_loop().call_later(0.5, _trigger_shutdown, state)
+    asyncio.get_running_loop().call_later(0.5, _trigger_shutdown, state)
     return ShutdownResponse()
 
 

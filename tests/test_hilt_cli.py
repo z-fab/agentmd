@@ -84,9 +84,10 @@ def test_stream_execution_skips_answered_interrupt():
         "",
     ]
     # when r1 is already answered, the function must NOT return the interrupt;
-    # it should reach complete and return None
+    # it should reach complete and return the terminal status
     res = commands._stream_execution(_StreamClient(lines), 1, Console(), quiet=True, answered={"r1"})
-    assert res is None
+    assert res is not None
+    assert res.get("status") == "success"
 
 
 def test_stream_execution_returns_new_interrupt():

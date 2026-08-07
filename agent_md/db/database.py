@@ -57,6 +57,15 @@ CREATE TABLE IF NOT EXISTS pending_interrupts (
 );
 """
 
+# Columns that may be missing on DBs created before they were added.
+_EXECUTIONS_MIGRATIONS: list[tuple[str, str]] = [
+    ("cost_usd", "REAL"),
+    ("pid", "INTEGER"),
+    ("parent_execution_id", "INTEGER"),
+]
+
+_TERMINAL_STATUSES = frozenset({"success", "error", "aborted", "cancelled", "orphaned", "timeout"})
+
 
 # ---------------------------------------------------------------------------
 # Database
@@ -73,6 +82,15 @@ class Database:
     async def connect(self, readonly: bool = False) -> None:
         """Open the database connection and create tables."""
         if readonly:
+            if not self.db_path.exists():
+                # Fresh install: create schema so readonly CLI commands don't crash.
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                async with aiosqlite.connect(str(self.db_path)) as tmp:
+                    await tmp.execute("PRAGMA journal_mode=WAL")
+                    await tmp.execute("PRAGMA synchronous=NORMAL")
+                    await tmp.executescript(SCHEMA)
+                    await tmp.commit()
+                    await self._migrate(tmp)
             uri = f"file:{self.db_path}?mode=ro"
             self._db = await aiosqlite.connect(uri, uri=True)
             self._db.row_factory = aiosqlite.Row
@@ -81,6 +99,7 @@ class Database:
             self._db = await aiosqlite.connect(str(self.db_path))
             self._db.row_factory = aiosqlite.Row
             await self._db.execute("PRAGMA journal_mode=WAL")
+            await self._db.execute("PRAGMA synchronous=NORMAL")
             await self._db.executescript(SCHEMA)
             await self._db.commit()
             await self._migrate(self._db)
@@ -102,10 +121,11 @@ class Database:
         """Run schema migrations for columns added after initial release."""
         cursor = await db.execute("PRAGMA table_info(executions)")
         columns = {row[1] for row in await cursor.fetchall()}
-        if "parent_execution_id" not in columns:
-            await db.execute("ALTER TABLE executions ADD COLUMN parent_execution_id INTEGER")
-            await db.commit()
-            logger.info("Migration: added parent_execution_id column to executions")
+        for col_name, col_type in _EXECUTIONS_MIGRATIONS:
+            if col_name not in columns:
+                await db.execute(f"ALTER TABLE executions ADD COLUMN {col_name} {col_type}")
+                logger.info(f"Migration: added {col_name} column to executions")
+        await db.commit()
 
     # --- Executions ---
 
@@ -135,29 +155,35 @@ class Database:
         total_tokens: Optional[int] = None,
         cost_usd: Optional[float] = None,
     ) -> None:
-        """Update an execution with its final status."""
-        now = datetime.now(timezone.utc).isoformat()
+        """Update an execution — only fields explicitly passed are written.
+
+        ``finished_at`` is set only for terminal statuses.
+        """
+        sets = ["status = ?"]
+        params: list = [status]
+
+        if status in _TERMINAL_STATUSES:
+            sets.append("finished_at = ?")
+            params.append(datetime.now(timezone.utc).isoformat())
+
+        optional = {
+            "duration_ms": duration_ms,
+            "output_data": output_data,
+            "error": error,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "cost_usd": cost_usd,
+        }
+        for col, value in optional.items():
+            if value is not None:
+                sets.append(f"{col} = ?")
+                params.append(value)
+
+        params.append(execution_id)
         await self.db.execute(
-            """
-            UPDATE executions
-            SET status = ?, finished_at = ?, duration_ms = ?,
-                output_data = ?, error = ?,
-                input_tokens = ?, output_tokens = ?, total_tokens = ?,
-                cost_usd = ?
-            WHERE id = ?
-            """,
-            (
-                status,
-                now,
-                duration_ms,
-                output_data,
-                error,
-                input_tokens,
-                output_tokens,
-                total_tokens,
-                cost_usd,
-                execution_id,
-            ),
+            f"UPDATE executions SET {', '.join(sets)} WHERE id = ?",
+            params,
         )
         await self.db.commit()
 
@@ -257,19 +283,34 @@ class Database:
         await self.db.commit()
         return cursor.lastrowid
 
-    async def get_logs(self, execution_id: int, limit: int = 100) -> list[LogRecord]:
-        """Get logs for an execution."""
+    async def get_logs(self, execution_id: int, limit: int = 10_000) -> list[LogRecord]:
+        """Get logs for an execution, ordered by insertion id (stable)."""
         cursor = await self.db.execute(
             """
             SELECT * FROM execution_logs
             WHERE execution_id = ?
-            ORDER BY timestamp ASC
+            ORDER BY id ASC
             LIMIT ?
             """,
             (execution_id, limit),
         )
         rows = await cursor.fetchall()
         return [LogRecord(**dict(row)) for row in rows]
+
+    async def count_logs(self, execution_id: int, event_type: str | None = None) -> int:
+        """Count log rows for an execution, optionally filtered by event_type."""
+        if event_type is None:
+            cursor = await self.db.execute(
+                "SELECT COUNT(*) AS n FROM execution_logs WHERE execution_id = ?",
+                (execution_id,),
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT COUNT(*) AS n FROM execution_logs WHERE execution_id = ? AND event_type = ?",
+                (execution_id, event_type),
+            )
+        row = await cursor.fetchone()
+        return int(row["n"] if row else 0)
 
     # --- Pending interrupts (HILT) ---
 

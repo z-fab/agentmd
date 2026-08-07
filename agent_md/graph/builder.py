@@ -101,16 +101,18 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
     return "\n".join(sections)
 
 
-def build_system_message(
+def _assemble_system_prompt_parts(
     system_prompt: str,
     agent_config=None,
     path_context=None,
     arguments: list[str] | str = "",
     **kwargs,
-) -> SystemMessage:
-    """Build the system message for an agent, shared by run and chat modes."""
-    from agent_md.config.substitutions import apply_substitutions
+) -> tuple[str, str | None]:
+    """Build the generated ``extra_info`` prefix and resolve substitution cwd.
 
+    Substitutions are intentionally NOT applied here — callers apply them only
+    to ``system_prompt`` so memory/skill/agent descriptions cannot inject ``!`cmd``.
+    """
     now = datetime.now()
     extra_info = f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
 
@@ -129,18 +131,48 @@ def build_system_message(
         if agents_prompt:
             extra_info += "\n\n" + agents_prompt
 
-    full_prompt = f"{extra_info}\n\n{system_prompt}"
-
-    cwd = str(path_context.workspace_root) if path_context else None
-    full_prompt = apply_substitutions(full_prompt, arguments=arguments, cwd=cwd)
-
     if arguments and not re.search(r"\$(?:ARGUMENTS|\d)", system_prompt):
         logger.warning(
             "Arguments passed to agent '%s' but prompt contains no $ARGUMENTS or $0..$9 placeholders",
             agent_config.name if agent_config else "unknown",
         )
 
-    return SystemMessage(content=full_prompt)
+    cwd = str(path_context.workspace_root) if path_context else None
+    return extra_info, cwd
+
+
+def build_system_message(
+    system_prompt: str,
+    agent_config=None,
+    path_context=None,
+    arguments: list[str] | str = "",
+    **kwargs,
+) -> SystemMessage:
+    """Build the system message (sync). Prefer ``build_system_message_async`` in async paths."""
+    from agent_md.config.substitutions import apply_substitutions
+
+    extra_info, cwd = _assemble_system_prompt_parts(
+        system_prompt, agent_config, path_context, arguments=arguments, **kwargs
+    )
+    processed_prompt = apply_substitutions(system_prompt, arguments=arguments, cwd=cwd)
+    return SystemMessage(content=f"{extra_info}\n\n{processed_prompt}")
+
+
+async def build_system_message_async(
+    system_prompt: str,
+    agent_config=None,
+    path_context=None,
+    arguments: list[str] | str = "",
+    **kwargs,
+) -> SystemMessage:
+    """Async variant — shell substitutions run via ``asyncio.to_thread``."""
+    from agent_md.config.substitutions import apply_substitutions_async
+
+    extra_info, cwd = _assemble_system_prompt_parts(
+        system_prompt, agent_config, path_context, arguments=arguments, **kwargs
+    )
+    processed_prompt = await apply_substitutions_async(system_prompt, arguments=arguments, cwd=cwd)
+    return SystemMessage(content=f"{extra_info}\n\n{processed_prompt}")
 
 
 def _build_memory_prompt(agent_config, path_context) -> str:
@@ -260,7 +292,7 @@ def _build_meta_messages_prompt() -> str:
     )
 
 
-def _build_initial_state(
+async def _build_initial_state(
     system_prompt: str,
     agent_config=None,
     path_context=None,
@@ -270,7 +302,9 @@ def _build_initial_state(
     **kwargs,
 ) -> AgentState:
     """Build the initial state dict for graph execution."""
-    system_msg = build_system_message(system_prompt, agent_config, path_context, arguments=arguments, **kwargs)
+    system_msg = await build_system_message_async(
+        system_prompt, agent_config, path_context, arguments=arguments, **kwargs
+    )
     messages = [system_msg]
     if seed_messages:
         messages.extend(seed_messages)
@@ -299,7 +333,9 @@ async def run_agent_graph(
     Returns:
         The final state dict with all messages.
     """
-    initial_state = _build_initial_state(system_prompt, agent_config, path_context, user_input, arguments, **kwargs)
+    initial_state = await _build_initial_state(
+        system_prompt, agent_config, path_context, user_input, arguments, **kwargs
+    )
     return await graph.ainvoke(initial_state)
 
 
@@ -342,7 +378,7 @@ async def stream_agent_graph(
     Yields:
         Individual LangChain BaseMessage objects as they are emitted.
     """
-    initial_state = _build_initial_state(
+    initial_state = await _build_initial_state(
         system_prompt, agent_config, path_context, user_input, arguments, seed_messages=seed_messages, **kwargs
     )
     async for msg in _stream_state(graph, initial_state, config=config):

@@ -76,19 +76,38 @@ async def get_agent(name: str, request: Request):
 @router.post("/reload", response_model=ReloadResponse)
 async def reload_agents(request: Request):
     rt = request.app.state.runtime
-    from agent_md.workspace.parser import parse_agent_file
+    from agent_md.workspace.parser import is_agent_file, parse_agent_file
 
     agents_dir = rt.path_context.agents_dir
+    loaded_names: set[str] = set()
+    errors: list[str] = []
     count = 0
+
     for f in sorted(agents_dir.glob("*.md")):
+        if not is_agent_file(f):
+            continue
         try:
             config = parse_agent_file(f)
             rt.registry.register(config)
+            loaded_names.add(config.name)
             count += 1
-        except Exception:
-            pass
+            if rt.scheduler is not None:
+                rt.scheduler.unschedule_agent(config.name)
+                rt.scheduler.schedule_agent(config)
+                if config.trigger.type == "watch" and config.enabled:
+                    rt.scheduler._add_watch_handler(config)
+        except Exception as e:
+            errors.append(f"{f.name}: {e}")
 
-    return ReloadResponse(agents_loaded=count)
+    removed = 0
+    for existing in list(rt.registry.all()):
+        if existing.name not in loaded_names:
+            if rt.scheduler is not None:
+                rt.scheduler.unschedule_agent(existing.name)
+            rt.registry.remove(existing.name)
+            removed += 1
+
+    return ReloadResponse(agents_loaded=count, agents_removed=removed, errors=errors)
 
 
 @router.post("/{name}/run", response_model=RunResponse)
@@ -112,7 +131,9 @@ async def run_agent(name: str, request: Request, body: RunRequest | None = None)
 
     model_info = f"{config.model.provider}/{config.model.name}" if config.model else None
 
-    asyncio.create_task(_run_in_background(rt, config, execution_id, state, arguments, body.message, cancel_event))
+    from agent_md.util.tasks import spawn_background
+
+    spawn_background(_run_in_background(rt, config, execution_id, state, arguments, body.message, cancel_event))
     return RunResponse(execution_id=execution_id, model=model_info)
 
 

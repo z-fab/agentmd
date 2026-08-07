@@ -17,8 +17,8 @@ def create_chat_model(
     Args:
         provider: Provider identifier ('google', 'openai', 'anthropic', 'ollama', 'local').
         model: Model name (e.g. 'gemini-2.5-flash').
-        settings: Dict with temperature, max_tokens, etc.
-        base_url: Optional base URL for 'local' provider (default: Ollama at localhost:11434).
+        settings: Dict with temperature, max_tokens, timeout, etc.
+        base_url: Optional base URL for openai/ollama/local providers.
 
     Returns:
         A configured BaseChatModel instance.
@@ -29,6 +29,7 @@ def create_chat_model(
     """
     temperature = settings.get("temperature", 0.7)
     max_tokens = settings.get("max_tokens", 4096)
+    timeout = settings.get("timeout")
 
     match provider:
         case "google":
@@ -39,11 +40,14 @@ def create_chat_model(
                     "Provider 'google' requires langchain-google-genai. "
                     "Install with: pip install langchain-google-genai"
                 )
-            return ChatGoogleGenerativeAI(
-                model=model,
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-            )
+            kwargs: dict = {
+                "model": model,
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+            }
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            return ChatGoogleGenerativeAI(**kwargs)
 
         case "openai":
             try:
@@ -52,11 +56,16 @@ def create_chat_model(
                 raise ImportError(
                     "Provider 'openai' requires langchain-openai. Install with: pip install langchain-openai"
                 )
-            return ChatOpenAI(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if base_url:
+                kwargs["base_url"] = base_url
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            return ChatOpenAI(**kwargs)
 
         case "anthropic":
             try:
@@ -65,11 +74,16 @@ def create_chat_model(
                 raise ImportError(
                     "Provider 'anthropic' requires langchain-anthropic. Install with: pip install langchain-anthropic"
                 )
-            return ChatAnthropic(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            if base_url:
+                kwargs["base_url"] = base_url
+            return ChatAnthropic(**kwargs)
 
         case "ollama":
             try:
@@ -78,11 +92,16 @@ def create_chat_model(
                 raise ImportError(
                     "Provider 'ollama' requires langchain-ollama. Install with: pip install langchain-ollama"
                 )
-            return ChatOllama(
-                model=model,
-                temperature=temperature,
-                num_predict=max_tokens,
-            )
+            kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            }
+            if base_url:
+                kwargs["base_url"] = base_url
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            return ChatOllama(**kwargs)
 
         case "local":
             try:
@@ -91,13 +110,16 @@ def create_chat_model(
                 raise ImportError(
                     "Provider 'local' requires langchain-openai. Install with: pip install langchain-openai"
                 )
-            return ChatOpenAI(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                base_url=base_url or "http://localhost:11434/v1",
-                api_key="not-needed",
-            )
+            kwargs = {
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "base_url": base_url or "http://localhost:11434/v1",
+                "api_key": "not-needed",
+            }
+            if timeout is not None:
+                kwargs["timeout"] = timeout
+            return ChatOpenAI(**kwargs)
 
         case _:
             supported = ["google", "openai", "anthropic", "ollama", "local"]

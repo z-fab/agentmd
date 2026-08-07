@@ -324,6 +324,21 @@ def new(
         try:
             with console.status("  Generating agent..."):
                 content = _generate_agent_with_ai(agent_name, description, provider, model)
+            # Validate AI output before writing — fall back if the model produced junk.
+            from agent_md.workspace.parser import parse_agent_file
+            import tempfile
+
+            with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as tmp:
+                tmp.write(content + "\n")
+                tmp_path = Path(tmp.name)
+            try:
+                parse_agent_file(tmp_path)
+            except Exception as ve:
+                print_warning(f"AI output failed validation: {ve}")
+                console.print("  [dim]Falling back to interactive mode...[/dim]")
+                content = _ask_agent_details(agent_name)
+            finally:
+                tmp_path.unlink(missing_ok=True)
         except Exception as e:
             print_warning(f"AI generation failed: {e}")
             console.print("  [dim]Falling back to interactive mode...[/dim]")
@@ -384,24 +399,37 @@ def start(
     if not quiet and not internal_backend:
         console.print("[bold]Agentmd Backend[/bold]")
 
-    asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
+    from agent_md.cli.errors import BackendAlreadyRunning
+
+    try:
+        asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
+    except BackendAlreadyRunning as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1)
 
 
 async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     """Run the FastAPI backend with uvicorn."""
     import uvicorn
     from agent_md.api.app import create_app
-    from agent_md.cli.client import get_socket_path, get_state_dir
-
-    app = create_app(workspace=workspace, start_scheduler=True)
-    app.state.keep_alive = keep_alive
+    from agent_md.cli.client import BackendClient, get_socket_path, get_state_dir
+    from agent_md.cli.errors import BackendAlreadyRunning
+    from agent_md.util.tasks import spawn_background
 
     socket_path = get_socket_path()
     state_dir = get_state_dir()
     state_dir.mkdir(parents=True, exist_ok=True)
 
     if socket_path.exists():
+        # Never unlink a live backend's socket — that causes duplicate schedulers.
+        if BackendClient().health_check():
+            raise BackendAlreadyRunning(
+                "Backend is already running. Use 'agentmd stop' first, or connect with the CLI."
+            )
         socket_path.unlink()
+
+    app = create_app(workspace=workspace, start_scheduler=True)
+    app.state.keep_alive = keep_alive
 
     if api_key and port:
         from agent_md.api.auth import ApiKeyMiddleware
@@ -422,8 +450,8 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
         await app.state.shutdown_event.wait()
         server.should_exit = True
 
-    asyncio.create_task(_set_socket_perms())
-    asyncio.create_task(_watch_shutdown())
+    spawn_background(_set_socket_perms())
+    spawn_background(_watch_shutdown())
 
     if port:
         tcp_config = uvicorn.Config(app, host=host, port=port, log_level="warning" if quiet else "info")
@@ -435,7 +463,7 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
             await app.state.shutdown_event.wait()
             tcp_server.should_exit = True
 
-        asyncio.create_task(_watch_shutdown_tcp())
+        spawn_background(_watch_shutdown_tcp())
         await asyncio.gather(server.serve(), tcp_server.serve())
     else:
         await server.serve()
@@ -497,6 +525,7 @@ def run(
 
     answered: set = set()
     seen: set = set()
+    final_status: str | None = None
     try:
         while True:
             result = _stream_execution(client, execution_id, console, quiet, answered, seen)
@@ -516,10 +545,24 @@ def run(
                     answered.add(p.get("request_id"))
                     continue
                 break
+            if result:
+                final_status = result.get("status") or final_status
             break
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelling...[/yellow]")
         client.delete(f"/executions/{execution_id}")
+        raise typer.Exit(130)
+
+    # Propagate non-success terminal statuses as a non-zero exit code.
+    if final_status is None:
+        try:
+            detail = client.get(f"/executions/{execution_id}")
+            if detail.status_code == 200:
+                final_status = detail.json().get("status")
+        except Exception:
+            pass
+    if final_status and final_status not in ("success", "waiting", "running", "pending"):
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -581,8 +624,8 @@ def _stream_execution(
                     data = {"raw": data_buffer}
 
                 if event_type == "complete":
+                    status = data.get("status", "unknown")
                     if not quiet:
-                        status = data.get("status", "unknown")
                         error = data.get("error")
                         tokens = data.get("total_tokens")
                         cost = data.get("cost_usd")
@@ -605,7 +648,7 @@ def _stream_execution(
                         if cost:
                             parts.append(f"${cost:.4f}")
                         console.print(f"\n[dim]{'  |  '.join(parts)}[/dim]")
-                    break
+                    return {"status": status, **data}
                 elif event_type == "final_answer":
                     got_final_answer = True
                     already_seen = seen is not None and event_id is not None and event_id in seen
@@ -946,7 +989,7 @@ def logs(
 
     # Follow mode
     if follow:
-        _follow_logs(workspace)
+        _follow_logs(workspace, agent=agent)
         return
 
     # Execution detail mode
@@ -1056,8 +1099,11 @@ def _show_execution_detail(execution_id: int, workspace: Path | None, verbose: b
     console.print()
 
 
-def _follow_logs(workspace: Path | None) -> None:
-    """Tail the backend log file in real-time."""
+def _follow_logs(workspace: Path | None, agent: str | None = None) -> None:
+    """Tail the backend log file in real-time.
+
+    When *agent* is set, only lines that mention that agent name are shown.
+    """
     from agent_md.cli.client import BackendClient, get_log_path
 
     client = BackendClient()
@@ -1073,14 +1119,17 @@ def _follow_logs(workspace: Path | None) -> None:
 
     import time
 
-    console.print(f"  [dim]Following {log_file} (Ctrl+C to stop)[/dim]\n")
+    filter_hint = f" (filter: {agent})" if agent else ""
+    console.print(f"  [dim]Following {log_file}{filter_hint} (Ctrl+C to stop)[/dim]\n")
     try:
-        with open(log_file) as f:
+        with open(log_file, encoding="utf-8", errors="replace") as f:
             # Seek to end
             f.seek(0, 2)
             while True:
                 line = f.readline()
                 if line:
+                    if agent and agent not in line:
+                        continue
                     console.print(f"  {line.rstrip()}")
                 else:
                     time.sleep(0.2)
@@ -1203,6 +1252,9 @@ def validate(
             parts.append(f"{warn_count} warning{'s' if warn_count != 1 else ''}")
         console.print(f"  {', '.join(parts)}")
     console.print()
+
+    if errors:
+        raise typer.Exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -1361,16 +1413,23 @@ def checkpoint(
     purge: Annotated[bool, typer.Option("--purge")] = False,
     agent: Annotated[Optional[str], typer.Option("--agent")] = None,
     force: Annotated[bool, typer.Option("--force")] = False,
+    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
 ):
     """Inspect or purge the LangGraph checkpoint database."""
     import asyncio
     from rich.console import Console
     from agent_md.db.database import Database
-    from agent_md.config.settings import get_state_dir
+    from agent_md.config.settings import settings
+    from agent_md.cli.setup import _effective_db_paths
     from agent_md.execution import checkpoint_maint as cm
 
     console = Console()
-    db_path = get_state_dir() / "agentmd.db"
+    ws = (
+        Path(workspace).expanduser().resolve()
+        if workspace
+        else (Path(settings.workspace).expanduser().resolve() if settings.workspace else Path("./workspace").resolve())
+    )
+    db_path, _ = _effective_db_paths(settings.db_path, ws)
 
     async def _go():
         db = Database(db_path)

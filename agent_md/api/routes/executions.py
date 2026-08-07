@@ -258,4 +258,6 @@ async def _dispatch_resume(state, execution_id: int, response) -> None:
         finally:
             state.cancel_events.pop(execution_id, None)
 
-    asyncio.create_task(_bg())
+    from agent_md.util.tasks import spawn_background
+
+    spawn_background(_bg())

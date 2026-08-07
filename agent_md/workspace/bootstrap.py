@@ -151,8 +151,8 @@ async def bootstrap(
         skills_dir=skills_dir,
     )
 
-    # Ensure directories exist
-    for d in (workspace, agents_dir, db_path.parent, skills_dir):
+    # Ensure directories exist (including tools_dir and mcp_config parent)
+    for d in (workspace, agents_dir, db_path.parent, skills_dir, tools_dir, mcp_config.parent):
         if not d.exists():
             d.mkdir(parents=True)
             logger.info(f"Created directory: {d}")
@@ -177,8 +177,12 @@ async def bootstrap(
         except Exception as e:
             logger.warning(f"Checkpoint sweep skipped: {e}")
 
-    # Load MCP server configuration
-    mcp_servers = load_mcp_config(mcp_config)
+    # Load MCP server configuration — invalid JSON must not prevent startup
+    try:
+        mcp_servers = load_mcp_config(mcp_config)
+    except Exception as e:
+        logger.error(f"Failed to load MCP config from {mcp_config}: {e}. Continuing with no MCP servers.")
+        mcp_servers = {}
     mcp_manager = MCPManager(mcp_servers)
 
     # Create core components
@@ -190,10 +194,18 @@ async def bootstrap(
     md_files = sorted(f for f in agents_dir.glob("*.md") if is_agent_file(f))
     loaded = 0
     errors = 0
+    seen_names: dict[str, str] = {}
 
     for md_file in md_files:
         try:
             config = parse_agent_file(md_file)
+            if config.name in seen_names:
+                logger.warning(
+                    f"Duplicate agent name '{config.name}': "
+                    f"{md_file.name} overwrites {seen_names[config.name]}. "
+                    f"Rename one of the files (filename-as-id lands in 0.16)."
+                )
+            seen_names[config.name] = md_file.name
             registry.register(config)
             loaded += 1
         except Exception as e:

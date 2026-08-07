@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -26,6 +27,7 @@ class MCPManager:
         self._configs = server_configs
         self._clients: dict[str, MultiServerMCPClient] = {}
         self._tools_cache: dict[str, list] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -67,26 +69,36 @@ class MCPManager:
     # Internals
     # ------------------------------------------------------------------
 
+    def _lock_for(self, name: str) -> asyncio.Lock:
+        if name not in self._locks:
+            self._locks[name] = asyncio.Lock()
+        return self._locks[name]
+
     async def _connect(self, name: str) -> list:
-        """Connect to *name*, discover tools, and cache them."""
-        config = self._configs[name]
-        transport = config.get("transport", "?")
-        detail = config.get("command", config.get("url", ""))
-        logger.info(f"Connecting to MCP server '{name}' ({transport}: {detail})...")
+        """Connect to *name*, discover tools, and cache them (serialized per server)."""
+        async with self._lock_for(name):
+            # Another waiter may have connected while we acquired the lock.
+            if name in self._tools_cache:
+                return self._tools_cache[name]
 
-        # Suppress noisy JSONRPC parse errors from npx/uvx install output
-        stdio_logger = logging.getLogger("mcp.client.stdio")
-        original_level = stdio_logger.level
-        stdio_logger.setLevel(logging.CRITICAL)
+            config = self._configs[name]
+            transport = config.get("transport", "?")
+            detail = config.get("command", config.get("url", ""))
+            logger.info(f"Connecting to MCP server '{name}' ({transport}: {detail})...")
 
-        client = MultiServerMCPClient({name: config})
-        tools = await client.get_tools()
+            # Suppress noisy JSONRPC parse errors from npx/uvx install output
+            stdio_logger = logging.getLogger("mcp.client.stdio")
+            original_level = stdio_logger.level
+            stdio_logger.setLevel(logging.CRITICAL)
+            try:
+                client = MultiServerMCPClient({name: config})
+                tools = await client.get_tools()
+            finally:
+                stdio_logger.setLevel(original_level)
 
-        stdio_logger.setLevel(original_level)
+            self._clients[name] = client
+            self._tools_cache[name] = tools
 
-        self._clients[name] = client
-        self._tools_cache[name] = tools
-
-        tool_names = [t.name for t in tools]
-        logger.info(f"MCP '{name}' ready: {len(tools)} tool(s) ({', '.join(tool_names)})")
-        return tools
+            tool_names = [t.name for t in tools]
+            logger.info(f"MCP '{name}' ready: {len(tools)} tool(s) ({', '.join(tool_names)})")
+            return tools
