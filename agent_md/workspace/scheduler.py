@@ -308,11 +308,13 @@ class _AgentFileHandler(FileSystemEventHandler):
 
     def on_deleted(self, event):
         if not event.is_directory and is_agent_file(Path(event.src_path)):
+            existing = self.registry.get_by_path(event.src_path)
+            display_name = existing.name if existing else None
             agent_id = self.registry.remove_by_path(event.src_path)
             if agent_id:
                 self.scheduler.unschedule_agent(agent_id)
                 logger.info(f"Agent file deleted: {agent_id}")
-                self._publish_event("removed", agent_id)
+                self._publish_event("removed", agent_id, display_name)
 
     def on_moved(self, event):
         """Handle rename/move: drop the old id; reload only if dest stays in agents_dir."""
@@ -323,11 +325,13 @@ class _AgentFileHandler(FileSystemEventHandler):
         dest = Path(event.dest_path)
 
         if is_agent_file(src):
+            existing = self.registry.get_by_path(event.src_path)
+            display_name = existing.name if existing else None
             old_id = self.registry.remove_by_path(event.src_path)
             if old_id:
                 self.scheduler.unschedule_agent(old_id)
                 logger.info(f"Agent file moved away: {old_id}")
-                self._publish_event("removed", old_id)
+                self._publish_event("removed", old_id, display_name)
 
         if self._is_managed_agent_path(dest):
             self._reload(dest)

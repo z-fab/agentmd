@@ -5,7 +5,7 @@ import logging
 import sys
 import time
 
-from agent_md.execution.logger import ExecutionLogger, _extract_text
+from agent_md.execution.logger import ExecutionLogger, _extract_text, agent_identity_payload
 from agent_md.sdk import _set_context, _reset_context
 from agent_md.workspace.path_context import PathContext
 from agent_md.config.pricing import estimate_cost
@@ -85,17 +85,8 @@ def _classify_event_type(msg) -> str:
 
 
 def _agent_identity_fields(config: AgentConfig) -> dict:
-    """Canonical identity fields for public SSE / EventBus payloads.
-
-    ``agent_id`` is the filename stem. ``display_name`` is the presentation
-    label. ``agent_name`` mirrors ``agent_id`` for schema compatibility with
-    existing SSE clients until ticket 03 migrates them.
-    """
-    return {
-        "agent_id": config.id,
-        "display_name": config.name,
-        "agent_name": config.id,
-    }
+    """Canonical identity fields for public SSE / EventBus payloads."""
+    return agent_identity_payload(config.id, config.name)
 
 
 def _build_event_data(msg, event_type: str, agent: AgentConfig | str) -> dict:
@@ -105,7 +96,7 @@ def _build_event_data(msg, event_type: str, agent: AgentConfig | str) -> dict:
     """
     content = _extract_text(getattr(msg, "content", ""))[:500]
     if isinstance(agent, str):
-        identity = {"agent_id": agent, "display_name": agent, "agent_name": agent}
+        identity = agent_identity_payload(agent)
     else:
         identity = _agent_identity_fields(agent)
     data: dict = {"event_type": event_type, **identity}

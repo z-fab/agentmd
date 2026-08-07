@@ -18,8 +18,17 @@ from agent_md.api.schemas import (
     RespondRequest,
     RespondResponse,
 )
+from agent_md.execution.logger import agent_identity_payload
 
 router = APIRouter(prefix="/executions", tags=["executions"])
+
+
+def _execution_identity(execution, registry) -> dict:
+    """Identity for SSE replay: prefer durable log metadata; fall back here."""
+    agent_id = execution.agent_id
+    config = registry.get(agent_id) if registry is not None else None
+    display_name = config.name if config is not None else agent_id
+    return agent_identity_payload(agent_id, display_name)
 
 
 @router.get("", response_model=list[ExecutionSummary])
@@ -109,7 +118,8 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
     # Subscribe BEFORE replay to avoid missing live events
     queue = event_bus.subscribe(exec_id)
     try:
-        # Replay historical logs from DB
+        # Replay historical logs from DB — include the same identity fields live events carry.
+        identity = _execution_identity(e, request.app.state.runtime.registry)
         seen_seq = -1
         logs = await db.get_logs(exec_id, limit=10000)
         for log in logs:
@@ -118,10 +128,15 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 "event_type": log.event_type,
                 "message": log.message,
                 "timestamp": log.timestamp,
+                **identity,
             }
-            if log.event_type == "interrupt" and log.metadata:
+            if log.metadata:
                 try:
-                    payload.update(json.loads(log.metadata))
+                    meta = json.loads(log.metadata)
+                    payload.update(meta)
+                    # Keep fallback identity when older rows lack these keys.
+                    for key, value in identity.items():
+                        payload.setdefault(key, value)
                 except Exception:
                     pass
             yield ServerSentEvent(

@@ -34,6 +34,19 @@ def _extract_text(content) -> str:
     return str(content).strip() if content else ""
 
 
+def agent_identity_payload(agent_id: str, display_name: str | None = None) -> dict:
+    """Canonical identity fields for SSE / EventBus / log metadata.
+
+    ``agent_name`` mirrors ``agent_id`` for schema compatibility with existing clients.
+    """
+    label = display_name if display_name is not None else agent_id
+    return {
+        "agent_id": agent_id,
+        "display_name": label,
+        "agent_name": agent_id,
+    }
+
+
 class ExecutionLogger:
     """Processes LangChain messages and persists structured log entries."""
 
@@ -54,11 +67,7 @@ class ExecutionLogger:
         self.on_event = on_event
 
     def _identity_fields(self) -> dict:
-        return {
-            "agent_id": self.agent_id,
-            "display_name": self.display_name,
-            "agent_name": self.agent_id,
-        }
+        return agent_identity_payload(self.agent_id, self.display_name)
 
     def _emit(self, event_type: str, data: dict) -> None:
         """Fire the on_event callback if one is registered."""
@@ -144,7 +153,8 @@ class ExecutionLogger:
 
     async def log_event(self, event_type: str, message: str, metadata: dict | None = None) -> int:
         """Persist a synthetic event (e.g. HILT interrupt) and return its log id."""
-        return await self.db.add_log(self.execution_id, event_type, message, metadata)
+        merged = {**self._identity_fields(), **(metadata or {})}
+        return await self.db.add_log(self.execution_id, event_type, message, merged)
 
     async def _persist(self, event_type: str, message: str) -> int:
         """Write a log entry to the database. Returns the log entry ID."""
@@ -152,4 +162,5 @@ class ExecutionLogger:
             execution_id=self.execution_id,
             event_type=event_type,
             message=message,
+            metadata=self._identity_fields(),
         )

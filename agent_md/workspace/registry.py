@@ -51,6 +51,13 @@ class AgentRegistry:
         """Get an agent config by canonical id (filename stem)."""
         return self._agents.get(agent_id)
 
+    def get_by_path(self, path: str) -> Optional[AgentConfig]:
+        """Look up an agent config by its registered file path without removing it."""
+        agent_id = self._path_to_id.get(path)
+        if agent_id is None:
+            return None
+        return self._agents.get(agent_id)
+
     def remove(self, agent_id: str) -> bool:
         """Remove an agent from the registry. Returns True if it existed."""
         if agent_id in self._agents:
