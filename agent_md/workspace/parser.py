@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 
 from agent_md.config.env import resolve_env_vars
-from agent_md.config.models import AgentConfig, ModelConfig
+from agent_md.config.models import AgentConfig, ModelConfig, validate_agent_identity
 from agent_md.config.settings import settings
 
 
@@ -21,11 +21,14 @@ def parse_agent_file(path: Path) -> AgentConfig:
     The file must start with YAML frontmatter delimited by '---' lines,
     followed by the Markdown body which becomes the system prompt.
 
+    Canonical identity is the filename stem (``path.stem``). Frontmatter
+    must not declare ``id``; ``name`` is an optional display label.
+
     If the agent does not define a ``model`` section, the default provider
     and model from ``config.yaml`` are used.
 
     Raises:
-        ValueError: If the file format or frontmatter is invalid.
+        ValueError: If the file format, stem, or frontmatter is invalid.
         pydantic.ValidationError: If the frontmatter fields fail validation.
     """
     content = path.read_text(encoding="utf-8")
@@ -50,12 +53,24 @@ def parse_agent_file(path: Path) -> AgentConfig:
     if not isinstance(frontmatter, dict):
         raise ValueError(f"Frontmatter in {path.name} must be a YAML mapping, got {type(frontmatter).__name__}")
 
+    # Identity is the filename stem — never accepted from frontmatter.
+    if "id" in frontmatter:
+        raise ValueError(
+            f"Frontmatter in {path.name} must not declare 'id'; identity is the filename stem '{path.stem}'"
+        )
+
+    try:
+        agent_id = validate_agent_identity(path.stem, field="id")
+    except ValueError as e:
+        raise ValueError(f"Invalid agent filename stem in {path.name}: {e}") from e
+
     # Compute config hash for change detection
     config_hash = hashlib.sha256(frontmatter_raw.encode()).hexdigest()[:16]
 
-    # Validate with Pydantic
+    # Validate with Pydantic (name may be omitted → display defaults to id)
     config = AgentConfig(
         **frontmatter,
+        id=agent_id,
         system_prompt=body,
         file_path=str(path.resolve()),
         config_hash=config_hash,
