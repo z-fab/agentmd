@@ -155,8 +155,7 @@ def _plan_agent(
                             agent_id=stem,
                             level="error",
                             message=(
-                                f"memory collision: both {old_mem.name} and {new_mem.name} exist; "
-                                "refusing to overwrite"
+                                f"memory collision: both {old_mem.name} and {new_mem.name} exist; refusing to overwrite"
                             ),
                         )
                     )
