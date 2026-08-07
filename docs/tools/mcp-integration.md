@@ -19,7 +19,7 @@ Agentmd supports both **stdio** (local processes) and **HTTP** (remote servers) 
 
 ### 1. Create MCP Configuration File
 
-Create `mcp-servers.json` in your agents directory:
+Create `mcp-servers.json` under your agents configuration directory:
 
 ```json
 {
@@ -30,7 +30,7 @@ Create `mcp-servers.json` in your agents directory:
 }
 ```
 
-Default location: `workspace/agents/mcp-servers.json`
+Default location: `workspace/agents/_config/mcp-servers.json`
 
 ### 2. Declare MCP Server in Agent
 
@@ -70,14 +70,14 @@ The configuration file is a JSON object where each key is a server name and the 
 By default, Agentmd looks for:
 
 ```
-workspace/agents/mcp-servers.json
+workspace/agents/_config/mcp-servers.json
 ```
 
-Override with environment variable or CLI flag:
+Override the default path in `config.yaml`:
 
 ```bash
-export AGENTMD_MCP_CONFIG=/path/to/mcp-servers.json
-agentmd run agent --mcp-config /path/to/mcp-servers.json
+# ~/.config/agentmd/config.yaml
+mcp_config: /path/to/mcp-servers.json
 ```
 
 ### Configuration Schema

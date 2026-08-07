@@ -215,9 +215,9 @@ Start an interactive multi-turn chat session with an agent.
 
 ### Purpose
 
-Unlike `agentmd run` (one-shot), `agentmd chat` opens a REPL where you type messages and the agent responds in real-time. The agent retains full conversation context across turns — it remembers everything you've said during the session.
+Unlike `agentmd run` (one-shot), `agentmd chat` opens a REPL where you type messages and the agent responds in real-time. Each turn is a normal agent execution, and the CLI accumulates the displayed token, cost, and duration totals for the interactive session.
 
-One execution record is created for the entire chat session (trigger type `"chat"`), with token usage accumulated across all turns.
+When `history` is enabled, each new turn seeds its context from the most recent finished execution for that agent. This also means scheduled/manual runs of the same agent can contribute context; use `history: off` for isolated one-shot runs.
 
 ### Usage
 
@@ -286,11 +286,11 @@ Like `agentmd run`, a chat session also prompts inline for [Human-in-the-Loop](h
 
 ### Viewing Chat History
 
-Chat sessions appear in `agentmd logs` like any other execution:
+Chat turns appear in `agentmd logs` like any other execution:
 
 ```bash
-agentmd logs my-agent       # Shows chat sessions with trigger "chat"
-agentmd logs -e 42          # View full message history of a chat session
+agentmd logs my-agent       # Shows the individual turns
+agentmd logs -e 42          # View the full message history of one turn
 ```
 
 ---

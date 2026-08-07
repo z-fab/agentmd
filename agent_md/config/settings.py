@@ -155,26 +155,72 @@ class Settings(BaseSettings):
 
         # Flatten nested 'defaults' key
         defaults = raw.pop("defaults", {})
+        known_defaults = {
+            "provider": "defaults_provider",
+            "model": "defaults_model",
+            "max_tool_calls": "defaults_max_tool_calls",
+            "max_execution_tokens": "defaults_max_execution_tokens",
+            "max_cost_usd": "defaults_max_cost_usd",
+            "loop_detection": "defaults_loop_detection",
+            "temperature": "defaults_temperature",
+            "max_tokens": "defaults_max_tokens",
+            "timeout": "defaults_timeout",
+            "history": "defaults_history",
+            "confirm_tools": "defaults_confirm_tools",
+            "on_pending": "defaults_on_pending",
+            "confirm_timeout": "defaults_confirm_timeout",
+            "checkpoint_retention_days": "defaults_checkpoint_retention_days",
+            "max_agent_depth": "defaults_max_agent_depth",
+        }
         if isinstance(defaults, dict):
-            for key, flat_key in (
-                ("provider", "defaults_provider"),
-                ("model", "defaults_model"),
-                ("max_tool_calls", "defaults_max_tool_calls"),
-                ("max_execution_tokens", "defaults_max_execution_tokens"),
-                ("max_cost_usd", "defaults_max_cost_usd"),
-                ("loop_detection", "defaults_loop_detection"),
-                ("temperature", "defaults_temperature"),
-                ("max_tokens", "defaults_max_tokens"),
-                ("timeout", "defaults_timeout"),
-                ("history", "defaults_history"),
-                ("confirm_tools", "defaults_confirm_tools"),
-                ("on_pending", "defaults_on_pending"),
-                ("confirm_timeout", "defaults_confirm_timeout"),
-                ("checkpoint_retention_days", "defaults_checkpoint_retention_days"),
-                ("max_agent_depth", "defaults_max_agent_depth"),
-            ):
+            for key, flat_key in known_defaults.items():
                 if key in defaults:
                     raw.setdefault(flat_key, defaults[key])
+            unknown_default_keys = sorted(set(defaults) - set(known_defaults))
+            if unknown_default_keys:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Unknown key(s) under defaults in config.yaml: %s",
+                    ", ".join(unknown_default_keys),
+                )
+
+        known_top_level = {
+            "workspace",
+            "agents_dir",
+            "db_path",
+            "mcp_config",
+            "tools_dir",
+            "skills_dir",
+            "log_level",
+            "defaults",
+        } | set(known_defaults.values())
+        # Also accept the flattened defaults_* keys written above
+        known_top_level |= {
+            "defaults_provider",
+            "defaults_model",
+            "defaults_max_tool_calls",
+            "defaults_max_execution_tokens",
+            "defaults_max_cost_usd",
+            "defaults_loop_detection",
+            "defaults_temperature",
+            "defaults_max_tokens",
+            "defaults_timeout",
+            "defaults_history",
+            "defaults_confirm_tools",
+            "defaults_on_pending",
+            "defaults_confirm_timeout",
+            "defaults_checkpoint_retention_days",
+            "defaults_max_agent_depth",
+        }
+        unknown_top = sorted(k for k in raw if k not in known_top_level)
+        if unknown_top:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Unknown key(s) in config.yaml: %s",
+                ", ".join(unknown_top),
+            )
 
         # YAML values are low priority — only fill in what's missing
         for k, v in raw.items():

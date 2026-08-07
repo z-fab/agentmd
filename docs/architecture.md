@@ -38,10 +38,10 @@ Execution Logger (SQLite + Console)
 
 ## Key Components
 
-### 1. Parser (`agent_md/core/parser.py`)
+### 1. Parser (`agent_md/workspace/parser.py`)
 Extracts YAML frontmatter (config) and Markdown body (system prompt) from `.md` files. Validates config against Pydantic models. Computes config hash for change detection (hot-reload).
 
-### 2. AgentConfig (`agent_md/core/models.py`)
+### 2. AgentConfig (`agent_md/config/models.py`)
 Pydantic models validating:
 - **AgentConfig** — Top-level agent configuration
 - **ModelConfig** — LLM provider settings (model name, API key, temperature, etc.)
@@ -99,13 +99,13 @@ Meta messages are `HumanMessage` instances with `additional_kwargs` containing a
 
 Smart history trimming compacts `skill-context` messages into `skill-breadcrumb` summaries and truncates large tool results before applying count-based trimming. This keeps conversation history lean across runs.
 
-### 6. Scheduler (`agent_md/core/scheduler.py`)
+### 6. Scheduler (`agent_md/workspace/scheduler.py`)
 APScheduler-based task scheduling:
 - **Manual** — Triggered via CLI: `agentmd run <agent>`
 - **Schedule** — Cron or interval-based: `every: 30m`, `cron: "0 9 * * *"`
 - **Watch** — File system events: monitors paths and triggers on file changes
 
-### 7. Execution Logger (`agent_md/core/logger.py`)
+### 7. Execution Logger (`agent_md/execution/logger.py`)
 SQLite-backed persistence recording:
 - Execution metadata (status, duration, timestamps)
 - All messages (system, human, AI, tool calls, tool results)
@@ -153,7 +153,10 @@ SQLite-backed persistence recording:
 
 ```
 agent_md/
-  core/       → Runner, parser, models, settings, scheduler
+  config/     → Pydantic models, settings, pricing
+  execution/  → Runner, logging, lifecycle, checkpoint maintenance
+  workspace/  → Parser, registry, bootstrap, scheduler
+  db/         → SQLite schema and queries
   providers/  → LLM provider factory
   graph/      → LangGraph ReAct agent
   tools/      → Built-in tools (file I/O, HTTP)
@@ -177,11 +180,11 @@ workspace/   → User agent .md files
 | File | Purpose |
 |------|---------|
 | `agent_md/providers/factory.py` | LLM instance creation (factory pattern) |
-| `agent_md/core/runner.py` | Execution orchestration (full lifecycle) |
-| `agent_md/core/models.py` | Pydantic config models |
-| `agent_md/core/parser.py` | Parse `.md` files (frontmatter + body) |
-| `agent_md/core/settings.py` | Environment variable loading |
-| `agent_md/graph/create_react_graph.py` | Build LangGraph ReAct agent |
+| `agent_md/execution/runner.py` | Execution orchestration (full lifecycle) |
+| `agent_md/config/models.py` | Pydantic config models |
+| `agent_md/workspace/parser.py` | Parse `.md` files (frontmatter + body) |
+| `agent_md/config/settings.py` | Environment variable loading |
+| `agent_md/graph/builder.py` | Build LangGraph ReAct agent |
 | `agent_md/skills/tools.py` | Skill tools (use, read, run) |
 | `agent_md/skills/parser.py` | Parse SKILL.md files (two-tier loading) |
 
@@ -189,7 +192,7 @@ workspace/   → User agent .md files
 
 - **Adding a new provider?** → Extend `create_chat_model()` in `agent_md/providers/factory.py`
 - **Adding a new built-in tool?** → Register in `agent_md/tools/registry.py`
-- **Modifying config?** → Update Pydantic models in `agent_md/core/models.py`
-- **Changing execution flow?** → Edit `agent_md/core/runner.py` or `agent_md/graph/`
-- **Adding a new skill?** → Create a directory in `workspace/agents/skills/` with a `SKILL.md` file
+- **Modifying config?** → Update Pydantic models in `agent_md/config/models.py`
+- **Changing execution flow?** → Edit `agent_md/execution/runner.py` or `agent_md/graph/`
+- **Adding a new skill?** → Create a directory in `workspace/agents/_config/skills/` with a `SKILL.md` file
 - **Debugging?** → Enable debug logs and check `agentmd logs <agent>`

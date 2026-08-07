@@ -109,6 +109,8 @@ class SchedulerStatus(BaseModel):
 
 class ReloadResponse(BaseModel):
     agents_loaded: int
+    agents_removed: int = 0
+    errors: list[str] = []
 
 
 class CancelResponse(BaseModel):

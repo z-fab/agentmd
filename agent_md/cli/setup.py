@@ -128,8 +128,9 @@ def _effective_db_paths(db_path_setting: str, workspace: Path) -> tuple[Path, Pa
         db_path = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
     else:
         db_path = (get_state_dir() / "agentmd.db").resolve()
-    checkpoints_path = Path(str(db_path).replace(".db", "_checkpoints.db"))
-    return db_path, checkpoints_path
+    from agent_md.execution.checkpoint_maint import checkpoint_db_path
+
+    return db_path, checkpoint_db_path(db_path)
 
 
 def _build_config_panel():

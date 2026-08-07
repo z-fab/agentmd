@@ -210,10 +210,39 @@ class AgentRunner:
         n = int(m.group(1))
         return n * {"s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)]
 
-    async def _enter_waiting(self, execution_id, config, request: dict, event_bus, ex_logger, global_event_bus=None):
-        """Persist the pending request, mark execution waiting, emit the interrupt event."""
+    async def _enter_waiting(
+        self,
+        execution_id,
+        config,
+        request: dict,
+        event_bus,
+        ex_logger,
+        global_event_bus=None,
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        child_tokens: int = 0,
+        cost_usd: float | None = None,
+    ):
+        """Persist the pending request, mark execution waiting, emit the interrupt event.
+
+        Parent-model tokens go in ``input_tokens``/``output_tokens``; sub-agent
+        tokens are folded only into ``total_tokens`` so resume can reprice the
+        parent without discarding real child costs stored in ``cost_usd``.
+        ``finished_at`` is intentionally not set (non-terminal status).
+        """
         await self.db.set_pending_interrupt(execution_id, request["request_id"], request)
-        await self.db.update_execution(execution_id=execution_id, status="waiting")
+        total = None
+        if input_tokens is not None or output_tokens is not None or child_tokens:
+            total = (input_tokens or 0) + (output_tokens or 0) + child_tokens
+        await self.db.update_execution(
+            execution_id=execution_id,
+            status="waiting",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total,
+            cost_usd=cost_usd,
+        )
         log_id = await ex_logger.log_event("interrupt", request.get("message", ""), metadata=request)
         if event_bus is not None:
             await event_bus.publish(
@@ -342,7 +371,9 @@ class AgentRunner:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-            checkpoint_db = str(self.db_path).replace(".db", "_checkpoints.db")
+            from agent_md.execution.checkpoint_maint import checkpoint_db_path
+
+            checkpoint_db = str(checkpoint_db_path(self.db_path))
             checkpoint_conn = await aiosqlite.connect(checkpoint_db)
             checkpointer = AsyncSqliteSaver(checkpoint_conn)
             await checkpointer.setup()
@@ -446,13 +477,18 @@ class AgentRunner:
 
         start_time = time.monotonic()
 
-        # Token accumulators
+        # Token accumulators (parent model + folded sub-agent usage)
         total_input_tokens = 0
         total_output_tokens = 0
+        child_input_tokens = 0
+        child_output_tokens = 0
         tool_call_count = 0
         cost_usd: float | None = None
+        child_cost_usd = 0.0
         _pricing_warned = False
         last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
+        # Mutable bag filled by run_agent tool so child usage counts toward parent limits.
+        sub_agent_usage: dict = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
         sdk_token = _set_context(config, self.path_context)
         checkpoint_conn = None
@@ -468,6 +504,8 @@ class AgentRunner:
                     parent_execution_id=execution_id,
                     event_bus=event_bus,
                     global_event_bus=global_event_bus,
+                    cancel_event=cancel_event,
+                    sub_agent_usage=sub_agent_usage,
                 )
                 history_seed = await self._load_history_seed(graph, config, execution_id)
 
@@ -477,9 +515,9 @@ class AgentRunner:
                     user_input = user_message
 
                 # 3b. Log the constructed system prompt and user input
-                from agent_md.graph.builder import build_system_message
+                from agent_md.graph.builder import build_system_message_async
 
-                sys_msg = build_system_message(
+                sys_msg = await build_system_message_async(
                     config.system_prompt,
                     config,
                     self.path_context,
@@ -506,8 +544,11 @@ class AgentRunner:
                         last_ai_msg, \
                         total_input_tokens, \
                         total_output_tokens, \
+                        child_input_tokens, \
+                        child_output_tokens, \
                         tool_call_count, \
                         cost_usd, \
+                        child_cost_usd, \
                         _pricing_warned, \
                         last_errors
                     async for msg in stream_agent_graph(
@@ -540,25 +581,40 @@ class AgentRunner:
                             total_input_tokens += usage.get("input_tokens", 0)
                             total_output_tokens += usage.get("output_tokens", 0)
 
+                        # Fold in sub-agent usage reported by run_agent tool
+                        if sub_agent_usage["input_tokens"] or sub_agent_usage["output_tokens"]:
+                            child_input_tokens += sub_agent_usage["input_tokens"]
+                            child_output_tokens += sub_agent_usage["output_tokens"]
+                            sub_agent_usage["input_tokens"] = 0
+                            sub_agent_usage["output_tokens"] = 0
+                        if sub_agent_usage["cost_usd"]:
+                            child_cost_usd += sub_agent_usage["cost_usd"]
+                            sub_agent_usage["cost_usd"] = 0.0
+
                         # Count tool calls
                         if getattr(msg, "type", "") == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
                             tool_call_count += len(msg.tool_calls)
 
-                        # Estimate running cost
-                        if usage:
-                            cost_usd = estimate_cost(
-                                config.model.provider,
-                                config.model.name,
-                                total_input_tokens,
-                                total_output_tokens,
-                            )
+                        # Estimate running cost (parent model only) + child costs as reported
+                        parent_cost = estimate_cost(
+                            config.model.provider,
+                            config.model.name,
+                            total_input_tokens,
+                            total_output_tokens,
+                        )
+                        if parent_cost is not None or child_cost_usd:
+                            cost_usd = (parent_cost or 0.0) + child_cost_usd
+
+                        combined_tokens = (
+                            total_input_tokens + total_output_tokens + child_input_tokens + child_output_tokens
+                        )
 
                         # Warn once if cost limit is set but pricing is unknown
                         if (
                             not _pricing_warned
                             and config.settings.max_cost_usd is not None
                             and cost_usd is None
-                            and (total_input_tokens + total_output_tokens) > 0
+                            and combined_tokens > 0
                         ):
                             logger.warning(
                                 f"max_cost_usd configured but no pricing data for "
@@ -566,9 +622,7 @@ class AgentRunner:
                             )
                             _pricing_warned = True
 
-                        _check_limits(
-                            config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd
-                        )
+                        _check_limits(config.settings, tool_call_count, combined_tokens, cost_usd)
 
                         # Loop detection: same tool error 3 consecutive times
                         if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
@@ -608,20 +662,20 @@ class AgentRunner:
                             },
                         )
 
-                # 6. Persist success
+                # 6. Persist success (include folded sub-agent tokens)
                 result = await self._finish_execution(
                     execution_id,
                     "success",
                     duration_ms,
-                    total_input_tokens,
-                    total_output_tokens,
+                    total_input_tokens + child_input_tokens,
+                    total_output_tokens + child_output_tokens,
                     output_data=output[:10000],
                     cost_usd=cost_usd,
                 )
                 result["output"] = output
                 logger.info(
                     f"Execution complete: {config.name} — success in {duration_ms}ms "
-                    f"(tokens: {total_input_tokens} in / {total_output_tokens} out / {result['total_tokens']} total)"
+                    f"(tokens: {result['input_tokens']} in / {result['output_tokens']} out / {result['total_tokens']} total)"
                 )
                 await self._publish_complete(execution_id, result, event_bus, global_event_bus, config)
                 if on_complete is not None:
@@ -630,7 +684,16 @@ class AgentRunner:
 
             except GraphPaused as paused:
                 await self._enter_waiting(
-                    execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus
+                    execution_id,
+                    config,
+                    paused.request,
+                    event_bus,
+                    ex_logger,
+                    global_event_bus=global_event_bus,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    child_tokens=child_input_tokens + child_output_tokens,
+                    cost_usd=cost_usd,
                 )
                 if global_event_bus is not None:
                     await global_event_bus.publish(
@@ -650,8 +713,8 @@ class AgentRunner:
                     execution_id,
                     "timeout",
                     duration_ms,
-                    total_input_tokens,
-                    total_output_tokens,
+                    total_input_tokens + child_input_tokens,
+                    total_output_tokens + child_output_tokens,
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
@@ -668,8 +731,8 @@ class AgentRunner:
                     execution_id,
                     "aborted",
                     duration_ms,
-                    total_input_tokens,
-                    total_output_tokens,
+                    total_input_tokens + child_input_tokens,
+                    total_output_tokens + child_output_tokens,
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
@@ -686,8 +749,8 @@ class AgentRunner:
                     execution_id,
                     "error",
                     duration_ms,
-                    total_input_tokens,
-                    total_output_tokens,
+                    total_input_tokens + child_input_tokens,
+                    total_output_tokens + child_output_tokens,
                     error=error_msg,
                     cost_usd=cost_usd,
                 )
@@ -735,9 +798,30 @@ class AgentRunner:
                 }
             )
 
+        # Seed counters from the pre-pause record so limits/cost survive HILT.
+        # input/output columns are parent-model only; child tokens live in
+        # total_tokens - (input + output); cost_usd is the true combined figure.
+        prior = await self.db.get_execution(execution_id)
+        base_input = int(prior.input_tokens or 0) if prior else 0
+        base_output = int(prior.output_tokens or 0) if prior else 0
+        base_cost = float(prior.cost_usd) if prior and prior.cost_usd is not None else None
+        prior_total = int(prior.total_tokens or 0) if prior else 0
+        sunk_child_tokens = max(0, prior_total - base_input - base_output)
+        base_parent_est = estimate_cost(config.model.provider, config.model.name, base_input, base_output)
+        sunk_child_cost = 0.0
+        if base_cost is not None:
+            sunk_child_cost = max(0.0, base_cost - (base_parent_est or 0.0))
+        base_tool_calls = await self.db.count_logs(execution_id, event_type="tool_call")
+
         start_time = time.monotonic()
-        total_input_tokens = total_output_tokens = tool_call_count = 0
-        cost_usd = None
+        total_input_tokens = base_input
+        total_output_tokens = base_output
+        tool_call_count = base_tool_calls
+        cost_usd = base_cost
+        child_input_tokens = sunk_child_tokens
+        child_output_tokens = 0
+        child_cost_usd = 0.0  # only NEW child costs this segment; sunk_child_cost is separate
+        sub_agent_usage: dict = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
         last_ai_msg = None
         last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
         graph_config = {"configurable": {"thread_id": str(execution_id)}}
@@ -759,10 +843,21 @@ class AgentRunner:
                 parent_execution_id=execution_id,
                 event_bus=event_bus,
                 global_event_bus=global_event_bus,
+                cancel_event=cancel_event,
+                sub_agent_usage=sub_agent_usage,
             )
 
             async def _drive():
-                nonlocal last_ai_msg, total_input_tokens, total_output_tokens, tool_call_count, cost_usd, last_errors
+                nonlocal \
+                    last_ai_msg, \
+                    total_input_tokens, \
+                    total_output_tokens, \
+                    child_input_tokens, \
+                    child_output_tokens, \
+                    tool_call_count, \
+                    cost_usd, \
+                    child_cost_usd, \
+                    last_errors
                 async for msg in _stream_state(graph, Command(resume=response), config=graph_config):
                     log_id = await ex_logger.log_message(msg)
                     if event_bus is not None:
@@ -776,13 +871,28 @@ class AgentRunner:
                     if usage:
                         total_input_tokens += usage.get("input_tokens", 0)
                         total_output_tokens += usage.get("output_tokens", 0)
-                        cost_usd = estimate_cost(
-                            config.model.provider, config.model.name, total_input_tokens, total_output_tokens
-                        )
+                    if sub_agent_usage["input_tokens"] or sub_agent_usage["output_tokens"]:
+                        child_input_tokens += sub_agent_usage["input_tokens"]
+                        child_output_tokens += sub_agent_usage["output_tokens"]
+                        sub_agent_usage["input_tokens"] = 0
+                        sub_agent_usage["output_tokens"] = 0
+                    if sub_agent_usage["cost_usd"]:
+                        child_cost_usd += sub_agent_usage["cost_usd"]
+                        sub_agent_usage["cost_usd"] = 0.0
+                    parent_cost = estimate_cost(
+                        config.model.provider, config.model.name, total_input_tokens, total_output_tokens
+                    )
+                    if parent_cost is not None or sunk_child_cost or child_cost_usd or base_cost is not None:
+                        # Parent tokens priced at parent rate; sunk + new child costs kept as-reported.
+                        if parent_cost is not None:
+                            cost_usd = parent_cost + sunk_child_cost + child_cost_usd
+                        else:
+                            cost_usd = (base_cost or 0.0) + child_cost_usd
                     if getattr(msg, "type", "") == "ai" and getattr(msg, "tool_calls", None):
                         tool_call_count += len(msg.tool_calls)
 
-                    _check_limits(config.settings, tool_call_count, total_input_tokens + total_output_tokens, cost_usd)
+                    combined = total_input_tokens + total_output_tokens + child_input_tokens + child_output_tokens
+                    _check_limits(config.settings, tool_call_count, combined, cost_usd)
 
                     # Loop detection: same tool error 3 consecutive times (parity with run())
                     if config.settings.loop_detection and getattr(msg, "type", "") == "tool":
@@ -806,7 +916,16 @@ class AgentRunner:
                 await asyncio.wait_for(_drive(), timeout=config.settings.timeout)
             except GraphPaused as paused:
                 await self._enter_waiting(
-                    execution_id, config, paused.request, event_bus, ex_logger, global_event_bus=global_event_bus
+                    execution_id,
+                    config,
+                    paused.request,
+                    event_bus,
+                    ex_logger,
+                    global_event_bus=global_event_bus,
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    child_tokens=child_input_tokens + child_output_tokens,
+                    cost_usd=cost_usd,
                 )
                 return {"status": "waiting", "execution_id": execution_id, "request": paused.request}
 
@@ -825,8 +944,8 @@ class AgentRunner:
                 execution_id,
                 "success",
                 duration_ms,
-                total_input_tokens,
-                total_output_tokens,
+                total_input_tokens + child_input_tokens,
+                total_output_tokens + child_output_tokens,
                 output_data=output[:10000],
                 cost_usd=cost_usd,
             )
@@ -839,8 +958,8 @@ class AgentRunner:
                 execution_id,
                 "aborted",
                 duration_ms,
-                total_input_tokens,
-                total_output_tokens,
+                total_input_tokens + child_input_tokens,
+                total_output_tokens + child_output_tokens,
                 error=f"Aborted: {e.reason}",
                 cost_usd=cost_usd,
             )
@@ -854,8 +973,8 @@ class AgentRunner:
                 execution_id,
                 "error",
                 duration_ms,
-                total_input_tokens,
-                total_output_tokens,
+                total_input_tokens + child_input_tokens,
+                total_output_tokens + child_output_tokens,
                 error=error_msg,
                 cost_usd=cost_usd,
             )

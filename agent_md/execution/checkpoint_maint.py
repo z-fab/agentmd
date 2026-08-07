@@ -15,7 +15,13 @@ _CHECKPOINT_TABLES = ("checkpoints", "checkpoint_writes", "checkpoint_blobs")
 
 
 def checkpoint_db_path(db_path: str | Path) -> Path:
-    return Path(str(db_path).replace(".db", "_checkpoints.db"))
+    """Return the checkpoints DB path beside the execution DB.
+
+    Uses ``stem + "_checkpoints.db"`` so paths that do not end in ``.db``
+    (or contain ``.db`` mid-name) never collide with the main database file.
+    """
+    p = Path(db_path)
+    return p.with_name(f"{p.stem}_checkpoints.db")
 
 
 async def _delete_threads(cp_path: Path, thread_ids: list[str]) -> int:

@@ -25,9 +25,18 @@ class AgentRegistry:
 
         # Clean up old path mapping if file_path changed
         if existed:
-            old_path = self._agents[config.name].file_path
+            from pathlib import Path
+
+            old = self._agents[config.name]
+            old_path = old.file_path
             if old_path and old_path != config.file_path:
                 self._path_to_name.pop(old_path, None)
+                # Warn only when both files still exist (true duplicate), not a rename.
+                if Path(old_path).exists() and config.file_path and Path(config.file_path).exists():
+                    logger.warning(
+                        f"Agent name '{config.name}' is shared by multiple files; "
+                        f"registering {config.file_path} overwrites {old_path}"
+                    )
 
         self._agents[config.name] = config
         if config.file_path:

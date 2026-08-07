@@ -157,8 +157,10 @@ class ModelConfig(BaseModel):
         # Accept both 'url' and 'base_url', prefer base_url
         resolved = self.base_url or self.url
         if resolved:
-            # Auto-append /v1 if not present
-            if not resolved.rstrip("/").endswith("/v1"):
+            resolved = resolved.rstrip("/")
+            # OpenAI-compatible endpoints use the /v1 API prefix. Native
+            # Ollama and Anthropic endpoints do not, so preserve their URL.
+            if self.provider in ("openai", "local") and not resolved.endswith("/v1"):
                 resolved = resolved.rstrip("/") + "/v1"
             self.base_url = resolved
         self.url = None  # clear alias after normalization

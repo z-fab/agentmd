@@ -3,6 +3,30 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.15.3] — 2026-08-07
+
+### Fixed
+- **HILT pause no longer wipes execution metrics** — `update_execution` only writes fields that were passed, and sets `finished_at` only for terminal statuses. Resume reloads prior tokens/cost/tool-call counts so limits cannot be bypassed by pause/resume.
+- **Fresh-install readonly DB** — `agentmd list` / `logs` no longer crash when the SQLite file does not exist yet; schema is created on first readonly open.
+- **Schema migration for `pid` / `cost_usd`** — older databases gain missing columns via a generalized column migration loop.
+- **Checkpoint DB path** — derived with `Path.stem + "_checkpoints.db"` so non-`.db` paths never collide with the main database.
+- **Execution log ordering** — logs are ordered by insertion `id` (not 1s-resolution timestamps); default fetch limit raised for `logs -e`.
+- **Command injection via memory/skills in the system prompt** — `!`cmd`` substitutions apply only to the agent file's system prompt, never to generated memory headers or skill descriptions.
+- **`!`cmd`` no longer blocks the event loop** — shell substitutions run via `asyncio.to_thread`.
+- **`agentmd start` refuses to steal a live socket** — health-checks before unlinking; aborts if a backend is already running.
+- **Sub-agent cancel + limits** — `run_agent` propagates `cancel_event` and folds child tokens/cost into the parent's accumulators.
+- **CLI exit codes** — `agentmd validate` exits 1 on errors; `agentmd run` exits 1 on failed terminal status.
+- **Invalid `mcp-servers.json` no longer prevents startup** — logged and treated as empty.
+- **`agentmd validate` resolves tools/MCP under `agents/_config/`** (same as bootstrap).
+- **`POST /agents/reload`** — skips memory files, reschedules, removes deleted agents, reports errors. Agents whose `.md` fails to parse are also removed from the registry until a later successful reload (mid-edit saves can temporarily disappear).
+- **Custom provider `base_url` honored** for OpenAI, Ollama, Anthropic, and Local. Native Ollama and Anthropic endpoints retain their URL rather than receiving an OpenAI `/v1` suffix.
+- **MCP connect race** — per-server lock; stdio logger level always restored.
+- **Duplicate agent `name:`** — warning on load/register (filename-as-id lands in 0.16).
+- **Removed dead `chat_session()`** (always marked success on exception).
+- **`agentmd checkpoint` uses config `db_path`** (no phantom state-dir DB).
+- **Background `create_task` refs retained** so tasks are not GC'd mid-flight.
+- **`skill_run_script` uses `sys.executable`**; bootstrap creates `tools_dir` + mcp config parent; `logs --follow` respects agent filter + utf-8; `agentmd new` validates AI output before write; unknown `config.yaml` keys warn; SQLite `synchronous=NORMAL`; custom tools cached by `(path, mtime)`; shutdown uses `get_running_loop()`; backend log fd closed in parent + size-based rotation.
+
 ## [0.15.2] — 2026-06-05
 
 ### Fixed

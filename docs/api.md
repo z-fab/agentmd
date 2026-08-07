@@ -40,7 +40,7 @@ curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
 {"args": ["arg1"], "message": "optional user message"}
 ```
 
-When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message. The checkpointer handles conversation continuity.
+When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message. With `history` enabled, the runner seeds the next execution from the most recent finished execution for that agent.
 
 ### Executions
 
@@ -58,7 +58,7 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 |-------|------|-------------|
 | `id` | int | Execution ID |
 | `agent_id` | string | Agent name |
-| `status` | string | `running`, `success`, `error`, `cancelled` |
+| `status` | string | `running`, `waiting`, `success`, `error`, `aborted`, `timeout`, `orphaned` |
 | `trigger` | string | `manual`, `schedule`, `watch`, `agent` |
 | `parent_execution_id` | int \| null | Parent execution ID when triggered by `run_agent` |
 | `started_at` | string | ISO 8601 timestamp |

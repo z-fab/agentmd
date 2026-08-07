@@ -74,6 +74,8 @@ def resolve_builtin_tools(agent_config=None, path_context=None, confirm_tools=No
                     parent_execution_id=kwargs.get("parent_execution_id"),
                     event_bus=kwargs.get("event_bus"),
                     global_event_bus=kwargs.get("global_event_bus"),
+                    cancel_event=kwargs.get("cancel_event"),
+                    sub_agent_usage=kwargs.get("sub_agent_usage"),
                 )
             )
 

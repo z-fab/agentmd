@@ -33,9 +33,9 @@ history: medium
 
 ### How It Works
 
-- **All messages are saved** to a SQLite checkpoint database (`data/agentmd_checkpoints.db`)
+- **All messages are saved** to a SQLite checkpoint database alongside the configured execution DB (for example, `agentmd_checkpoints.db`)
 - **Only the last N messages** are sent to the LLM (controlled by the history level), keeping costs and context window manageable
-- **Thread ID = agent name** — all executions of the same agent share the same conversation thread
+- **One checkpoint thread per execution** — a new run seeds itself from the most recent finished execution of the same agent
 - **System message is always fresh** — date/time and memory sections are rebuilt on each run
 
 ### History in `run` Mode
@@ -100,7 +100,7 @@ agentmd chat project-assistant
 
 ### Disabling History
 
-To make an agent fully stateless (no checkpointing), set `history: off`:
+To make an agent skip history seeding, set `history: off`. Checkpoints remain enabled because they provide durable Human-in-the-Loop resume:
 
 ```yaml
 ---

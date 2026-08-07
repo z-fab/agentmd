@@ -52,7 +52,9 @@ def create_skill_run_script_tool(agent_config, skills_dir: Path):
         # Build command based on file extension
         ext = script_path.suffix.lower()
         if ext == ".py":
-            cmd = ["python", str(script_path)]
+            import sys
+
+            cmd = [sys.executable, str(script_path)]
         elif ext in (".sh", ".bash"):
             cmd = ["bash", str(script_path)]
         elif ext == ".js":

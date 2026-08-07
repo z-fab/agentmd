@@ -133,7 +133,8 @@ Base URL for API endpoint. Only needed for custom or local LLM endpoints.
 
 - For `local` provider: Required
 - For others: Optional (uses provider default)
-- System auto-appends `/v1` if missing
+- For OpenAI-compatible `openai` and `local` endpoints, the system appends `/v1` if missing
+- For native `ollama` and `anthropic` endpoints, the URL is used unchanged
 
 ```yaml
 model:
@@ -805,8 +806,8 @@ The system validates agent configuration during startup and before execution:
 
 ### Custom Tools & MCP
 - Must be non-empty arrays of strings
-- Tool modules must be importable from `workspace/tools/`
-- MCP servers must be defined in `mcp-servers.json`
+- Tool modules must be importable from `{agents_dir}/_config/tools/`
+- MCP servers must be defined in `{agents_dir}/_config/mcp-servers.json` (unless overridden in `config.yaml`)
 
 ## Configuration Inheritance & Defaults
 
