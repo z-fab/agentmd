@@ -307,6 +307,7 @@ class AgentRunner:
                         "total_tokens": result.get("total_tokens"),
                         "cost_usd": result.get("cost_usd"),
                         "error": result.get("error"),
+                        **_agent_identity_fields(config),
                     },
                 },
             )

@@ -382,6 +382,7 @@ def _resume_config(*, max_cost_usd=None, max_tool_calls=50, max_execution_tokens
     from agent_md.config.pricing import estimate_cost
 
     config = MagicMock()
+    config.id = "test-agent"
     config.name = "test-agent"
     config.model.provider = "openai"
     config.model.name = "gpt-4o"

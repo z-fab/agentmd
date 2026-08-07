@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -220,3 +221,85 @@ def test_get_by_path_returns_config_before_remove():
     assert peeked.name == "Cool Agent"
     assert reg.remove_by_path("/workspace/agents/cool.md") == "cool"
     assert reg.get_by_path("/workspace/agents/cool.md") is None
+
+
+@pytest.mark.asyncio
+async def test_live_complete_event_bus_carries_identity(app_client):
+    """Live per-execution complete payload includes identity (display_name != id)."""
+    app, _client = app_client
+    db = app.state.db
+    bus = app.state.event_bus
+    eid = await db.create_execution("pesquisador", "manual", status="running")
+    config = app.state.runtime.registry.get("pesquisador")
+    assert config is not None
+    assert config.name == "Research Bot"
+    assert config.name != config.id
+
+    queue = bus.subscribe(eid)
+    try:
+        await app.state.runtime.runner._publish_complete(
+            eid,
+            {
+                "status": "success",
+                "duration_ms": 10,
+                "total_tokens": 5,
+                "cost_usd": 0.0,
+                "error": None,
+            },
+            bus,
+            None,
+            config,
+        )
+        event = await asyncio.wait_for(queue.get(), timeout=1.0)
+    finally:
+        bus.unsubscribe(eid, queue)
+
+    assert event["type"] == "complete"
+    data = event["data"]
+    assert data["status"] == "success"
+    assert data["agent_id"] == "pesquisador"
+    assert data["display_name"] == "Research Bot"
+    assert data["agent_name"] == "pesquisador"
+    assert data["display_name"] != data["agent_id"]
+
+
+@pytest.mark.asyncio
+async def test_synthetic_complete_replay_carries_identity(app_client):
+    """Synthetic complete frame for an already-finished execution carries identity."""
+    app, client = app_client
+    db = app.state.db
+    eid = await db.create_execution("pesquisador", "manual", status="success")
+
+    lines: list[str] = []
+    async with client.stream("GET", f"/executions/{eid}/stream") as resp:
+        async for line in resp.aiter_lines():
+            lines.append(line)
+
+    frames = _parse_sse(lines)
+    complete = next(data for event, data in frames if event == "complete")
+    assert complete["status"] == "success"
+    assert complete["agent_id"] == "pesquisador"
+    assert complete["display_name"] == "Research Bot"
+    assert complete["agent_name"] == "pesquisador"
+    assert complete["display_name"] != complete["agent_id"]
+
+
+@pytest.mark.asyncio
+async def test_synthetic_waiting_carries_identity(app_client):
+    """Synthetic waiting frame (HILT path) carries identity with display_name != id."""
+    app, client = app_client
+    db = app.state.db
+    eid = await db.create_execution("pesquisador", "manual", status="waiting")
+
+    lines: list[str] = []
+    async with client.stream("GET", f"/executions/{eid}/stream") as resp:
+        async for line in resp.aiter_lines():
+            lines.append(line)
+
+    frames = _parse_sse(lines)
+    waiting = next(data for event, data in frames if event == "waiting")
+    assert waiting["status"] == "waiting"
+    assert waiting["agent_id"] == "pesquisador"
+    assert waiting["display_name"] == "Research Bot"
+    assert waiting["agent_name"] == "pesquisador"
+    assert waiting["display_name"] != waiting["agent_id"]
