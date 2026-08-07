@@ -934,9 +934,9 @@ def list_agents(
             agents = rt.registry.all()
             last_runs: dict[str, str] = {}
             for a in agents:
-                ex = await rt.db.get_last_execution(a.name)
+                ex = await rt.db.get_last_execution(a.id)
                 if ex:
-                    last_runs[a.name] = ex.started_at
+                    last_runs[a.id] = ex.started_at
             return agents, last_runs
 
     agents, last_runs = asyncio.run(_list_with_last_runs())
@@ -957,8 +957,8 @@ def list_agents(
     )
 
     for config in agents:
-        last_run = format_relative_time(last_runs.get(config.name))
-        icon = display_icon(resolve_agent_icon(config.name, config.icon))
+        last_run = format_relative_time(last_runs.get(config.id))
+        icon = display_icon(resolve_agent_icon(config.id, config.icon))
         table.add_row(
             icon,
             config.name,

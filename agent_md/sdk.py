@@ -5,7 +5,7 @@ from within custom tools without requiring factories or dependency injection.
 
 Usage in custom tools::
 
-    from agent_md.sdk import resolve_path, workspace_root, agent_name
+    from agent_md.sdk import resolve_path, workspace_root, agent_name, agent_id
 
     @tool
     def my_tool(path: str) -> str:
@@ -60,8 +60,14 @@ def workspace_root() -> Path:
     return path_context.workspace_root
 
 
+def agent_id() -> str:
+    """Return the canonical id (filename stem) of the currently executing agent."""
+    config, _ = _get_context()
+    return config.id
+
+
 def agent_name() -> str:
-    """Return the name of the currently executing agent."""
+    """Return the display name of the currently executing agent."""
     config, _ = _get_context()
     return config.name
 
@@ -120,6 +126,7 @@ def request_choice(message: str, options: list[str], *, multi: bool = False) -> 
 __all__ = [
     "resolve_path",
     "workspace_root",
+    "agent_id",
     "agent_name",
     "agent_paths",
     "request_confirmation",

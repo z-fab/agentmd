@@ -400,7 +400,7 @@ class AgentRunner:
 
         if config.history == "off":
             return []
-        prev = await self.db.get_last_finished_execution(config.name, exclude_id=execution_id)
+        prev = await self.db.get_last_finished_execution(config.id, exclude_id=execution_id)
         if prev is None:
             return []
         try:
@@ -455,7 +455,7 @@ class AgentRunner:
         # 1. Record execution start
         if execution_id is None:
             execution_id = await self.db.create_execution(
-                agent_id=config.name,
+                agent_id=config.id,
                 trigger=trigger_type,
                 status="running",
                 parent_execution_id=parent_execution_id,

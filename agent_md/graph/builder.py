@@ -264,7 +264,11 @@ def _build_agents_prompt(agent_config, registry) -> str:
         config = registry.get(name)
         if config and config.enabled:
             desc = config.description or "No description"
-            entries.append(f"- **{name}**: {desc}")
+            label = config.name if config.name != config.id else config.id
+            if label != config.id:
+                entries.append(f"- **{config.id}** ({label}): {desc}")
+            else:
+                entries.append(f"- **{config.id}**: {desc}")
 
     if not entries:
         return ""
