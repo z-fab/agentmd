@@ -204,6 +204,16 @@ model:
   name: llama3.2
 ```
 
+For a remote Ollama server, set its native endpoint explicitly. Agentmd sends
+this URL unchanged (Ollama does not use the OpenAI `/v1` prefix):
+
+```yaml
+model:
+  provider: ollama
+  name: llama3.2
+  base_url: http://ollama.internal:11434
+```
+
 **Popular models:**
 - `llama3.2` — Meta's Llama (3B, 7B, 70B variants)
 - `mistral` — Mistral 7B
@@ -369,4 +379,3 @@ Error: maximum context length exceeded
 - Use a model with a larger context window
 
 - Split large inputs into smaller chunks
-

@@ -127,6 +127,21 @@ def test_checkpoint_db_path_uses_stem():
     assert p2.name == "foo.db_checkpoints.db"
 
 
+@pytest.mark.parametrize(
+    ("provider", "given", "expected"),
+    [
+        ("openai", "http://proxy.internal", "http://proxy.internal/v1"),
+        ("local", "http://vllm.internal/", "http://vllm.internal/v1"),
+        ("ollama", "http://ollama.internal:11434/", "http://ollama.internal:11434"),
+        ("anthropic", "http://anthropic-proxy.internal", "http://anthropic-proxy.internal"),
+    ],
+)
+def test_base_url_normalization_is_provider_aware(provider, given, expected):
+    from agent_md.config.models import ModelConfig
+
+    assert ModelConfig(provider=provider, name="test", base_url=given).base_url == expected
+
+
 # ---------------------------------------------------------------------------
 # Bug 6 — logs ordered by id, higher default limit
 # ---------------------------------------------------------------------------

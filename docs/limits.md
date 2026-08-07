@@ -60,7 +60,7 @@ When a limit is hit, the execution finishes with status `aborted` and the reason
 
 ## Pricing
 
-Cost estimation uses a built-in pricing table at `agent_md/core/pricing.yaml`.
+Cost estimation uses a built-in pricing table at `agent_md/config/pricing.yaml`.
 To override or add models, create `~/.config/agentmd/pricing.yaml` with the same format:
 
 ```yaml

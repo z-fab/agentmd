@@ -3,7 +3,7 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.15.3] — unreleased
+## [0.15.3] — 2026-08-07
 
 ### Fixed
 - **HILT pause no longer wipes execution metrics** — `update_execution` only writes fields that were passed, and sets `finished_at` only for terminal statuses. Resume reloads prior tokens/cost/tool-call counts so limits cannot be bypassed by pause/resume.
@@ -19,7 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 - **Invalid `mcp-servers.json` no longer prevents startup** — logged and treated as empty.
 - **`agentmd validate` resolves tools/MCP under `agents/_config/`** (same as bootstrap).
 - **`POST /agents/reload`** — skips memory files, reschedules, removes deleted agents, reports errors. Agents whose `.md` fails to parse are also removed from the registry until a later successful reload (mid-edit saves can temporarily disappear).
-- **`base_url` / `timeout` honored** for openai/ollama/anthropic/local (and timeout for google).
+- **Custom provider `base_url` honored** for OpenAI, Ollama, Anthropic, and Local. Native Ollama and Anthropic endpoints retain their URL rather than receiving an OpenAI `/v1` suffix.
 - **MCP connect race** — per-server lock; stdio logger level always restored.
 - **Duplicate agent `name:`** — warning on load/register (filename-as-id lands in 0.16).
 - **Removed dead `chat_session()`** (always marked success on exception).
