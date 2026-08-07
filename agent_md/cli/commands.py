@@ -61,7 +61,7 @@ def _get_agents_for_picker(workspace: Path | None) -> list[AgentConfig]:
 
 
 def _pick_or_resolve_agent(agent: str | None, workspace: Path | None) -> str:
-    """Resolve agent name: if None, use interactive picker."""
+    """Resolve agent id: if None, use interactive picker (returns canonical id)."""
     if agent is not None:
         return agent
 
@@ -74,7 +74,7 @@ def _pick_or_resolve_agent(agent: str | None, workspace: Path | None) -> str:
     if selected is None:
         print_error("No agent selected.")
         raise typer.Exit(1)
-    return selected.name
+    return selected.id
 
 
 # ---------------------------------------------------------------------------

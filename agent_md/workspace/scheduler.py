@@ -180,7 +180,13 @@ class AgentScheduler:
         logger.info("Scheduler started")
 
         # 2. Register hot-reload handler for .md files
-        reload_handler = _AgentFileHandler(self.registry, self, self._loop, global_event_bus=self.global_event_bus)
+        reload_handler = _AgentFileHandler(
+            self.registry,
+            self,
+            self._loop,
+            agents_dir=agents_dir,
+            global_event_bus=self.global_event_bus,
+        )
         self.observer.schedule(reload_handler, str(agents_dir), recursive=False)
         logger.info(f"Watching workspace for changes: {agents_dir}")
 
@@ -242,11 +248,13 @@ class _AgentFileHandler(FileSystemEventHandler):
         registry: AgentRegistry,
         scheduler: AgentScheduler,
         loop: asyncio.AbstractEventLoop | None,
+        agents_dir: Path | None = None,
         global_event_bus=None,
     ):
         self.registry = registry
         self.scheduler = scheduler
         self._loop = loop
+        self.agents_dir = agents_dir.resolve() if agents_dir is not None else None
         self.global_event_bus = global_event_bus
 
     def _publish_event(self, event: str, agent_id: str) -> None:
@@ -262,8 +270,19 @@ class _AgentFileHandler(FileSystemEventHandler):
                 self._loop,
             )
 
+    def _is_managed_agent_path(self, path: Path) -> bool:
+        """True when *path* is an agent .md directly under the watched agents_dir."""
+        if not is_agent_file(path):
+            return False
+        if self.agents_dir is None:
+            return True
+        try:
+            return path.resolve().parent == self.agents_dir
+        except OSError:
+            return False
+
     def _is_agent_file(self, event) -> bool:
-        return not event.is_directory and is_agent_file(Path(event.src_path))
+        return not event.is_directory and self._is_managed_agent_path(Path(event.src_path))
 
     def on_modified(self, event):
         if self._is_agent_file(event):
@@ -282,7 +301,7 @@ class _AgentFileHandler(FileSystemEventHandler):
                 self._publish_event("removed", agent_id)
 
     def on_moved(self, event):
-        """Handle rename/move: drop the old id, then load the destination as a new id."""
+        """Handle rename/move: drop the old id; reload only if dest stays in agents_dir."""
         if event.is_directory:
             return
 
@@ -296,7 +315,7 @@ class _AgentFileHandler(FileSystemEventHandler):
                 logger.info(f"Agent file moved away: {old_id}")
                 self._publish_event("removed", old_id)
 
-        if is_agent_file(dest):
+        if self._is_managed_agent_path(dest):
             self._reload(dest)
 
     def _reload(self, path: Path) -> None:

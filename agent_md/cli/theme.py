@@ -313,21 +313,37 @@ def format_relative_time(iso_str: str | None) -> str:
 def select_agent(agents: list[AgentConfig], prompt: str = "Select an agent") -> AgentConfig | None:
     """Interactive agent picker using questionary.
 
+    Shows display names; when display name differs from id (or names collide),
+    the id is included in the visible label for disambiguation.
     Falls back to text input when stdin is not a TTY.
     """
     if not agents:
         return None
 
     if len(agents) == 1:
-        console.print(f"  Auto-selected [bold]{agents[0].name}[/bold]")
-        return agents[0]
+        only = agents[0]
+        label = only.name if only.name == only.id else f"{only.name} ({only.id})"
+        console.print(f"  Auto-selected [bold]{label}[/bold]")
+        return only
 
-    # Build choices
+    # Build choices — visible text is display name; value recovered via agent_map.
+    name_counts: dict[str, int] = {}
+    for a in agents:
+        name_counts[a.name] = name_counts.get(a.name, 0) + 1
+
     choices = []
     agent_map: dict[str, AgentConfig] = {}
-    max_name = max(len(a.name) for a in agents)
+    visible_labels = []
     for a in agents:
-        label = f"{a.name:<{max_name}}  {a.description}" if a.description else a.name
+        if a.name != a.id or name_counts[a.name] > 1:
+            visible = f"{a.name} ({a.id})"
+        else:
+            visible = a.name
+        visible_labels.append(visible)
+
+    max_name = max(len(v) for v in visible_labels)
+    for a, visible in zip(agents, visible_labels, strict=True):
+        label = f"{visible:<{max_name}}  {a.description}" if a.description else visible
         choices.append(label)
         agent_map[label] = a
 

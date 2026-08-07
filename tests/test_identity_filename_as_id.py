@@ -156,7 +156,7 @@ def test_file_handler_on_moved_swaps_ids(tmp_path):
     reg.register(parse_agent_file(src))
 
     scheduler = MagicMock()
-    handler = _AgentFileHandler(reg, scheduler, loop=None)
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
 
     src.rename(dest)
     event = MagicMock()
@@ -177,6 +177,63 @@ def test_file_handler_on_moved_swaps_ids(tmp_path):
     assert scheduled.id == "new-agent"
 
 
+def test_file_handler_on_moved_out_does_not_reload_external_dest(tmp_path):
+    """mv agents/a.md /tmp/a.md must drop the agent without registering the external file."""
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    src = _write_agent(agents / "a.md", name="Display")
+    dest = outside / "a.md"
+
+    reg = AgentRegistry()
+    reg.register(parse_agent_file(src))
+
+    scheduler = MagicMock()
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
+
+    src.rename(dest)
+    event = MagicMock()
+    event.is_directory = False
+    event.src_path = str(src)
+    event.dest_path = str(dest)
+
+    handler.on_moved(event)
+
+    assert reg.get("a") is None
+    assert len(reg) == 0
+    scheduler.unschedule_agent.assert_called_once_with("a")
+    scheduler.schedule_agent.assert_not_called()
+
+
+def test_file_handler_on_moved_in_loads_destination(tmp_path):
+    """mv /tmp/b.md agents/b.md must register/schedule the new agent."""
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    src = _write_agent(outside / "b.md", name="Incoming")
+    dest = agents / "b.md"
+
+    reg = AgentRegistry()
+    scheduler = MagicMock()
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
+
+    src.rename(dest)
+    event = MagicMock()
+    event.is_directory = False
+    event.src_path = str(src)
+    event.dest_path = str(dest)
+
+    handler.on_moved(event)
+
+    assert reg.get("b") is not None
+    assert reg.get("b").name == "Incoming"
+    assert scheduler.schedule_agent.called
+    scheduled = scheduler.schedule_agent.call_args[0][0]
+    assert scheduled.id == "b"
+
+
 def test_file_handler_on_moved_ignores_non_agent_files(tmp_path):
     agents = tmp_path / "agents"
     agents.mkdir()
@@ -186,7 +243,7 @@ def test_file_handler_on_moved_ignores_non_agent_files(tmp_path):
 
     reg = AgentRegistry()
     scheduler = MagicMock()
-    handler = _AgentFileHandler(reg, scheduler, loop=None)
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
 
     src.rename(dest)
     event = MagicMock()
@@ -197,3 +254,37 @@ def test_file_handler_on_moved_ignores_non_agent_files(tmp_path):
     handler.on_moved(event)
     scheduler.unschedule_agent.assert_not_called()
     scheduler.schedule_agent.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# CLI picker returns canonical id
+# ---------------------------------------------------------------------------
+
+
+def test_pick_or_resolve_agent_returns_id_when_display_name_differs(monkeypatch):
+    from agent_md.cli import commands as cli_commands
+
+    cfg = AgentConfig(id="pesquisador", name="Research Bot", description="docs")
+
+    monkeypatch.setattr(cli_commands, "_get_agents_for_picker", lambda workspace: [cfg])
+    monkeypatch.setattr(cli_commands, "select_agent", lambda agents: cfg)
+
+    assert cli_commands._pick_or_resolve_agent(None, None) == "pesquisador"
+
+
+def test_pick_or_resolve_agent_passthrough_explicit_id():
+    from agent_md.cli.commands import _pick_or_resolve_agent
+
+    assert _pick_or_resolve_agent("pesquisador", None) == "pesquisador"
+
+
+def test_select_agent_auto_select_shows_display_and_returns_config(capsys):
+    from agent_md.cli.theme import select_agent
+
+    cfg = AgentConfig(id="pesquisador", name="Research Bot")
+    selected = select_agent([cfg])
+    assert selected is cfg
+    assert selected.id == "pesquisador"
+    out = capsys.readouterr().out
+    assert "Research Bot" in out
+    assert "pesquisador" in out
