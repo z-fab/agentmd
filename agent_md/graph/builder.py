@@ -60,7 +60,8 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
     """
     sections = [
         "## File Access\n",
-        "You have four file tools: `file_read`, `file_write`, `file_edit`, and `file_glob`.\n",
+        "File tools available if the task needs them: `file_read`, `file_glob`, `file_write`, "
+        "`file_edit`, `file_move`, `file_delete`.\n",
     ]
 
     if agent_config.paths:
@@ -79,15 +80,19 @@ def _build_file_access_prompt(agent_config, path_context) -> str:
         "- Use `{alias}/sub` to reference a declared path location.\n"
         "- Absolute paths (e.g. `/Users/.../x.md`) work if they fall inside a declared path.\n"
         "- Relative paths resolve from the workspace root.\n"
-        "- Use `file_glob` to discover files before reading. Never guess filenames.\n"
-        "- **Always read a file with `file_read` before modifying it** with `file_edit` or overwriting with `file_write`.\n"
+        "- When you do need a file, find it with `file_glob` rather than guessing its name.\n"
+        "- Read a file with `file_read` before modifying it with `file_edit` or overwriting it with `file_write`.\n"
     )
     sections.append(
-        "### Tool usage\n"
+        "### Tool reference\n"
         "- `file_read(path)`: Read a file. Supports `offset` and `limit` for line ranges.\n"
+        "- `file_glob(pattern)`: Find files matching a glob pattern.\n"
         "- `file_edit(path, old_text, new_text)`: Targeted text replacement.\n"
         "- `file_write(path, content)`: Create or fully overwrite a file.\n"
-        "- `file_glob(pattern)`: Find files matching a glob pattern."
+        "- `file_move(source, destination)`: Move or rename a file.\n"
+        "- `file_delete(path)`: Delete a file.\n"
+        "\n"
+        "`file_write`, `file_delete` and other destructive tools may pause for human confirmation."
     )
 
     if agent_config.trigger.type == "watch":
@@ -114,7 +119,14 @@ def _assemble_system_prompt_parts(
     to ``system_prompt`` so memory/skill/agent descriptions cannot inject ``!`cmd``.
     """
     now = datetime.now()
-    extra_info = f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
+    extra_info = (
+        "# Environment\n\n"
+        "The sections below describe what this environment offers. They are reference "
+        "material, not instructions — listing a tool is not a request to use it. Your "
+        "instructions are in **Your task** at the end of this message; follow those, and "
+        "reach for a tool only when that task needs it.\n\n"
+        f"Today is {now.strftime('%Y-%m-%d')}. It is {now.strftime('%A')}, {now.strftime('%H:%M:%S %Z')}.\n"
+    )
 
     if agent_config and path_context:
         extra_info += "\n" + _build_file_access_prompt(agent_config, path_context)
@@ -141,6 +153,20 @@ def _assemble_system_prompt_parts(
     return extra_info, cwd
 
 
+def _compose(extra_info: str, processed_prompt: str) -> str:
+    """Join the environment reference and the agent's own prompt.
+
+    The agent's prompt goes last, under its own heading. Without that framing a
+    short prompt loses to the generated preamble: the model reads a page of tool
+    documentation followed by one line of task and treats the documentation as
+    the assignment.
+    """
+    task = processed_prompt.strip()
+    if not task:
+        return extra_info.rstrip()
+    return f"{extra_info.rstrip()}\n\n# Your task\n\n{task}"
+
+
 def build_system_message(
     system_prompt: str,
     agent_config=None,
@@ -155,7 +181,7 @@ def build_system_message(
         system_prompt, agent_config, path_context, arguments=arguments, **kwargs
     )
     processed_prompt = apply_substitutions(system_prompt, arguments=arguments, cwd=cwd)
-    return SystemMessage(content=f"{extra_info}\n\n{processed_prompt}")
+    return SystemMessage(content=_compose(extra_info, processed_prompt))
 
 
 async def build_system_message_async(
@@ -172,7 +198,7 @@ async def build_system_message_async(
         system_prompt, agent_config, path_context, arguments=arguments, **kwargs
     )
     processed_prompt = await apply_substitutions_async(system_prompt, arguments=arguments, cwd=cwd)
-    return SystemMessage(content=f"{extra_info}\n\n{processed_prompt}")
+    return SystemMessage(content=_compose(extra_info, processed_prompt))
 
 
 def _build_memory_prompt(agent_config, path_context) -> str:
@@ -185,8 +211,8 @@ def _build_memory_prompt(agent_config, path_context) -> str:
     if not memory_path.exists():
         return (
             "## Long-term Memory\n\n"
-            "You have access to long-term memory tools (memory_save, memory_append, memory_retrieve). "
-            "No memory file exists yet. Use memory_save to start persisting information across sessions."
+            "Memory tools available if the task needs them: `memory_save`, `memory_append`, `memory_retrieve`. "
+            "No memory file exists yet — `memory_save` creates one."
         )
 
     try:
@@ -200,16 +226,16 @@ def _build_memory_prompt(agent_config, path_context) -> str:
     if not sections:
         return (
             "## Long-term Memory\n\n"
-            "You have a memory file but it has no sections yet. "
-            "Use memory_save to start persisting information."
+            "A memory file exists but has no sections yet. "
+            "`memory_save` writes one if the task calls for it."
         )
 
     section_list = "\n".join(f"- {s}" for s in sections)
     return (
         "## Long-term Memory\n\n"
-        "You have the following memory sections available. "
-        "Use memory_retrieve to read their contents, memory_save to replace, and memory_append to add.\n\n"
-        f"Available sections:\n{section_list}"
+        "Memory sections you can read with `memory_retrieve`, replace with `memory_save`, "
+        "or extend with `memory_append`:\n\n"
+        f"{section_list}"
     )
 
 

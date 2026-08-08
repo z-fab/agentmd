@@ -179,16 +179,17 @@ When an agent has a `.memory.md` file, the system prompt automatically lists ava
 ```
 ## Long-term Memory
 
-You have the following memory sections available.
-Use memory_retrieve to read their contents, memory_save to replace, and memory_append to add.
+Memory sections you can read with `memory_retrieve`, replace with `memory_save`,
+or extend with `memory_append`:
 
-Available sections:
 - user_preferences
 - project_context
 - action_items
 ```
 
 The agent can then use `memory_retrieve` to load any section on demand, keeping the context window efficient.
+
+This block lives under an `# Environment` heading that is explicitly framed as reference material, and your agent's own prompt follows it under `# Your task`. The framing matters: worded as an instruction ("use memory_save to start persisting information"), a listing like this reads as an assignment, and an agent with a short prompt will go off and exercise the tools instead of doing what you asked.
 
 ### Example: Personal Assistant with Memory
 
