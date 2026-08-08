@@ -3,6 +3,12 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`final_answer` is no longer truncated** ([#2](https://github.com/z-fab/agentmd/issues/2)) — the log row kept only the first 500 characters while the live SSE event carried the whole answer, and `output_data` was cut at 10,000. Because the stream deduplicates catchup against live by event id, whichever version reached the client first won: replaying the short row made the complete live frame get dropped under the same id, so `run --detach` + `logs`, any stream reconnect, and every HILT cycle (the CLI reopens the stream after answering) could show a permanently clipped answer. The answer is now stored whole and the replayed frame carries it under `content`, the same key and the same bytes as the live one. An upper bound of 1,000,000 characters remains as a backstop, well above any model's output limit.
+
 ## [0.16.0] — 2026-08-08
 
 ### Changed

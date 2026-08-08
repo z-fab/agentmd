@@ -77,6 +77,7 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 | `total_tokens` | int \| null | Total token usage |
 | `cost_usd` | float \| null | Estimated cost |
 | `error` | string \| null | Error message if failed |
+| `output_data` | string \| null | Final answer text, stored whole (detail endpoint only) |
 
 The `agent` trigger type indicates the execution was started by another agent via the `run_agent` tool. Use `parent_execution_id` to trace delegation chains.
 
@@ -89,6 +90,16 @@ Per-execution stream payloads include identity fields:
 | `agent_id` | Canonical stem |
 | `display_name` | Human label |
 | `agent_name` | Same as `agent_id` (compat alias; **not** the display label) |
+
+**`final_answer` is never abridged.** The answer is carried under `content`, identically
+whether the frame comes from the live stream or from the catchup replay, and the same
+string is stored in the execution's `output_data`. Replayed frames additionally carry the
+raw log row under `message`. Read `content`. (An upper bound of 1,000,000 characters
+exists as a backstop; it is far above any model's output limit.)
+
+This matters because the stream deduplicates replay against live by event id: a replayed
+frame and its live twin share an id, so they must be the same string or a reconnecting
+client would be left with whichever arrived first.
 
 ### Scheduler
 
