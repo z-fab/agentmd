@@ -37,6 +37,13 @@ class ShutdownResponse(BaseModel):
     message: str = "shutting down"
 
 
+class LastResult(BaseModel):
+    """Most recent execution summary for an agent listing."""
+
+    status: str
+    started_at: str
+
+
 class AgentSummary(BaseModel):
     """Public agent listing.
 
@@ -56,11 +63,12 @@ class AgentSummary(BaseModel):
     trigger_type: str
     model_provider: str | None = None
     model_name: str | None = None
+    next_run: str | None = None
+    last_result: LastResult | None = None
 
 
 class AgentDetail(AgentSummary):
     last_run: str | None = None
-    next_run: str | None = None
     history: str
     settings: dict
     paths: dict[str, str] = {}
