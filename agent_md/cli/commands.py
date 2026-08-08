@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Annotated, Optional
 from urllib.parse import quote
@@ -862,6 +863,9 @@ def chat(
         raise typer.Exit(1)
     agent_info = resp.json()
     model_info = f"{agent_info.get('model_provider', '')}/{agent_info.get('model_name', '')}"
+    # One UUID for this process: every turn reuses it so the server seeds history
+    # from this conversation only. Closing and reopening chat starts a new session.
+    session_id = str(uuid.uuid4())
     console.print(f"[bold]Chat with {agent_label}[/bold] [dim]({model_info})[/dim]")
     console.print("[dim]Type /exit to end the session[/dim]\n")
 
@@ -882,7 +886,10 @@ def chat(
             if not user_input.strip():
                 continue
 
-            resp = client.post(_agent_path(agent, "/run"), json={"message": user_input})
+            resp = client.post(
+                _agent_path(agent, "/run"),
+                json={"message": user_input, "session_id": session_id},
+            )
             if resp.status_code != 200:
                 console.print(f"[red]Error: {resp.text}[/red]")
                 break

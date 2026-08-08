@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 _COMPLETE_SEQ = sys.maxsize  # ensures complete event is never filtered by SSE dedup
 
+# Triggers that fire without a human in the loop; they are never part of a chat.
+_AUTOMATIC_TRIGGERS = frozenset({"schedule", "watch"})
+
 
 class LimitExceeded(Exception):
     """Raised when an execution limit is hit."""
@@ -314,8 +317,8 @@ class AgentRunner:
 
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
         """Build user input message with trigger context."""
-        if trigger_type == "manual":
-            return "Execute your task."
+        if trigger_type in ("manual", "chat"):
+            return f"Execute your task. ({trigger_context})" if trigger_context else "Execute your task."
 
         if trigger_type == "schedule":
             if config.trigger.every:
@@ -402,18 +405,22 @@ class AgentRunner:
         )
         return graph, checkpoint_conn
 
-    async def _load_history_seed(self, graph, config: AgentConfig, execution_id: int) -> list:
+    async def _load_history_seed(
+        self, graph, config: AgentConfig, execution_id: int, session_id: str | None = None
+    ) -> list:
         """Return prior messages to seed a new run, trimmed to the history level.
 
-        Reads the most recent finished execution's checkpoint for this agent and
-        returns its non-system messages. Empty when history is off or no prior run.
+        Reads the most recent finished execution's checkpoint **for this
+        conversation** and returns its non-system messages: the same session when
+        *session_id* is given, sessionless executions otherwise. Empty when history
+        is off or no prior run exists in that conversation.
         """
         from agent_md.graph.agent import _trim_messages
         from agent_md.config.models import HISTORY_LIMITS
 
         if config.history == "off":
             return []
-        prev = await self.db.get_last_finished_execution(config.id, exclude_id=execution_id)
+        prev = await self.db.get_last_finished_execution(config.id, exclude_id=execution_id, session_id=session_id)
         if prev is None:
             return []
         try:
@@ -442,13 +449,17 @@ class AgentRunner:
         user_message: str | None = None,
         depth: int = 0,
         parent_execution_id: int | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Execute an agent and persist the result.
 
         Args:
             config: Validated agent configuration.
-            trigger_type: What triggered this execution ('manual', 'schedule', 'watch').
+            trigger_type: What triggered this execution ('manual', 'chat', 'schedule', 'watch', 'agent').
             trigger_context: Optional context about what triggered the execution (e.g., file path for watch).
+            session_id: Conversation this execution belongs to. Scopes the history
+                seed to that conversation; ``None`` keeps the execution sessionless.
+                Ignored for automatic triggers (see below).
             on_event: Optional callback ``(event_type, data_dict) -> None`` for
                 real-time UI updates (Rich console output).
             on_start: Optional callback ``(agent_name, model_info) -> None``
@@ -461,6 +472,13 @@ class AgentRunner:
         """
         logger.info(f"Starting execution: {config.name} (trigger={trigger_type})")
 
+        # Automatic runs never join a chat conversation: a schedule/watch firing is
+        # not a turn in anyone's dialogue, and letting it seed from (or into) a chat
+        # is exactly the cross-contamination sessions exist to prevent.
+        if session_id is not None and trigger_type in _AUTOMATIC_TRIGGERS:
+            logger.warning(f"Ignoring session_id on a '{trigger_type}' run of {config.id}")
+            session_id = None
+
         if on_start is not None:
             model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
             on_start(config.name, model_info)
@@ -472,6 +490,7 @@ class AgentRunner:
                 trigger=trigger_type,
                 status="running",
                 parent_execution_id=parent_execution_id,
+                session_id=session_id,
             )
 
         ex_logger = ExecutionLogger(self.db, execution_id, config.id, display_name=config.name, on_event=on_event)
@@ -520,7 +539,7 @@ class AgentRunner:
                     cancel_event=cancel_event,
                     sub_agent_usage=sub_agent_usage,
                 )
-                history_seed = await self._load_history_seed(graph, config, execution_id)
+                history_seed = await self._load_history_seed(graph, config, execution_id, session_id)
 
                 # 3. Build user input with trigger context
                 user_input = self._build_user_input(trigger_type, trigger_context, config)

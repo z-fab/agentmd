@@ -35,7 +35,8 @@ history: medium
 
 - **All messages are saved** to a SQLite checkpoint database alongside the configured execution DB (for example, `agentmd_checkpoints.db`)
 - **Only the last N messages** are sent to the LLM (controlled by the history level), keeping costs and context window manageable
-- **One checkpoint thread per execution** — a new run seeds itself from the most recent finished execution of the same agent
+- **One checkpoint thread per execution** — a new run seeds itself from the most recent finished execution of the same *conversation*
+- **Seeding is scoped by conversation** — a run carrying a `session_id` (a chat turn) only ever seeds from earlier turns of that same session; a run without one only seeds from other sessionless runs. A scheduled agent you also chat with therefore keeps the two lines of context apart
 - **System message is always fresh** — date/time and memory sections are rebuilt on each run
 
 ### History in `run` Mode

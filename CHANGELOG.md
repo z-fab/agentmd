@@ -5,8 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **Conversations have an id** — `POST /agents/{id}/run` accepts `session_id`, persisted in the new `executions.session_id` column and exposed on execution responses. A run carrying one is recorded with `trigger: "chat"` instead of `"manual"`. Existing databases gain the column on open; nothing else changes for clients that do not send it.
+- **`context` in the run body is no longer discarded** — it was accepted and dropped; it now reaches the runner as `trigger_context` and is appended to the user turn of manual and chat runs.
+
 ### Fixed
 
+- **History seeding is scoped to a conversation** — a new run seeded from "the last finished execution of this agent", whatever its origin. An agent with `trigger: schedule` and an open chat mixed the two: the scheduled run inherited the chat's context and the next chat turn inherited the scheduled run's. Two simultaneous chats on one agent shared the same line. Seeding now follows `session_id` — same session for chat turns, sessionless executions otherwise — and `schedule`/`watch` runs never join a chat session. Checkpoint retention keeps the newest execution per *session* (not just per agent), so an active conversation cannot lose its memory to the 30-day sweep.
 - **`final_answer` is no longer truncated** ([#2](https://github.com/z-fab/agentmd/issues/2)) — the log row kept only the first 500 characters while the live SSE event carried the whole answer, and `output_data` was cut at 10,000. Because the stream deduplicates catchup against live by event id, whichever version reached the client first won: replaying the short row made the complete live frame get dropped under the same id, so `run --detach` + `logs`, any stream reconnect, and every HILT cycle (the CLI reopens the stream after answering) could show a permanently clipped answer. The answer is now stored whole and the replayed frame carries it under `content`, the same key and the same bytes as the live one. An upper bound of 1,000,000 characters remains as a backstop, well above any model's output limit.
 
 ## [0.16.0] — 2026-08-08

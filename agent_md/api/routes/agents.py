@@ -142,31 +142,64 @@ async def run_agent(agent_id: str, request: Request, body: RunRequest | None = N
 
     body = body or RunRequest()
     arguments = body.args or []
+    session_id = body.session_id
+    # A run that carries a conversation is a chat turn; without one it is a plain
+    # manual run. Recording the real trigger is what makes the two distinguishable.
+    trigger = "chat" if session_id else "manual"
 
     cancel_event = asyncio.Event()
-    execution_id = await rt.db.create_execution(agent_id=config.id, trigger="manual", status="running")
+    execution_id = await rt.db.create_execution(
+        agent_id=config.id, trigger=trigger, status="running", session_id=session_id
+    )
     state.cancel_events[execution_id] = cancel_event
 
     model_info = f"{config.model.provider}/{config.model.name}" if config.model else None
 
     from agent_md.util.tasks import spawn_background
 
-    spawn_background(_run_in_background(rt, config, execution_id, state, arguments, body.message, cancel_event))
+    spawn_background(
+        _run_in_background(
+            rt,
+            config,
+            execution_id,
+            state,
+            arguments,
+            body.message,
+            cancel_event,
+            trigger_type=trigger,
+            trigger_context=body.context,
+            session_id=session_id,
+        )
+    )
     return RunResponse(execution_id=execution_id, model=model_info)
 
 
-async def _run_in_background(rt, config, execution_id, state, arguments, message, cancel_event):
+async def _run_in_background(
+    rt,
+    config,
+    execution_id,
+    state,
+    arguments,
+    message,
+    cancel_event,
+    *,
+    trigger_type: str = "manual",
+    trigger_context: str | None = None,
+    session_id: str | None = None,
+):
     """Run agent execution as a background task."""
     try:
         await rt.runner.run(
             config,
-            trigger_type="manual",
+            trigger_type=trigger_type,
+            trigger_context=trigger_context,
             arguments=arguments,
             event_bus=state.event_bus,
             global_event_bus=state.global_event_bus,
             cancel_event=cancel_event,
             execution_id=execution_id,
             user_message=message,
+            session_id=session_id,
         )
     finally:
         state.cancel_events.pop(execution_id, None)
@@ -193,6 +226,8 @@ async def agent_runs(agent_id: str, request: Request, limit: int = 10):
             total_tokens=e.total_tokens,
             cost_usd=e.cost_usd,
             error=e.error,
+            parent_execution_id=e.parent_execution_id,
+            session_id=e.session_id,
         )
         for e in execs
     ]
