@@ -47,10 +47,35 @@ Path segments with spaces must be URL-encoded (e.g. `/agents/Daily%20Processor`)
 
 **Run request body:**
 ```json
-{"args": ["arg1"], "message": "optional user message"}
+{
+  "args": ["arg1"],
+  "message": "optional user message",
+  "context": "optional trigger context",
+  "session_id": "optional conversation id"
+}
 ```
 
-When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message. With `history` enabled, the runner seeds the next execution from the most recent finished execution for that agent id.
+| Field | Type | Description |
+|-------|------|-------------|
+| `args` | string[] | Positional arguments substituted into the prompt |
+| `message` | string | Replaces the synthetic "Execute your task" |
+| `context` | string | Appended to the user turn as trigger context |
+| `session_id` | string | Conversation this run belongs to (max 200 chars; blank is treated as absent) |
+
+When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message.
+
+`session_id` is what makes a run a **conversation turn**: it is persisted on the
+execution, recorded with `trigger: "chat"` instead of `"manual"`, and it scopes
+history seeding. With `history` enabled the runner seeds the next execution from
+the most recent finished execution **of the same session**; a run without a
+`session_id` only ever seeds from other sessionless runs of that agent. Two
+clients chatting with the same agent under different `session_id`s therefore keep
+independent conversations, and a scheduled run never inherits chat context (a
+`session_id` sent with a `schedule` or `watch` run is ignored).
+
+Generating and reusing the id is the client's job — the backend never invents one
+and there is no endpoint to list or resume sessions. Any opaque string works; a
+UUID per conversation is the intended shape.
 
 ### Executions
 
@@ -69,8 +94,9 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 | `id` | int | Execution ID |
 | `agent_id` | string | Canonical agent id (filename stem) |
 | `status` | string | `running`, `waiting`, `success`, `error`, `aborted`, `timeout`, `orphaned` |
-| `trigger` | string | `manual`, `schedule`, `watch`, `agent` |
+| `trigger` | string | `manual`, `chat`, `schedule`, `watch`, `agent` |
 | `parent_execution_id` | int \| null | Parent execution ID when triggered by `run_agent` |
+| `session_id` | string \| null | Conversation the execution belongs to (`null` outside a chat) |
 | `started_at` | string | ISO 8601 timestamp |
 | `finished_at` | string \| null | ISO 8601 timestamp |
 | `duration_ms` | int \| null | Execution duration |

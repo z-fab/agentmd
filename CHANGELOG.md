@@ -3,6 +3,17 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- **Conversations have an id** — `POST /agents/{id}/run` accepts `session_id`, persisted in the new `executions.session_id` column and exposed on execution responses. A run carrying one is recorded with `trigger: "chat"` instead of `"manual"`. Existing databases gain the column on open; nothing else changes for clients that do not send it.
+- **`context` in the run body is no longer discarded** — it was accepted and dropped; it now reaches the runner as `trigger_context` and is appended to the user turn of manual and chat runs.
+
+### Fixed
+
+- **History seeding is scoped to a conversation** — a new run seeded from "the last finished execution of this agent", whatever its origin. An agent with `trigger: schedule` and an open chat mixed the two: the scheduled run inherited the chat's context and the next chat turn inherited the scheduled run's. Two simultaneous chats on one agent shared the same line. Seeding now follows `session_id` — same session for chat turns, sessionless executions otherwise — and `schedule`/`watch` runs never join a chat session. Checkpoint retention keeps the newest execution per *session* (not just per agent), so an active conversation cannot lose its memory to the 30-day sweep.
+
 ## [0.16.0] — 2026-08-08
 
 ### Changed
