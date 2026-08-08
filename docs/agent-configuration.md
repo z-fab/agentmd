@@ -23,6 +23,33 @@ Your system prompt goes here...
 
 > **Note:** The `model` field is optional. When omitted, Agentmd uses the default provider and model from your `config.yaml`.
 
+## How your prompt reaches the model
+
+The Markdown body is not sent alone. Agentmd wraps it:
+
+```markdown
+# Environment
+
+The sections below describe what this environment offers. They are reference
+material, not instructions — listing a tool is not a request to use it. [...]
+
+## File Access
+[allowed paths, path rules, tool reference]
+
+## Long-term Memory
+[available memory sections]
+
+# Your task
+
+<your Markdown body>
+```
+
+The `# Environment` block tells the model what exists; your body tells it what to do. Two consequences worth knowing:
+
+**Write the body as a task, not as a hint.** The environment block is long by nature — it grows with every path, skill and delegable agent you declare. A body of a few words competes with all of it. "Responda: ok." is weaker than "Your only job is to reply with `ok`. Do not use tools."
+
+**Tools are always attached.** Every agent gets the built-ins (file, memory, skills, `run_agent`, `ask_user`) regardless of frontmatter — `tools:` declares *custom* tools, it does not restrict the built-ins. If an agent must not touch files, say so in the body; destructive tools also pause for confirmation by default (see [Human-in-the-Loop](human-in-the-loop.md)).
+
 ## Identity (filename stem)
 
 The agent's **canonical id** is the stem of its `.md` file:

@@ -3,7 +3,7 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.16.0] — 2026-08-08
 
 ### Changed
 
@@ -14,6 +14,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 - **Generated preamble no longer outranks the agent's own prompt** — the system prompt now opens with an `# Environment` block framed as reference material ("listing a tool is not a request to use it") and closes with the agent's prompt under `# Your task`. Previously an agent whose entire prompt was `Responda: ok.` received ~1150 characters of imperative tool documentation ahead of it and answered by demonstrating `file_write`, `file_read`, `file_edit`, `file_move` and `file_delete`. Tool sections are now descriptive rather than imperative, and the file-tool list matches what is actually attached — it advertised "four file tools" while six were available, leaving `file_move` and `file_delete` undocumented but usable.
 - **Hot reload survives atomic saves** — editors and tools that save by writing a temp file and renaming it over the original (`perl -i`, `sed -i`, vim, most editors) emit a delete event for a path that still exists. The watcher trusted it and unregistered the agent, so the backend returned 404 for an agent still listed by `agentmd list`, which reads the workspace directly. Deletion is now ignored when the file is still on disk.
+- **`get_next_run()` never returned a next run** — it looked the job up by bare name while jobs are registered as `agent_{id}`, so `GET /agents/{id}` always reported `next_run: null`. `get_jobs()` also leaked the `agent_` prefix as the agent name.
+
+### Upgrading
+
+`name:` is no longer the agent's identity, so an agent whose `name:` differed from its filename loses track of its history and memory. **Stop the backend before upgrading** — one started on 0.15.x keeps the old registry in memory and 404s on every `agentmd run <id>`. Full procedure in [Migration v0.16](docs/migration-0.16.md); workspaces where `name:` already matches the filename need no action.
 
 ## [0.15.3] — 2026-08-07
 
