@@ -150,6 +150,14 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 "timestamp": log.timestamp,
                 **identity,
             }
+            if log.event_type == "final_answer":
+                # The live event carries the answer under "content"; a replayed
+                # frame has to use the same key, or a client that reads only
+                # "content" loses the answer on reconnect. The persisted row is
+                # the whole answer (see logger.mark_final_answer), so replay and
+                # live are now the same string under the same key — which is what
+                # makes the seq dedup below safe for this event.
+                payload["content"] = log.message
             if log.metadata:
                 try:
                     meta = json.loads(log.metadata)
