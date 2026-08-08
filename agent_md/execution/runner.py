@@ -92,6 +92,15 @@ def _agent_identity_fields(config: AgentConfig) -> dict:
     return agent_identity_payload(config.id, config.name)
 
 
+def _normalize_args(arguments: list[str] | str) -> list[str]:
+    """Normalize run arguments to a list for the execution_info contract."""
+    if isinstance(arguments, list):
+        return list(arguments)
+    if not arguments:
+        return []
+    return [arguments]
+
+
 def _build_event_data(msg, event_type: str, agent: AgentConfig | str) -> dict:
     """Build structured event data for the EventBus, including tool details.
 
@@ -315,6 +324,92 @@ class AgentRunner:
                 },
             )
 
+    async def _emit_meta(
+        self,
+        ex_logger: ExecutionLogger,
+        execution_id: int,
+        event_bus,
+        config: AgentConfig,
+        *,
+        message: str,
+        payload: dict,
+    ) -> int:
+        """Persist and publish an SSE ``meta`` frame.
+
+        The bus/SSE event name stays ``meta`` (same channel as skill-context
+        frames). Subtypes are distinguished by ``payload["event_type"]`` —
+        ``execution_info`` for the initial context, ``stats`` for incremental
+        tokens/cost. Skill-context live frames keep ``event_type: "meta"``.
+        """
+        log_id = await ex_logger.log_event("meta", message, metadata=payload)
+        if event_bus is not None:
+            await event_bus.publish(
+                execution_id,
+                {
+                    "type": "meta",
+                    "seq": log_id,
+                    "data": {**payload, **_agent_identity_fields(config)},
+                },
+            )
+        return log_id
+
+    async def _emit_execution_info(
+        self,
+        ex_logger: ExecutionLogger,
+        execution_id: int,
+        event_bus,
+        config: AgentConfig,
+        *,
+        trigger_type: str,
+        arguments: list[str] | str,
+        session_id: str | None,
+    ) -> int:
+        """Emit the once-per-run initial meta (issue #3). Persisted for replay."""
+        model = f"{config.model.provider}/{config.model.name}" if config.model else None
+        payload = {
+            "event_type": "execution_info",
+            "model": model,
+            "trigger": trigger_type,
+            "args": _normalize_args(arguments),
+            "session_id": session_id,
+        }
+        return await self._emit_meta(
+            ex_logger,
+            execution_id,
+            event_bus,
+            config,
+            message="execution_info",
+            payload=payload,
+        )
+
+    async def _emit_stats(
+        self,
+        ex_logger: ExecutionLogger,
+        execution_id: int,
+        event_bus,
+        config: AgentConfig,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float | None,
+    ) -> int:
+        """Emit incremental token/cost stats (issue #1). Persisted for replay."""
+        payload = {
+            "event_type": "stats",
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "cost_usd": cost_usd,
+        }
+        return await self._emit_meta(
+            ex_logger,
+            execution_id,
+            event_bus,
+            config,
+            message="stats",
+            payload=payload,
+        )
+
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
         """Build user input message with trigger context."""
         if trigger_type in ("manual", "chat"):
@@ -507,6 +602,18 @@ class AgentRunner:
                 }
             )
 
+        # Frozen execution context for clients (issue #3). Persisted so replay
+        # reopens with the same frame; not re-emitted on resume.
+        await self._emit_execution_info(
+            ex_logger,
+            execution_id,
+            event_bus,
+            config,
+            trigger_type=trigger_type,
+            arguments=arguments,
+            session_id=session_id,
+        )
+
         start_time = time.monotonic()
 
         # Token accumulators (parent model + folded sub-agent usage)
@@ -653,6 +760,19 @@ class AgentRunner:
                                 f"{config.model.provider}/{config.model.name}; limit will not be enforced"
                             )
                             _pricing_warned = True
+
+                        # Incremental stats for streaming clients (issue #1).
+                        # Folded parent+child totals match what ``complete`` reports.
+                        if getattr(msg, "type", "") == "ai":
+                            await self._emit_stats(
+                                ex_logger,
+                                execution_id,
+                                event_bus,
+                                config,
+                                input_tokens=total_input_tokens + child_input_tokens,
+                                output_tokens=total_output_tokens + child_output_tokens,
+                                cost_usd=cost_usd,
+                            )
 
                         _check_limits(config.settings, tool_call_count, combined_tokens, cost_usd)
 
@@ -928,6 +1048,16 @@ class AgentRunner:
                         tool_call_count += len(msg.tool_calls)
 
                     combined = total_input_tokens + total_output_tokens + child_input_tokens + child_output_tokens
+                    if getattr(msg, "type", "") == "ai":
+                        await self._emit_stats(
+                            ex_logger,
+                            execution_id,
+                            event_bus,
+                            config,
+                            input_tokens=total_input_tokens + child_input_tokens,
+                            output_tokens=total_output_tokens + child_output_tokens,
+                            cost_usd=cost_usd,
+                        )
                     _check_limits(config.settings, tool_call_count, combined, cost_usd)
 
                     # Loop detection: same tool error 3 consecutive times (parity with run())
