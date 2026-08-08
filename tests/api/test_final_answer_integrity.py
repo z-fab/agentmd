@@ -212,17 +212,34 @@ class _OneShotModel:
         return AIMessage(content=LONG_ANSWER)
 
 
+@pytest.fixture
+async def runner_db(tmp_path):
+    """A connected Database that is closed even when the test fails.
+
+    aiosqlite runs its connection on a non-daemon worker thread, so a Database
+    left open keeps the interpreter alive at exit: pytest reports the failure and
+    then hangs forever instead of returning. Closing has to happen in teardown,
+    never as the last statement of the test body.
+    """
+    from agent_md.db.database import Database
+
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    try:
+        yield db
+    finally:
+        await db.close()
+
+
 @pytest.mark.asyncio
-async def test_runner_keeps_whole_output_data_and_final_answer(tmp_path, monkeypatch):
+async def test_runner_keeps_whole_output_data_and_final_answer(tmp_path, monkeypatch, runner_db):
     """output_data, the log row and the live event are one and the same string."""
     from agent_md.config.models import AgentConfig
-    from agent_md.db.database import Database
     from agent_md.execution.event_bus import EventBus
     from agent_md.execution.runner import AgentRunner
     from agent_md.workspace.path_context import PathContext
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
+    db = runner_db
     pc = PathContext(
         workspace_root=tmp_path,
         agents_dir=tmp_path,
@@ -260,5 +277,3 @@ async def test_runner_keeps_whole_output_data_and_final_answer(tmp_path, monkeyp
     live = next(e for e in published if e["type"] == "final_answer")
     assert_whole_answer(live["data"]["content"], "published final_answer event")
     assert live["seq"] == row.id
-
-    await db.close()
