@@ -9,6 +9,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 - **Conversations have an id** — `POST /agents/{id}/run` accepts `session_id`, persisted in the new `executions.session_id` column and exposed on execution responses. A run carrying one is recorded with `trigger: "chat"` instead of `"manual"`. Existing databases gain the column on open; nothing else changes for clients that do not send it.
 - **`context` in the run body is no longer discarded** — it was accepted and dropped; it now reaches the runner as `trigger_context` and is appended to the user turn of manual and chat runs.
+- **SSE `meta` execution_info** ([#3](https://github.com/z-fab/agentmd/issues/3)) — every run opens its stream with a persisted `meta` frame whose payload `event_type` is `execution_info`, carrying `agent_id`, `display_name`, `model`, `trigger`, `args`, and `session_id`. Reconnect/replay reproduces it.
+- **SSE `meta` stats** ([#1](https://github.com/z-fab/agentmd/issues/1)) — after each AI message the stream emits a persisted `meta` frame with `event_type: "stats"` and accumulated `input_tokens` / `output_tokens` / `total_tokens` / `cost_usd`, so a streaming UI can show cost growing without waiting for `complete`.
 
 ### Fixed
 

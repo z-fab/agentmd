@@ -117,6 +117,19 @@ Per-execution stream payloads include identity fields:
 | `display_name` | Human label |
 | `agent_name` | Same as `agent_id` (compat alias; **not** the display label) |
 
+**`meta` subtypes** — the SSE event name is always `meta`. The payload field
+`event_type` distinguishes three kinds of frame (clients must branch on it):
+
+| `event_type` | When | Payload fields |
+|--------------|------|----------------|
+| `execution_info` | Once, at the start of every run (before other log frames) | `agent_id`, `display_name`, `model` (`provider/name`), `trigger`, `args` (list), `session_id` (null outside a chat), plus identity aliases |
+| `stats` | After every AI message during the run | `input_tokens`, `output_tokens`, `total_tokens`, `cost_usd` (accumulated; may be null when pricing is unknown), plus identity |
+| `meta` | Skill-context injection on the live bus | `content` plus identity (legacy; not the same as the two above) |
+
+Both `execution_info` and `stats` are **persisted** in `execution_logs` and replayed on
+reconnect the same way as every other log frame. A client that opens the stream after the
+run has finished still receives them.
+
 **`final_answer` is never abridged.** The answer is carried under `content`, identically
 whether the frame comes from the live stream or from the catchup replay, and the same
 string is stored in the execution's `output_data`. Replayed frames additionally carry the
