@@ -8,6 +8,7 @@ that also use the ``meta`` event name with ``event_type: "meta"``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -20,10 +21,36 @@ from agent_md.api.routes.executions import stream_execution
 from agent_md.execution.logger import ExecutionLogger, agent_identity_payload
 from agent_md.execution.runner import _COMPLETE_SEQ, _normalize_args
 
+# stream_execution's live drain waits 30s per idle tick while status is still
+# "running". A bare anext() on a missing replayed frame therefore hangs the
+# process instead of failing — use a short ceiling so a missing frame is red.
+_FRAME_TIMEOUT_S = 2.0
+
 
 class _Req:
     def __init__(self, app):
         self.app = app
+
+
+async def _next_frame(gen, *, what: str):
+    """Pull one SSE frame, or fail fast if the stream fell into the live drain."""
+    try:
+        return await asyncio.wait_for(anext(gen), timeout=_FRAME_TIMEOUT_S)
+    except TimeoutError:
+        pytest.fail(
+            f"timed out after {_FRAME_TIMEOUT_S}s waiting for {what} "
+            "(stream likely entered the live drain with no frame ready)"
+        )
+
+
+async def _drain_frames(gen) -> list:
+    """Collect remaining frames until complete, failing fast on stall."""
+    frames: list = []
+    while True:
+        frame = await _next_frame(gen, what="next live/complete frame")
+        frames.append(frame)
+        if frame.event == "complete":
+            return frames
 
 
 def _write_agent(path: Path, *, name: str) -> Path:
@@ -175,9 +202,11 @@ async def test_replay_before_live_keeps_meta_frames(app_client):
     )
     stats_id = await runner._emit_stats(ex_logger, eid, None, config, input_tokens=10, output_tokens=5, cost_usd=None)
 
+    # Keep status=running so we can still publish live twins after replay
+    # (a terminal status would exit the drain loop and skip the dedup check).
     gen = stream_execution(eid, _Req(app))
-    replayed_info = await anext(gen)
-    replayed_stats = await anext(gen)
+    replayed_info = await _next_frame(gen, what="replayed execution_info")
+    replayed_stats = await _next_frame(gen, what="replayed stats")
     assert replayed_info.event == "meta"
     assert replayed_info.data["event_type"] == "execution_info"
     assert replayed_info.data["args"] == ["arg1"]
@@ -210,7 +239,7 @@ async def test_replay_before_live_keeps_meta_frames(app_client):
         ),
     )
     await bus.publish(eid, _complete())
-    rest = [frame async for frame in gen]
+    rest = await _drain_frames(gen)
     metas = [f for f in (replayed_info, replayed_stats, *rest) if f.event == "meta"]
     assert len(metas) == 2
 
@@ -236,7 +265,7 @@ async def test_live_before_replay_delivers_meta_frames(app_client):
     # One earlier row so the generator starts draining live after that replay.
     await ex_logger._persist("system", "boot")
     gen = stream_execution(eid, _Req(app))
-    first = await anext(gen)
+    first = await _next_frame(gen, what="replayed system")
     assert first.event == "system"
 
     info_id = await runner._emit_execution_info(
@@ -250,7 +279,7 @@ async def test_live_before_replay_delivers_meta_frames(app_client):
     )
     stats_id = await runner._emit_stats(ex_logger, eid, bus, config, input_tokens=40, output_tokens=10, cost_usd=0.0001)
     await bus.publish(eid, _complete())
-    rest = [frame async for frame in gen]
+    rest = await _drain_frames(gen)
 
     live_info = next(f for f in rest if f.event == "meta" and f.data.get("event_type") == "execution_info")
     live_stats = next(f for f in rest if f.event == "meta" and f.data.get("event_type") == "stats")
