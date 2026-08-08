@@ -307,14 +307,27 @@ class _AgentFileHandler(FileSystemEventHandler):
             self._reload(Path(event.src_path))
 
     def on_deleted(self, event):
-        if not event.is_directory and is_agent_file(Path(event.src_path)):
-            existing = self.registry.get_by_path(event.src_path)
-            display_name = existing.name if existing else None
-            agent_id = self.registry.remove_by_path(event.src_path)
-            if agent_id:
-                self.scheduler.unschedule_agent(agent_id)
-                logger.info(f"Agent file deleted: {agent_id}")
-                self._publish_event("removed", agent_id, display_name)
+        if event.is_directory or not is_agent_file(Path(event.src_path)):
+            return
+
+        path = Path(event.src_path)
+
+        # Atomic saves (perl -i, sed -i, vim, most editors) write a temp file and
+        # rename it over the original. FSEvents then closes the sequence with a
+        # delete for a path that is still on disk. Dropping the agent there would
+        # unregister a live agent with nothing arriving afterwards to restore it.
+        if path.exists():
+            if self._is_managed_agent_path(path):
+                self._reload(path)
+            return
+
+        existing = self.registry.get_by_path(event.src_path)
+        display_name = existing.name if existing else None
+        agent_id = self.registry.remove_by_path(event.src_path)
+        if agent_id:
+            self.scheduler.unschedule_agent(agent_id)
+            logger.info(f"Agent file deleted: {agent_id}")
+            self._publish_event("removed", agent_id, display_name)
 
     def on_moved(self, event):
         """Handle rename/move: drop the old id; reload only if dest stays in agents_dir."""

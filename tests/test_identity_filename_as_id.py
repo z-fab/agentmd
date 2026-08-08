@@ -395,3 +395,61 @@ def test_file_rename_leaves_memory_file_behind(tmp_path):
     assert pc.get_memory_file_path(after) == agents / "new-id.memory.md"
     assert mem.exists()
     assert not (agents / "new-id.memory.md").exists()
+
+
+def test_file_handler_atomic_save_keeps_agent_registered(tmp_path):
+    """A stale delete for a file that still exists must not drop the agent.
+
+    Atomic saves (perl -i, sed -i, vim, most editors) write a temp file and
+    rename it over the original. macOS FSEvents then reports the sequence
+    created/modified/moved/created/modified/**deleted** for a path that is
+    very much still on disk. Trusting that delete unregisters a live agent,
+    and nothing arrives afterwards to bring it back — the backend 404s on an
+    agent the user can see in `agentmd list`.
+    """
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    path = _write_agent(agents / "pesquisador.md", name="Research Bot")
+
+    reg = AgentRegistry()
+    reg.register(parse_agent_file(path))
+
+    scheduler = MagicMock()
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
+
+    # The atomic save rewrote the file in place — it exists, with new content.
+    _write_agent(path, name="Outro Rotulo")
+
+    event = MagicMock()
+    event.is_directory = False
+    event.src_path = str(path)
+    handler.on_deleted(event)
+
+    assert reg.get("pesquisador") is not None, "agent dropped by a stale delete event"
+    assert reg.get("pesquisador").name == "Outro Rotulo", "stale delete skipped the reload"
+    # A full reload unschedules then reschedules; what must not happen is the
+    # agent being torn down and left gone.
+    scheduler.schedule_agent.assert_called_once()
+
+
+def test_file_handler_real_delete_still_removes_agent(tmp_path):
+    """The guard must not break genuine deletion."""
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    path = _write_agent(agents / "pesquisador.md", name="Research Bot")
+
+    reg = AgentRegistry()
+    reg.register(parse_agent_file(path))
+
+    scheduler = MagicMock()
+    handler = _AgentFileHandler(reg, scheduler, loop=None, agents_dir=agents)
+
+    path.unlink()
+    event = MagicMock()
+    event.is_directory = False
+    event.src_path = str(path)
+    handler.on_deleted(event)
+
+    assert reg.get("pesquisador") is None
+    assert len(reg) == 0
+    scheduler.unschedule_agent.assert_called_once_with("pesquisador")
