@@ -950,11 +950,8 @@ def list_agents(
     async def _list_with_last_runs():
         async with _runtime(workspace) as rt:
             agents = rt.registry.all()
-            last_runs: dict[str, str] = {}
-            for a in agents:
-                ex = await rt.db.get_last_execution(a.id)
-                if ex:
-                    last_runs[a.id] = ex.started_at
+            last_by_id = await rt.db.get_last_executions([a.id for a in agents])
+            last_runs = {aid: ex.started_at for aid, ex in last_by_id.items()}
             return agents, last_runs
 
     agents, last_runs = asyncio.run(_list_with_last_runs())

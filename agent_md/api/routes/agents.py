@@ -11,6 +11,7 @@ from agent_md.api.schemas import (
     AgentDetail,
     AgentSummary,
     ExecutionSummary,
+    LastResult,
     ReloadResponse,
     RunRequest,
     RunResponse,
@@ -37,7 +38,25 @@ def _summary_fields(config) -> dict:
 @router.get("", response_model=list[AgentSummary])
 async def list_agents(request: Request):
     rt = request.app.state.runtime
-    return [AgentSummary(**_summary_fields(c)) for c in rt.registry.all()]
+    configs = rt.registry.all()
+    last_by_id = await rt.db.get_last_executions([c.id for c in configs])
+
+    summaries: list[AgentSummary] = []
+    for config in configs:
+        last_exec = last_by_id.get(config.id)
+        next_run = None
+        if rt.scheduler and config.trigger.type == "schedule":
+            next_run = rt.scheduler.get_next_run(config.id)
+        summaries.append(
+            AgentSummary(
+                **_summary_fields(config),
+                next_run=next_run,
+                last_result=(
+                    LastResult(status=last_exec.status, started_at=last_exec.started_at) if last_exec else None
+                ),
+            )
+        )
+    return summaries
 
 
 @router.get("/{agent_id}", response_model=AgentDetail)
@@ -58,6 +77,7 @@ async def get_agent(agent_id: str, request: Request):
         **_summary_fields(config),
         last_run=last_exec.started_at if last_exec else None,
         next_run=next_run,
+        last_result=(LastResult(status=last_exec.status, started_at=last_exec.started_at) if last_exec else None),
         history=config.history,
         settings=config.settings.model_dump(),
         paths=resolved_paths,

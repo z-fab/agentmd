@@ -221,6 +221,49 @@ class Database:
         results = await self.get_executions(agent_id, limit=1)
         return results[0] if results else None
 
+    async def get_last_executions(self, agent_ids: list[str] | None = None) -> dict[str, ExecutionRecord]:
+        """Return the most recent execution per agent in a single query.
+
+        When *agent_ids* is given, only those agents are considered (empty list
+        yields an empty dict without hitting the database). When omitted, every
+        agent that has at least one execution is included.
+        """
+        if agent_ids is not None and len(agent_ids) == 0:
+            return {}
+
+        if agent_ids is None:
+            sql = """
+                SELECT * FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY agent_id
+                               ORDER BY started_at DESC, id DESC
+                           ) AS rn
+                    FROM executions
+                )
+                WHERE rn = 1
+                """
+            params: tuple = ()
+        else:
+            placeholders = ",".join("?" * len(agent_ids))
+            sql = f"""
+                SELECT * FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY agent_id
+                               ORDER BY started_at DESC, id DESC
+                           ) AS rn
+                    FROM executions
+                    WHERE agent_id IN ({placeholders})
+                )
+                WHERE rn = 1
+                """
+            params = tuple(agent_ids)
+
+        cursor = await self.db.execute(sql, params)
+        rows = await cursor.fetchall()
+        return {row["agent_id"]: ExecutionRecord(**dict(row)) for row in rows}
+
     async def get_last_finished_execution(self, agent_id: str, exclude_id: int | None = None):
         """Most recent execution for an agent that is not running/waiting/pending."""
         cursor = await self.db.execute(

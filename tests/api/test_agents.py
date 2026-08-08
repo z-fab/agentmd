@@ -37,6 +37,37 @@ async def client(app_with_agents):
         yield c
 
 
+@pytest.fixture
+async def app_with_schedule(tmp_path):
+    agents_dir = tmp_path / "agents"
+    agents_dir.mkdir()
+    (agents_dir / "cron-agent.md").write_text(
+        "---\n"
+        "name: cron-agent\n"
+        "trigger:\n  type: schedule\n  every: 1h\n"
+        "model:\n  provider: google\n  name: gemini-2.5-flash\n"
+        "---\nYou are a scheduled agent.\n"
+    )
+    (agents_dir / "manual-agent.md").write_text(
+        "---\nname: manual-agent\nmodel:\n  provider: google\n  name: gemini-2.5-flash\n---\nYou are a manual agent.\n"
+    )
+    application = create_app(
+        workspace=tmp_path,
+        agents_dir=agents_dir,
+        db_path=tmp_path / "test.db",
+        start_scheduler=True,
+    )
+    async with application.router.lifespan_context(application):
+        yield application
+
+
+@pytest.fixture
+async def schedule_client(app_with_schedule):
+    transport = ASGITransport(app=app_with_schedule)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+
 @pytest.mark.asyncio
 async def test_list_agents(client):
     resp = await client.get("/agents")
@@ -145,3 +176,60 @@ async def test_get_agent_detail_icon_resolved_when_absent(client):
     assert data["icon"] != ""
     assert data["icon"] in AGENT_EMOJI_PALETTE
     assert data["icon"] == resolve_agent_icon("test-agent", None)
+
+
+@pytest.mark.asyncio
+async def test_list_agents_exposes_last_result(app_with_agents, client):
+    """GET /agents includes last_result (status + started_at) from the batch lookup."""
+    rt = app_with_agents.state.runtime
+    eid = await rt.db.create_execution("test-agent", "manual")
+    await rt.db.update_execution(eid, status="success")
+    rec = await rt.db.get_execution(eid)
+
+    resp = await client.get("/agents")
+    assert resp.status_code == 200
+    agents = resp.json()
+    test_agent = next(a for a in agents if a["id"] == "test-agent")
+    icon_agent = next(a for a in agents if a["id"] == "icon-agent")
+
+    assert test_agent["last_result"] == {"status": "success", "started_at": rec.started_at}
+    assert icon_agent["last_result"] is None
+    assert "next_run" in test_agent
+
+
+@pytest.mark.asyncio
+async def test_list_agents_exposes_real_next_run(schedule_client):
+    """GET /agents returns a real next_run for scheduled agents (job id agent_{id})."""
+    resp = await schedule_client.get("/agents")
+    assert resp.status_code == 200
+    agents = {a["id"]: a for a in resp.json()}
+
+    assert agents["cron-agent"]["next_run"] is not None
+    assert "T" in agents["cron-agent"]["next_run"]  # ISO timestamp
+    assert agents["manual-agent"]["next_run"] is None
+    assert agents["cron-agent"]["last_result"] is None
+    assert agents["manual-agent"]["last_result"] is None
+
+
+@pytest.mark.asyncio
+async def test_list_agents_uses_one_last_execution_query(app_with_agents, client, monkeypatch):
+    """Listing N agents must not N+1 on last execution — one batch query."""
+    rt = app_with_agents.state.runtime
+    for agent_id in ("test-agent", "icon-agent"):
+        eid = await rt.db.create_execution(agent_id, "manual")
+        await rt.db.update_execution(eid, status="success")
+
+    sql_log: list[str] = []
+    original = rt.db.db.execute
+
+    async def tracking_execute(sql, parameters=()):
+        sql_log.append(sql)
+        return await original(sql, parameters)
+
+    monkeypatch.setattr(rt.db.db, "execute", tracking_execute)
+    resp = await client.get("/agents")
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 2
+
+    last_exec_queries = [sql for sql in sql_log if "from executions" in sql.lower() and "row_number()" in sql.lower()]
+    assert len(last_exec_queries) == 1
