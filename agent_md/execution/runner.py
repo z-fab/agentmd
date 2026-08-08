@@ -5,7 +5,7 @@ import logging
 import sys
 import time
 
-from agent_md.execution.logger import ExecutionLogger, _extract_text, agent_identity_payload
+from agent_md.execution.logger import ExecutionLogger, _extract_text, agent_identity_payload, final_answer_text
 from agent_md.sdk import _set_context, _reset_context
 from agent_md.workspace.path_context import PathContext
 from agent_md.config.pricing import estimate_cost
@@ -662,8 +662,8 @@ class AgentRunner:
                 # 5. Extract final output
                 output = ""
                 if last_ai_msg:
-                    raw_content = getattr(last_ai_msg, "content", None)
-                    output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
+                    # Same value the logger persists — replay must equal live.
+                    output = final_answer_text(last_ai_msg)
                     log_id = await ex_logger.mark_final_answer(last_ai_msg)
                     if event_bus is not None:
                         await event_bus.publish(
@@ -682,7 +682,7 @@ class AgentRunner:
                     duration_ms,
                     total_input_tokens + child_input_tokens,
                     total_output_tokens + child_output_tokens,
-                    output_data=output[:10000],
+                    output_data=output,
                     cost_usd=cost_usd,
                 )
                 result["output"] = output
@@ -949,8 +949,8 @@ class AgentRunner:
             duration_ms = int((time.monotonic() - start_time) * 1000)
             output = ""
             if last_ai_msg:
-                raw = getattr(last_ai_msg, "content", None)
-                output = _extract_text(raw) if raw is not None else str(last_ai_msg)
+                # Same value the logger persists — replay must equal live.
+                output = final_answer_text(last_ai_msg)
                 log_id = await ex_logger.mark_final_answer(last_ai_msg)
                 if event_bus is not None:
                     await event_bus.publish(
@@ -967,7 +967,7 @@ class AgentRunner:
                 duration_ms,
                 total_input_tokens + child_input_tokens,
                 total_output_tokens + child_output_tokens,
-                output_data=output[:10000],
+                output_data=output,
                 cost_usd=cost_usd,
             )
             result["output"] = output

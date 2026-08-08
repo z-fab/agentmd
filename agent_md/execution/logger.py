@@ -14,6 +14,17 @@ from agent_md.db.database import Database
 
 logger = logging.getLogger(__name__)
 
+# Upper bound for the final answer — the log row, the live SSE event and
+# ``executions.output_data`` all carry this exact value, never a shorter one.
+# Replay and live are deduplicated by log id in the SSE stream, so two different
+# strings under the same id mean a reconnecting client can end up with the
+# truncated one forever. Truncating once, here, keeps them identical.
+#
+# The ceiling is a backstop against pathological content, not a summariser:
+# 1M chars is roughly 250k tokens, well past any model's output limit, and a
+# row that size is unremarkable for SQLite (default string/blob cap is 1e9).
+FINAL_ANSWER_MAX_CHARS = 1_000_000
+
 
 def _extract_text(content) -> str:
     """Extract plain text from message content.
@@ -32,6 +43,17 @@ def _extract_text(content) -> str:
                 parts.append(part)
         return " ".join(parts).strip()
     return str(content).strip() if content else ""
+
+
+def final_answer_text(msg) -> str:
+    """Canonical final answer text for *msg*.
+
+    Single source for the value that reaches the live event, the persisted log
+    row and ``output_data``. Callers must not re-truncate it.
+    """
+    raw = getattr(msg, "content", None)
+    text = _extract_text(raw) if raw is not None else str(msg)
+    return text[:FINAL_ANSWER_MAX_CHARS]
 
 
 def agent_identity_payload(agent_id: str, display_name: str | None = None) -> dict:
@@ -128,11 +150,16 @@ class ExecutionLogger:
         return log_id
 
     async def mark_final_answer(self, msg) -> int:
-        """Persist the last AI message as a final_answer event. Returns the log entry ID."""
-        content = _extract_text(getattr(msg, "content", ""))
+        """Persist the last AI message as a final_answer event. Returns the log entry ID.
+
+        Emitted and persisted content are the same value: a replayed final answer
+        must be identical to the one the live stream showed. Only the console line
+        stays abridged.
+        """
+        content = final_answer_text(msg)
         logger.info(f"[{self.agent_name}] ✅ {content[:200]}")
         self._emit("final_answer", {"content": content})
-        return await self._persist("final_answer", content[:500])
+        return await self._persist("final_answer", content)
 
     async def log_messages(self, messages: list) -> None:
         """Process all messages from a completed execution.
