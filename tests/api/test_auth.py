@@ -1,7 +1,12 @@
-"""Tests for API key authentication — and for the transport it applies to.
+"""Tests for the API key middleware itself.
 
-The socket and TCP servers share one FastAPI app. Auth must guard the TCP
-entrypoint only: the local CLI talks over the Unix socket and sends no key.
+The socket and TCP servers share one FastAPI app, so auth must guard the TCP
+entrypoint only — the local CLI talks over the Unix socket and sends no key.
+
+Scope: these tests wrap the app by hand and check the middleware's behaviour.
+They say nothing about which entrypoint `agentmd start` wraps, and they pass
+unchanged if the socket server is wired to the guarded app by mistake. The
+wiring itself is covered end to end in tests/test_start_transport_auth.py.
 """
 
 import pytest

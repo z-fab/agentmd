@@ -24,7 +24,11 @@ from agent_md.main import app as cli_app
 
 API_KEY = "e2e-secret-key"
 BOOT_TIMEOUT = 20.0
-SHUTDOWN_TIMEOUT = 20.0
+# Graceful shutdown normally lands in well under a second. The budget only has
+# to be generous enough for a loaded machine — never so generous that a backend
+# that *cannot* be stopped gracefully turns a red test into a stalled CI job.
+SHUTDOWN_TIMEOUT = 10.0
+CANCEL_TIMEOUT = 5.0
 
 
 @pytest.fixture
@@ -49,6 +53,33 @@ async def _wait_until(predicate, timeout: float = BOOT_TIMEOUT) -> None:
             return
         await asyncio.sleep(0.1)
     raise AssertionError(f"condition not met within {timeout}s")
+
+
+async def _stop_backend(server: asyncio.Task, socket_client: httpx.AsyncClient) -> None:
+    """Stop the backend, bounded at every step.
+
+    `POST /shutdown` travels over the socket, so it is exactly the call that
+    stops working when auth is wired to the shared app instead of the TCP
+    entrypoint. Waiting on a graceful exit that answered 401 would convert a
+    wiring bug into a stalled job, so the status code decides: no 200, no wait.
+    """
+    if server.done():
+        return
+
+    graceful = False
+    with contextlib.suppress(Exception):
+        graceful = (await socket_client.post("/shutdown")).status_code == 200
+
+    if graceful:
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(server), timeout=SHUTDOWN_TIMEOUT)
+
+    if not server.done():
+        server.cancel()
+        with contextlib.suppress(BaseException):
+            await asyncio.wait_for(server, timeout=CANCEL_TIMEOUT)
+
+    assert server.done(), "backend ignored both /shutdown and cancellation"
 
 
 @pytest.fixture
@@ -78,18 +109,22 @@ async def backend(tmp_path, short_state_dir):
 
     try:
         await _wait_until(_both_up)
+
+        # Precondition, not a courtesy: every test in this file runs against a
+        # backend whose socket door is open. Asserting it here is what makes the
+        # TCP tests — whose own subject the mutation leaves untouched — report a
+        # shared-app middleware instead of passing while the local CLI 401s.
+        probe = await socket_client.get("/info")
+        assert probe.status_code == 200, (
+            f"the Unix socket answered {probe.status_code} to an unauthenticated request; "
+            "auth must wrap the TCP entrypoint only, never the shared app"
+        )
+
         yield socket_client, base_url
     finally:
         await tcp_probe.aclose()
-        if not server.done():
-            with contextlib.suppress(Exception):
-                await socket_client.post("/shutdown")
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(asyncio.shield(server), timeout=SHUTDOWN_TIMEOUT)
+        await _stop_backend(server, socket_client)
         await socket_client.aclose()
-        server.cancel()
-        with contextlib.suppress(BaseException):
-            await server
 
 
 async def test_socket_transport_works_without_key(backend):
