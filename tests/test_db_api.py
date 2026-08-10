@@ -1,15 +1,6 @@
 """Tests for database methods needed by the HTTP API."""
 
 import pytest
-from agent_md.db.database import Database
-
-
-@pytest.fixture
-async def db(tmp_path):
-    d = Database(tmp_path / "test.db")
-    await d.connect()
-    yield d
-    await d.close()
 
 
 def _count_last_execution_queries(sql_log: list[str]) -> int:

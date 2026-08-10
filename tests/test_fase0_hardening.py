@@ -21,9 +21,7 @@ from agent_md.graph.builder import build_system_message, build_system_message_as
 
 
 @pytest.mark.asyncio
-async def test_update_execution_waiting_preserves_tokens(tmp_path):
-    db = Database(tmp_path / "t.db")
-    await db.connect()
+async def test_update_execution_waiting_preserves_tokens(db):
     eid = await db.create_execution("a", "manual")
     await db.update_execution(
         eid, status="running", input_tokens=100, output_tokens=50, total_tokens=150, cost_usd=0.01
@@ -38,19 +36,15 @@ async def test_update_execution_waiting_preserves_tokens(tmp_path):
     assert rec.input_tokens == 100
     assert rec.output_tokens == 50
     assert rec.cost_usd == 0.01
-    await db.close()
 
 
 @pytest.mark.asyncio
-async def test_update_execution_terminal_sets_finished_at(tmp_path):
-    db = Database(tmp_path / "t.db")
-    await db.connect()
+async def test_update_execution_terminal_sets_finished_at(db):
     eid = await db.create_execution("a", "manual")
     await db.update_execution(eid, status="success", duration_ms=10)
     rec = await db.get_execution(eid)
     assert rec.status == "success"
     assert rec.finished_at is not None
-    await db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -64,10 +58,12 @@ async def test_readonly_connect_creates_missing_db(tmp_path):
     assert not path.exists()
     db = Database(path)
     await db.connect(readonly=True)
-    assert path.exists()
-    rows = await db.list_executions()
-    assert rows == []
-    await db.close()
+    try:
+        assert path.exists()
+        rows = await db.list_executions()
+        assert rows == []
+    finally:
+        await db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -102,13 +98,15 @@ async def test_migrate_adds_missing_columns(tmp_path):
 
     db = Database(path)
     await db.connect()
-    # create_execution writes pid — would fail without migration
-    eid = await db.create_execution("a", "manual")
-    await db.update_execution(eid, status="success", cost_usd=1.23)
-    rec = await db.get_execution(eid)
-    assert rec.cost_usd == 1.23
-    assert rec.pid is not None
-    await db.close()
+    try:
+        # create_execution writes pid — would fail without migration
+        eid = await db.create_execution("a", "manual")
+        await db.update_execution(eid, status="success", cost_usd=1.23)
+        rec = await db.get_execution(eid)
+        assert rec.cost_usd == 1.23
+        assert rec.pid is not None
+    finally:
+        await db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +146,7 @@ def test_base_url_normalization_is_provider_aware(provider, given, expected):
 
 
 @pytest.mark.asyncio
-async def test_get_logs_ordered_by_id(tmp_path):
-    db = Database(tmp_path / "t.db")
-    await db.connect()
+async def test_get_logs_ordered_by_id(db):
     eid = await db.create_execution("a", "manual")
     # Same-second timestamps — order must still be insertion order
     for i in range(5):
@@ -158,7 +154,6 @@ async def test_get_logs_ordered_by_id(tmp_path):
     logs = await db.get_logs(eid, limit=3)
     assert [log.message for log in logs] == ["msg-0", "msg-1", "msg-2"]
     assert logs[0].id < logs[1].id < logs[2].id
-    await db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -408,13 +403,11 @@ def _resume_config(*, max_cost_usd=None, max_tool_calls=50, max_execution_tokens
 
 
 @pytest.mark.asyncio
-async def test_resume_preserves_parent_and_child_cost(tmp_path):
+async def test_resume_preserves_parent_and_child_cost(tmp_path, db):
     """Pause→resume must keep real child cost, not reprice child tokens at parent rate."""
     from agent_md.config.pricing import estimate_cost
     from agent_md.execution.runner import AgentRunner
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
     eid = await db.create_execution("test-agent", "manual")
 
     # Parent: 1k/1k on gpt-4o; child contributed 5k tokens at a different rate ($0.50 flat).
@@ -438,7 +431,7 @@ async def test_resume_preserves_parent_and_child_cost(tmp_path):
     await db.add_log(eid, "tool_call", "t2")
 
     config = _resume_config()
-    runner = AgentRunner(db, MagicMock(), MagicMock(), db_path=str(tmp_path / "t.db"))
+    runner = AgentRunner(db, MagicMock(), MagicMock(), db_path=str(db.db_path))
 
     # Resume segment: one more AI message with 500/500 parent tokens, no tools
     final = MagicMock()
@@ -467,16 +460,13 @@ async def test_resume_preserves_parent_and_child_cost(tmp_path):
     wrong = estimate_cost("openai", "gpt-4o", 1500 + child_tokens, 1500)
     assert result["cost_usd"] != pytest.approx(wrong, rel=1e-6)
     assert result["input_tokens"] == 1500 + child_tokens  # parent in + sunk child folded into total
-    await db.close()
 
 
 @pytest.mark.asyncio
-async def test_resume_tool_call_limit_counts_pre_pause(tmp_path):
+async def test_resume_tool_call_limit_counts_pre_pause(tmp_path, db):
     """max_tool_calls must count tool_call log rows from before the pause."""
     from agent_md.execution.runner import AgentRunner
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
     eid = await db.create_execution("test-agent", "manual")
     await db.update_execution(eid, status="waiting", input_tokens=0, output_tokens=0, total_tokens=0)
     await db.set_pending_interrupt(eid, "r1", {"request_id": "r1", "kind": "confirm", "message": "?"})
@@ -484,7 +474,7 @@ async def test_resume_tool_call_limit_counts_pre_pause(tmp_path):
         await db.add_log(eid, "tool_call", f"t{i}")
 
     config = _resume_config(max_tool_calls=2)
-    runner = AgentRunner(db, MagicMock(), MagicMock(), db_path=str(tmp_path / "t.db"))
+    runner = AgentRunner(db, MagicMock(), MagicMock(), db_path=str(db.db_path))
 
     next_call = MagicMock()
     next_call.type = "ai"
@@ -504,7 +494,6 @@ async def test_resume_tool_call_limit_counts_pre_pause(tmp_path):
 
     assert result["status"] == "aborted"
     assert "max_tool_calls" in result.get("error", "")
-    await db.close()
 
 
 # ---------------------------------------------------------------------------

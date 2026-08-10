@@ -1,14 +1,4 @@
 import json
-import pytest
-from agent_md.db.database import Database
-
-
-@pytest.fixture
-async def db(tmp_path):
-    d = Database(tmp_path / "t.db")
-    await d.connect()
-    yield d
-    await d.close()
 
 
 async def test_pending_interrupt_roundtrip(db):
