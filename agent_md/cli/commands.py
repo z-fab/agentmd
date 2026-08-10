@@ -462,6 +462,9 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
 
     app = create_app(workspace=workspace, start_scheduler=True)
     app.state.keep_alive = keep_alive
+    # Service mode: someone other than the local CLI may be driving the backend,
+    # so a HILT execution waiting for a human must keep it alive.
+    app.state.service_mode = bool(port) or keep_alive
 
     # The socket app is never wrapped — the local CLI sends no key and the
     # socket is already restricted to the owner (chmod 600 below).
