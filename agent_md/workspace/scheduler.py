@@ -1,4 +1,5 @@
 import asyncio
+import fnmatch
 import logging
 import re
 from pathlib import Path
@@ -14,6 +15,28 @@ from agent_md.workspace.registry import AgentConfig, AgentRegistry
 from agent_md.execution.runner import AgentRunner
 
 logger = logging.getLogger(__name__)
+
+
+def _path_matches_globs(path: Path, patterns: list[str]) -> bool:
+    """Return True if *path* matches any glob in *patterns*.
+
+    Each pattern is tried against the absolute path string and the basename so
+    both ``*.pdf`` and ``**/inbox/*.csv`` work without special-casing.
+    """
+    if not patterns:
+        return False
+    absolute = str(path)
+    name = path.name
+    for pattern in patterns:
+        if fnmatch.fnmatch(absolute, pattern) or fnmatch.fnmatch(name, pattern):
+            return True
+        # Path.match handles ** recursively the way pathlib users expect
+        try:
+            if path.match(pattern):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 # Trigger types the scheduler owns. Refusing one of these is what "paused" and
@@ -192,7 +215,16 @@ class AgentScheduler:
         resolved_paths = [self.path_context._resolve_relative(p) for p in config.trigger.paths]
         logger.info(f"Setting up watch for agent '{config.id}': {resolved_paths}")
 
-        handler = _AgentWatchHandler(config.id, resolved_paths, self._execute_agent, self._loop)
+        filters = config.trigger.filters
+        handler = _AgentWatchHandler(
+            config.id,
+            resolved_paths,
+            self._execute_agent,
+            self._loop,
+            include=list(filters.include) if filters else [],
+            exclude=list(filters.exclude) if filters else [],
+            debounce=config.trigger.debounce,
+        )
         watch_ids = []
 
         for path in resolved_paths:
@@ -452,28 +484,48 @@ class _AgentWatchHandler(FileSystemEventHandler):
         watch_paths: list[Path],
         execute_fn,
         loop: asyncio.AbstractEventLoop | None,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+        debounce: float = 0.5,
     ):
         self.agent_id = agent_id
         self.watch_paths = watch_paths
         self._execute_fn = execute_fn  # async fn(agent_id, trigger_type, trigger_context)
         self._loop = loop
+        self._include = list(include or [])
+        self._exclude = list(exclude or [])
+        self._debounce = debounce
         self._debounce_timers: dict[Path, asyncio.TimerHandle] = {}
         self._pending_contexts: dict[Path, str] = {}
 
+    def _passes_filters(self, path: Path) -> bool:
+        """Apply trigger.filters include/exclude globs to a candidate path."""
+        if self._exclude and _path_matches_globs(path, self._exclude):
+            return False
+        if self._include and not _path_matches_globs(path, self._include):
+            return False
+        return True
+
     def _is_relevant(self, event_path: str) -> bool:
-        """Check if event path is within watched paths."""
+        """Check if event path is within watched paths and passes filters."""
         path = Path(event_path).resolve()
+        in_watch = False
         for watch_path in self.watch_paths:
             if watch_path.is_dir():
                 try:
                     path.relative_to(watch_path)
-                    return True
+                    in_watch = True
+                    break
                 except ValueError:
                     continue
             else:
                 if path == watch_path:
-                    return True
-        return False
+                    in_watch = True
+                    break
+        if not in_watch:
+            return False
+        return self._passes_filters(path)
 
     def _build_context(self, event) -> str:
         """Build trigger context string from event."""
@@ -497,8 +549,10 @@ class _AgentWatchHandler(FileSystemEventHandler):
     def _schedule_trigger(self, event) -> None:
         """Schedule agent trigger with debounce based on file path.
 
-        Multiple events for the same file within 500ms are collapsed into one trigger.
-        For moved events, the debounce key is the destination path.
+        Multiple events for the same file within the debounce window are
+        collapsed into one trigger. For moved events, the debounce key is the
+        destination path. The window defaults to 0.5s and is overridable via
+        ``trigger.debounce``.
         """
         if event.event_type == "moved":
             path = Path(event.dest_path).resolve()
@@ -513,7 +567,7 @@ class _AgentWatchHandler(FileSystemEventHandler):
         self._pending_contexts[path] = self._build_context(event)
 
         if self._loop:
-            self._debounce_timers[path] = self._loop.call_later(0.5, self._trigger_agent, path)
+            self._debounce_timers[path] = self._loop.call_later(self._debounce, self._trigger_agent, path)
 
     def on_created(self, event):
         if not event.is_directory and self._is_relevant(event.src_path):
