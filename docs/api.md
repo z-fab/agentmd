@@ -145,8 +145,15 @@ client would be left with whichever arrived first.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/scheduler` | Status + jobs with next_run |
-| POST | `/scheduler/pause` | Pause scheduler |
-| POST | `/scheduler/resume` | Resume scheduler |
+| POST | `/scheduler/pause` | Pause every trigger |
+| POST | `/scheduler/resume` | Resume every trigger |
+
+**Notes:**
+- Pause covers both trigger types: `schedule` agents stop firing and `watch` agents stop
+  reacting to file events. Manual runs (`POST /agents/{id}/run`) are unaffected — pausing
+  the scheduler does not disable the run button.
+- Pause does not cancel an execution already running, and does not shut the backend down:
+  a paused workspace stays alive so it can be resumed.
 
 ### Events
 
