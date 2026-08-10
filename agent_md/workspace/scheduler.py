@@ -16,6 +16,43 @@ from agent_md.execution.runner import AgentRunner
 logger = logging.getLogger(__name__)
 
 
+# Trigger types the scheduler owns. Refusing one of these is what "paused" and
+# "enabled: false" mean. `manual` and `chat` are deliberate acts by a human, so
+# neither flag applies to them — pausing the scheduler must not disable the
+# run button.
+_SCHEDULER_TRIGGERS = frozenset({"schedule", "watch"})
+
+
+async def check_admission(
+    config: AgentConfig,
+    db,
+    *,
+    trigger_type: str,
+    paused: bool = False,
+) -> str | None:
+    """Decide whether an execution of *config* may start now.
+
+    The single place the admission rules live. Returns ``None`` when the
+    execution is admitted, otherwise a short reason phrased to read as the tail
+    of a sentence about the agent.
+
+    Both call sites — the trigger funnel (``AgentScheduler._execute_agent``) and
+    the manual funnel (``POST /agents/{id}/run``) — consume this. How a refusal
+    is *surfaced* stays with the caller, because a dropped timer tick and a
+    rejected HTTP request are not the same event: the trigger path logs and
+    drops, the HTTP layer answers 409. What may not diverge is the decision, and
+    that is why it is only written here.
+    """
+    if trigger_type in _SCHEDULER_TRIGGERS:
+        if not config.enabled:
+            return "agent is disabled"
+        if paused:
+            return "the scheduler is paused"
+    if config.on_pending == "skip" and await db.has_waiting_execution(config.id):
+        return "a session is waiting for a response"
+    return None
+
+
 def parse_interval(interval_str: str) -> dict:
     """Convert '30s', '5m', '2h', '1d' to IntervalTrigger kwargs."""
     match = re.match(r"^(\d+)([smhd])$", interval_str)
@@ -108,35 +145,47 @@ class AgentScheduler:
         self._remove_watch_handlers(agent_id)
 
     async def _execute_agent(self, agent_id: str, trigger_type: str, trigger_context: str | None = None) -> None:
-        """Callback for scheduled execution."""
+        """Callback for every trigger-driven execution — APScheduler and watchdog alike.
+
+        Both trigger sources land here and nowhere else, which makes the
+        ``check_admission`` call below the one thing standing between a trigger
+        firing and an execution existing. A watch event reaching this point with
+        the scheduler paused is dropped here, since stopping the ``Observer``
+        itself is not an option: watchdog observers cannot be restarted.
+        """
         config = self.registry.get(agent_id)
-        if config and config.enabled:
-            if config.on_pending == "skip" and await self.runner.db.has_waiting_execution(config.id):
-                logger.info(f"Skipping '{agent_id}': a session is waiting for a response")
-                return
-            cancel_event = asyncio.Event()
-            # Pre-create execution so we can register the cancel_event
-            execution_id = await self.runner.db.create_execution(
-                agent_id=config.id, trigger=trigger_type, status="running"
+        if config is None:
+            return
+
+        reason = await check_admission(
+            config,
+            self.runner.db,
+            trigger_type=trigger_type,
+            paused=self._paused,
+        )
+        if reason:
+            logger.info(f"Skipping '{agent_id}': {reason}")
+            return
+
+        cancel_event = asyncio.Event()
+        # Pre-create execution so we can register the cancel_event
+        execution_id = await self.runner.db.create_execution(agent_id=config.id, trigger=trigger_type, status="running")
+        self.cancel_events[execution_id] = cancel_event
+        try:
+            await self.runner.run(
+                config,
+                trigger_type,
+                trigger_context=trigger_context,
+                on_event=self.on_event,
+                on_start=self.on_start,
+                on_complete=self.on_complete,
+                event_bus=self.event_bus,
+                global_event_bus=self.global_event_bus,
+                cancel_event=cancel_event,
+                execution_id=execution_id,
             )
-            self.cancel_events[execution_id] = cancel_event
-            try:
-                await self.runner.run(
-                    config,
-                    trigger_type,
-                    trigger_context=trigger_context,
-                    on_event=self.on_event,
-                    on_start=self.on_start,
-                    on_complete=self.on_complete,
-                    event_bus=self.event_bus,
-                    global_event_bus=self.global_event_bus,
-                    cancel_event=cancel_event,
-                    execution_id=execution_id,
-                )
-            finally:
-                self.cancel_events.pop(execution_id, None)
-        elif config and not config.enabled:
-            logger.debug(f"Skipping disabled agent: {agent_id}")
+        finally:
+            self.cancel_events.pop(execution_id, None)
 
     def _add_watch_handler(self, config: AgentConfig) -> None:
         """Register watchdog handlers for a single watch agent."""
@@ -223,13 +272,33 @@ class AgentScheduler:
             )
         return jobs
 
+    def has_active_triggers(self) -> bool:
+        """True while any trigger source can still fire an execution.
+
+        The idle-shutdown reads this. Counting only APScheduler jobs made a
+        workspace whose agents are all ``trigger: watch`` look idle, so the
+        five-minute timeout killed the backend and every watcher with it.
+
+        ``any`` over the values rather than a truth test on the dict: an entry
+        that registered no watch id observes nothing, and something that cannot
+        fire must not hold the backend up.
+        """
+        if self.scheduler.get_jobs():
+            return True
+        return any(self._watch_handlers.values())
+
     def pause(self) -> None:
-        """Pause the scheduler (does not cancel running jobs)."""
+        """Pause every trigger source (does not cancel running jobs).
+
+        Pausing APScheduler stops timers, but the watchdog ``Observer`` keeps
+        delivering events — those are refused at admission instead. See
+        ``_execute_agent``.
+        """
         self.scheduler.pause()
         self._paused = True
 
     def resume(self) -> None:
-        """Resume the scheduler."""
+        """Resume every trigger source."""
         self.scheduler.resume()
         self._paused = False
 

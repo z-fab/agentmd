@@ -7,6 +7,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_md.config.icons import resolve_agent_icon
+from agent_md.workspace.scheduler import check_admission
 from agent_md.api.schemas import (
     AgentDetail,
     AgentSummary,
@@ -137,15 +138,19 @@ async def run_agent(agent_id: str, request: Request, body: RunRequest | None = N
     if not config:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    if config.on_pending == "skip" and await rt.db.has_waiting_execution(config.id):
-        raise HTTPException(status_code=409, detail=f"Agent '{agent_id}' has a session waiting for a response")
-
     body = body or RunRequest()
     arguments = body.args or []
     session_id = body.session_id
     # A run that carries a conversation is a chat turn; without one it is a plain
     # manual run. Recording the real trigger is what makes the two distinguishable.
     trigger = "chat" if session_id else "manual"
+
+    # Same admission decision the trigger path makes, rendered as HTTP: a caller
+    # who asked for a run gets told why it was refused, where a timer tick is
+    # only logged.
+    reason = await check_admission(config, rt.db, trigger_type=trigger)
+    if reason:
+        raise HTTPException(status_code=409, detail=f"Agent '{agent_id}': {reason}")
 
     cancel_event = asyncio.Event()
     execution_id = await rt.db.create_execution(
