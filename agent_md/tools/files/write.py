@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.execution.self_writes import self_write
+
 
 def create_file_write_tool(agent_config, path_context):
     """Create a file_write tool bound to an agent's path context."""
@@ -31,7 +33,8 @@ def create_file_write_tool(agent_config, path_context):
 
         try:
             resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(content, encoding="utf-8")
+            with self_write(resolved):
+                resolved.write_text(content, encoding="utf-8")
             char_count = len(content)
             line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
             action = "Updated" if existed else "Created"
