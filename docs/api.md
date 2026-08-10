@@ -124,7 +124,12 @@ UUID per conversation is the intended shape.
 
 The `agent` trigger type indicates the execution was started by another agent via the `run_agent` tool. Use `parent_execution_id` to trace delegation chains.
 
-**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`, `waiting`
+**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`, `waiting`, `shutdown`
+
+**`shutdown` is terminal but not a result.** Both streams emit it and close when the
+backend is shutting down, so that a stream can never hold the process open (uvicorn will
+not exit while a connection is live). It says nothing about the execution: reconnect after
+the backend is back up and the stream replays from the log as usual.
 
 Per-execution stream payloads include identity fields:
 
@@ -183,6 +188,7 @@ client would be left with whichever arrived first.
 | Event | When | Data fields |
 |-------|------|-------------|
 | `heartbeat` | 10s of inactivity | `timestamp` |
+| `shutdown` | The backend is going down | `reason` |
 | `execution_started` | Execution begins | `execution_id`, `agent_id`, `display_name`, `agent_name` (= id), `trigger` |
 | `execution_completed` | Execution finishes | `execution_id`, `agent_id`, `display_name`, `agent_name` (= id), `status`, `duration_ms` |
 | `agents_changed` | Agent file added/modified/deleted | `event` (`loaded`/`updated`/`removed`), `agent_id`, `display_name`, `agent_name` (= id) |

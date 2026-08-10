@@ -610,7 +610,7 @@ agentmd status [OPTIONS]
 
 ## agentmd stop
 
-Stop the background runtime.
+Stop the background runtime, and confirm the process actually exited.
 
 ### Usage
 
@@ -623,8 +623,28 @@ agentmd stop [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+| `--timeout SECONDS` | | Float | 15 | Wait for a graceful exit before escalating |
 
-Sends SIGTERM for graceful shutdown. Falls back to SIGKILL after 5 seconds if needed.
+### What it does
+
+1. Reads the backend's PID from `/info` **before** asking it to stop — once
+   shutdown begins the socket is closed and unlinked, so nothing on the socket
+   can tell you whether the process is still there.
+2. Sends `POST /shutdown` and waits up to `--timeout` for the process to exit.
+3. If it is still alive: `SIGTERM`, then 5 more seconds.
+4. If it is *still* alive: `SIGKILL`, then 3 more seconds.
+5. Exits non-zero, loudly, if the process survived all of that — or if the PID
+   could not be determined and the exit therefore could not be confirmed.
+
+`stop` never reports success for a backend that is still running. That matters
+beyond tidiness: a backend that has dropped its socket but not exited still
+holds the scheduler, so a `start` issued after a falsely-successful `stop`
+spawns a second one and every `trigger: schedule` agent fires twice.
+
+The default 15 s covers the whole orderly path — the connection drain plus
+lifespan shutdown, whose slowest step is the file watcher's 5 s join — so a
+backend that was about to exit cleanly is not signalled out from under itself.
+A healthy backend exits in well under a second and `stop` returns immediately.
 
 ---
 
