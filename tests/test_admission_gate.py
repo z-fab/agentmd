@@ -151,13 +151,14 @@ async def test_waiting_session_refuses_every_trigger_type_identically(db, trigge
     """The concurrency rule is one rule: same answer whoever asks.
 
     This is the property the duplicated check could not guarantee — the scheduler
-    and the endpoint each had their own copy.
+    and the endpoint each had their own copy. Everything here is sessionless, so
+    every caller is asking about the same conversation.
     """
     config = _agent(on_pending="skip")
     await db.create_execution(config.id, "manual", status="waiting")
 
     reason = await check_admission(config, db, trigger_type=trigger_type)
-    assert reason == "a session is waiting for a response"
+    assert reason == "a previous run is waiting for a response"
 
 
 @pytest.mark.asyncio
@@ -171,6 +172,81 @@ async def test_on_pending_parallel_admits_alongside_a_waiting_session(db):
 @pytest.mark.asyncio
 async def test_admitted_when_nothing_stands_in_the_way(db):
     assert await check_admission(_agent(), db, trigger_type="schedule") is None
+
+
+# --- Scope of the concurrency rule: the conversation, not the agent ----------
+#
+# `on_pending` predates sessions. It was written when an agent had exactly one
+# line of conversation, so "a run of this agent is waiting" and "the conversation
+# you are addressing is waiting" were the same sentence. Sessions split them, and
+# the check kept the agent-wide reading: one unanswered HILT in a chat closed
+# hours ago refused every later chat, on a session that had never asked anything.
+#
+# The unit is now the conversation. Sessionless executions — manual, schedule,
+# watch — share one bucket, the same `session_id IS NULL` bucket history seeding
+# and checkpoint retention already treat as a single line.
+
+
+@pytest.mark.asyncio
+async def test_a_waiting_chat_does_not_block_a_different_chat(db):
+    """The reported defect: a new session inherits nothing from a stale one."""
+    config = _agent(on_pending="skip")
+    await db.create_execution(config.id, "chat", status="waiting", session_id="old-session")
+
+    assert await check_admission(config, db, trigger_type="chat", session_id="new-session") is None
+
+
+@pytest.mark.asyncio
+async def test_a_waiting_chat_blocks_its_own_next_turn(db):
+    """Within one conversation the rule stands: this dialogue is waiting on you."""
+    config = _agent(on_pending="skip")
+    await db.create_execution(config.id, "chat", status="waiting", session_id="s1")
+
+    reason = await check_admission(config, db, trigger_type="chat", session_id="s1")
+    assert reason == "this conversation is waiting for a response"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("trigger_type", TRIGGER_DRIVEN + ("manual",))
+async def test_a_waiting_chat_does_not_block_sessionless_runs(db, trigger_type):
+    config = _agent(on_pending="skip")
+    await db.create_execution(config.id, "chat", status="waiting", session_id="s1")
+
+    assert await check_admission(config, db, trigger_type=trigger_type) is None
+
+
+@pytest.mark.asyncio
+async def test_a_waiting_sessionless_run_does_not_block_a_chat(db):
+    """The converse direction. A parked `agentmd run` is not this chat's business."""
+    config = _agent(on_pending="skip")
+    await db.create_execution(config.id, "manual", status="waiting")
+
+    assert await check_admission(config, db, trigger_type="chat", session_id="s1") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("trigger_type", TRIGGER_DRIVEN)
+async def test_automatic_triggers_ignore_a_session_id(db, trigger_type):
+    """Parity with ``AgentRunner.run``, which drops a session_id on these triggers.
+
+    A schedule firing is not a turn in anyone's dialogue. If the gate honoured a
+    session id the runner then discards, admission and execution would be judging
+    two different conversations.
+    """
+    config = _agent(on_pending="skip")
+    await db.create_execution(config.id, "manual", status="waiting")
+
+    reason = await check_admission(config, db, trigger_type=trigger_type, session_id="s1")
+    assert reason == "a previous run is waiting for a response"
+
+
+@pytest.mark.asyncio
+async def test_on_pending_parallel_admits_within_the_same_session(db):
+    """`parallel` still means parallel — the narrower scope does not re-block it."""
+    config = _agent(on_pending="parallel")
+    await db.create_execution(config.id, "chat", status="waiting", session_id="s1")
+
+    assert await check_admission(config, db, trigger_type="chat", session_id="s1") is None
 
 
 # --- The funnel: _execute_agent is where both trigger sources land ------------
