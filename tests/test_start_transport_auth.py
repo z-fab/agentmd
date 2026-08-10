@@ -55,22 +55,38 @@ async def _wait_until(predicate, timeout: float = BOOT_TIMEOUT) -> None:
     raise AssertionError(f"condition not met within {timeout}s")
 
 
-async def _stop_backend(server: asyncio.Task, socket_client: httpx.AsyncClient) -> None:
-    """Stop the backend, bounded at every step.
+@pytest.fixture
+def created_app(monkeypatch):
+    """Capture the app `_run_backend` builds, so teardown has a handle on it."""
+    from agent_md.api import app as app_module
 
-    `POST /shutdown` travels over the socket, so it is exactly the call that
-    stops working when auth is wired to the shared app instead of the TCP
-    entrypoint. Waiting on a graceful exit that answered 401 would convert a
-    wiring bug into a stalled job, so the status code decides: no 200, no wait.
+    holder: dict = {}
+    real = app_module.create_app
+    monkeypatch.setattr(app_module, "create_app", lambda **kw: holder.setdefault("app", real(**kw)))
+    return holder
+
+
+async def _stop_backend(server: asyncio.Task, app) -> None:
+    """Stop the backend without going through either transport, bounded.
+
+    Setting `shutdown_event` is what POST /shutdown does internally, minus the
+    HTTP round trip — and the teardown of a test whose subject *is* the
+    transport must not depend on the transport. Doing it over the socket meant
+    that mis-wiring auth to the shared app answered 401 here too, so nothing
+    ever set the event.
+
+    Cancellation alone is not a substitute: uvicorn runs `await self.shutdown()`
+    after `main_loop()`, and that is what drives the lifespan shutdown and
+    `rt.aclose()`. Cancelling skips it, the database is never closed, and its
+    non-daemon thread keeps the interpreter alive past the last test. So the
+    event is the primary path and cancellation only the backstop.
     """
     if server.done():
         return
 
-    graceful = False
-    with contextlib.suppress(Exception):
-        graceful = (await socket_client.post("/shutdown")).status_code == 200
-
-    if graceful:
+    event = getattr(app.state, "shutdown_event", None) if app is not None else None
+    if event is not None:
+        event.set()
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(asyncio.shield(server), timeout=SHUTDOWN_TIMEOUT)
 
@@ -79,11 +95,11 @@ async def _stop_backend(server: asyncio.Task, socket_client: httpx.AsyncClient) 
         with contextlib.suppress(BaseException):
             await asyncio.wait_for(server, timeout=CANCEL_TIMEOUT)
 
-    assert server.done(), "backend ignored both /shutdown and cancellation"
+    assert server.done(), "backend ignored both shutdown_event and cancellation"
 
 
 @pytest.fixture
-async def backend(tmp_path, short_state_dir):
+async def backend(tmp_path, short_state_dir, created_app):
     """Run the backend on a socket + TCP port; yield ``(socket_client, base_url)``."""
     workspace = tmp_path / "ws"
     (workspace / "agents").mkdir(parents=True)
@@ -123,7 +139,7 @@ async def backend(tmp_path, short_state_dir):
         yield socket_client, base_url
     finally:
         await tcp_probe.aclose()
-        await _stop_backend(server, socket_client)
+        await _stop_backend(server, created_app.get("app"))
         await socket_client.aclose()
 
 
