@@ -119,14 +119,28 @@ auto_approve: "*"                   # never confirm any guarded tool
 | **Allowed values** | `skip`, `parallel` |
 | **Default** | `skip` |
 
-Controls whether a new execution can start while a previous one is `waiting`:
+Controls whether a new execution can start while a previous one in **the same conversation** is `waiting`:
 
-- `skip` (default): the scheduler and file-watcher will not trigger a new run while an execution for this agent is paused. The skipped trigger is logged.
+- `skip` (default): a new run is refused while the conversation it belongs to is paused on a pending request. A skipped trigger is logged; a refused `POST /agents/{id}/run` answers `409`.
 - `parallel`: allows multiple concurrent waiting sessions (each paused run is independent — isolated checkpoint threads).
 
 ```yaml
 on_pending: parallel
 ```
+
+The setting is declared per agent, but it is evaluated per conversation. A conversation is a `session_id`: one chat session, or — for `agentmd run`, `schedule` and `watch`, which carry no session — the single sessionless bucket they share. So under `skip`:
+
+| New run | Waiting execution belongs to | Admitted? |
+|---------|------------------------------|-----------|
+| chat in session A | session A | no — this conversation is waiting on you |
+| chat in session A | session B | yes |
+| chat in session A | sessionless (`run` / `schedule` / `watch`) | yes |
+| `agentmd run`, `schedule`, `watch` | sessionless | no — a previous run is waiting |
+| `agentmd run`, `schedule`, `watch` | any chat session | yes |
+
+The point of the narrower scope: a pending confirmation nobody answered used to close the agent to *everything*, including a chat opened afterwards that had asked nothing. Find it with `agentmd pending`, then answer it (`agentmd respond <id>`) or abort it (`DELETE /executions/{id}`) — or simply start a new chat.
+
+`on_pending` is not a lock on the agent, and never was: it only refuses while an execution is `waiting`, so two runs of the same agent can already overlap whenever neither is paused. If a tool must not run twice at once, guard the tool.
 
 #### `confirm_timeout`
 

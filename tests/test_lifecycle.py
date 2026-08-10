@@ -17,7 +17,7 @@ def lifecycle():
 
 @pytest.mark.asyncio
 async def test_idle_triggers_shutdown(lifecycle):
-    lifecycle.has_scheduled_agents = lambda: False
+    lifecycle.has_active_triggers = lambda: False
     lifecycle.has_running_executions = lambda: False
     lifecycle.has_active_streams = lambda: False
 
@@ -34,7 +34,7 @@ async def test_idle_triggers_shutdown(lifecycle):
 @pytest.mark.asyncio
 async def test_keep_alive_prevents_shutdown(lifecycle):
     lifecycle.keep_alive = True
-    lifecycle.has_scheduled_agents = lambda: False
+    lifecycle.has_active_triggers = lambda: False
     lifecycle.has_running_executions = lambda: False
     lifecycle.has_active_streams = lambda: False
 
@@ -49,10 +49,44 @@ async def test_keep_alive_prevents_shutdown(lifecycle):
 
 
 @pytest.mark.asyncio
-async def test_scheduler_prevents_shutdown(lifecycle):
-    lifecycle.has_scheduled_agents = lambda: True
+async def test_active_triggers_prevent_shutdown(lifecycle):
+    lifecycle.has_active_triggers = lambda: True
     lifecycle.has_running_executions = lambda: False
     lifecycle.has_active_streams = lambda: False
+
+    task = asyncio.create_task(lifecycle.run())
+    await asyncio.sleep(1.5)
+    assert not lifecycle.shutdown_event.is_set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_waiting_executions_prevent_shutdown(lifecycle):
+    """Service mode wires this hook; the local socket leaves it False."""
+    lifecycle.has_waiting_executions = lambda: True
+
+    task = asyncio.create_task(lifecycle.run())
+    await asyncio.sleep(1.5)
+    assert not lifecycle.shutdown_event.is_set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_async_check_is_awaited(lifecycle):
+    """The waiting check hits the DB, so hooks may be coroutines."""
+
+    async def waiting():
+        return True
+
+    lifecycle.has_waiting_executions = waiting
 
     task = asyncio.create_task(lifecycle.run())
     await asyncio.sleep(1.5)
@@ -66,7 +100,7 @@ async def test_scheduler_prevents_shutdown(lifecycle):
 
 @pytest.mark.asyncio
 async def test_active_streams_prevent_shutdown(lifecycle):
-    lifecycle.has_scheduled_agents = lambda: False
+    lifecycle.has_active_triggers = lambda: False
     lifecycle.has_running_executions = lambda: False
     lifecycle.has_active_streams = lambda: True
 

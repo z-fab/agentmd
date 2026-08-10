@@ -18,6 +18,7 @@ from agent_md.api.schemas import (
     RespondRequest,
     RespondResponse,
 )
+from agent_md.api.sse import SHUTDOWN, TIMEOUT, next_event
 from agent_md.execution.logger import agent_identity_payload
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -76,6 +77,7 @@ async def list_executions(
             cost_usd=e.cost_usd,
             error=e.error,
             parent_execution_id=e.parent_execution_id,
+            session_id=e.session_id,
         )
         for e in execs
     ]
@@ -101,6 +103,7 @@ async def get_execution(exec_id: int, request: Request):
         cost_usd=e.cost_usd,
         error=e.error,
         parent_execution_id=e.parent_execution_id,
+        session_id=e.session_id,
         output_data=e.output_data,
     )
 
@@ -150,6 +153,14 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
                 "timestamp": log.timestamp,
                 **identity,
             }
+            if log.event_type == "final_answer":
+                # The live event carries the answer under "content"; a replayed
+                # frame has to use the same key, or a client that reads only
+                # "content" loses the answer on reconnect. The persisted row is
+                # the whole answer (see logger.mark_final_answer), so replay and
+                # live are now the same string under the same key — which is what
+                # makes the seq dedup below safe for this event.
+                payload["content"] = log.message
             if log.metadata:
                 try:
                     meta = json.loads(log.metadata)
@@ -175,10 +186,16 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             return
 
         # Drain live events (dedup against replay)
+        shutdown_event = getattr(request.app.state, "shutdown_event", None)
         while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=30.0)
-            except asyncio.TimeoutError:
+            event = await next_event(queue, shutdown_event, 30.0)
+            if event is SHUTDOWN:
+                # A still-running execution would otherwise hold this connection
+                # open past `agentmd stop`, and uvicorn will not exit while a
+                # connection is open. Close the response and let the backend go.
+                yield ServerSentEvent(data={"status": "shutdown", **identity}, event="shutdown")
+                return
+            if event is TIMEOUT:
                 execution = await db.get_execution(exec_id)
                 if not execution or execution.status not in ("running", "pending"):
                     ev = "waiting" if execution and execution.status == "waiting" else "complete"

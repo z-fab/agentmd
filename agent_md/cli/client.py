@@ -29,6 +29,11 @@ def get_log_path() -> Path:
     return get_state_dir() / "backend.log"
 
 
+def get_pid_path() -> Path:
+    """Return the path to the file holding the spawned backend's PID."""
+    return get_state_dir() / "backend.pid"
+
+
 class BackendClient:
     """Thin HTTP client for the agentmd backend."""
 

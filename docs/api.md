@@ -15,6 +15,23 @@ curl --unix-socket ~/.local/state/agentmd/agentmd.sock http://localhost/health
 curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
 ```
 
+### Authentication
+
+Auth is decided by the transport a request arrives on, not by the route:
+
+| Transport | Requirement |
+|-----------|-------------|
+| Unix socket | None. The socket file is `chmod 600`, so the OS restricts it to your user, and the CLI sends no key. |
+| TCP (`--port`) | `X-API-Key: <key>` on every route except `/health`. Missing or wrong key → `401 {"detail": "Invalid or missing API key"}`. |
+
+`--port` without `--api-key` is refused at startup — the API can execute
+arbitrary agents, so there is no unauthenticated TCP mode. Both listeners serve
+the same runtime and the same data; only the door differs.
+
+Keep the port on `127.0.0.1` unless a firewall or a TLS-terminating proxy sits
+in front of it: plain HTTP carries the key in cleartext. See
+[Server Mode](cli-reference.md#server-mode) for the startup flags.
+
 ## Endpoints
 
 ### Health & Info
@@ -47,10 +64,35 @@ Path segments with spaces must be URL-encoded (e.g. `/agents/Daily%20Processor`)
 
 **Run request body:**
 ```json
-{"args": ["arg1"], "message": "optional user message"}
+{
+  "args": ["arg1"],
+  "message": "optional user message",
+  "context": "optional trigger context",
+  "session_id": "optional conversation id"
+}
 ```
 
-When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message. With `history` enabled, the runner seeds the next execution from the most recent finished execution for that agent id.
+| Field | Type | Description |
+|-------|------|-------------|
+| `args` | string[] | Positional arguments substituted into the prompt |
+| `message` | string | Replaces the synthetic "Execute your task" |
+| `context` | string | Appended to the user turn as trigger context |
+| `session_id` | string | Conversation this run belongs to (max 200 chars; blank is treated as absent) |
+
+When `message` is provided, it replaces the synthetic "Execute your task". This is how the CLI chat works — each chat turn is a `/run` with the user's message.
+
+`session_id` is what makes a run a **conversation turn**: it is persisted on the
+execution, recorded with `trigger: "chat"` instead of `"manual"`, and it scopes
+history seeding. With `history` enabled the runner seeds the next execution from
+the most recent finished execution **of the same session**; a run without a
+`session_id` only ever seeds from other sessionless runs of that agent. Two
+clients chatting with the same agent under different `session_id`s therefore keep
+independent conversations, and a scheduled run never inherits chat context (a
+`session_id` sent with a `schedule` or `watch` run is ignored).
+
+Generating and reusing the id is the client's job — the backend never invents one
+and there is no endpoint to list or resume sessions. Any opaque string works; a
+UUID per conversation is the intended shape.
 
 ### Executions
 
@@ -69,18 +111,25 @@ When `message` is provided, it replaces the synthetic "Execute your task". This 
 | `id` | int | Execution ID |
 | `agent_id` | string | Canonical agent id (filename stem) |
 | `status` | string | `running`, `waiting`, `success`, `error`, `aborted`, `timeout`, `orphaned` |
-| `trigger` | string | `manual`, `schedule`, `watch`, `agent` |
+| `trigger` | string | `manual`, `chat`, `schedule`, `watch`, `agent` |
 | `parent_execution_id` | int \| null | Parent execution ID when triggered by `run_agent` |
+| `session_id` | string \| null | Conversation the execution belongs to (`null` outside a chat) |
 | `started_at` | string | ISO 8601 timestamp |
 | `finished_at` | string \| null | ISO 8601 timestamp |
 | `duration_ms` | int \| null | Execution duration |
 | `total_tokens` | int \| null | Total token usage |
 | `cost_usd` | float \| null | Estimated cost |
 | `error` | string \| null | Error message if failed |
+| `output_data` | string \| null | Final answer text, stored whole (detail endpoint only) |
 
 The `agent` trigger type indicates the execution was started by another agent via the `run_agent` tool. Use `parent_execution_id` to trace delegation chains.
 
-**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`, `waiting`
+**SSE event types:** `message`, `meta`, `tool_call`, `tool_result`, `ai`, `final_answer`, `complete`, `waiting`, `shutdown`
+
+**`shutdown` is terminal but not a result.** Both streams emit it and close when the
+backend is shutting down, so that a stream can never hold the process open (uvicorn will
+not exit while a connection is live). It says nothing about the execution: reconnect after
+the backend is back up and the stream replays from the log as usual.
 
 Per-execution stream payloads include identity fields:
 
@@ -90,13 +139,43 @@ Per-execution stream payloads include identity fields:
 | `display_name` | Human label |
 | `agent_name` | Same as `agent_id` (compat alias; **not** the display label) |
 
+**`meta` subtypes** — the SSE event name is always `meta`. The payload field
+`event_type` distinguishes three kinds of frame (clients must branch on it):
+
+| `event_type` | When | Payload fields |
+|--------------|------|----------------|
+| `execution_info` | Once, at the start of every run (before other log frames) | `agent_id`, `display_name`, `model` (`provider/name`), `trigger`, `args` (list), `session_id` (null outside a chat), plus identity aliases |
+| `stats` | After every AI message during the run | `input_tokens`, `output_tokens`, `total_tokens`, `cost_usd` (accumulated; may be null when pricing is unknown), plus identity |
+| `meta` | Skill-context injection on the live bus | `content` plus identity (legacy; not the same as the two above) |
+
+Both `execution_info` and `stats` are **persisted** in `execution_logs` and replayed on
+reconnect the same way as every other log frame. A client that opens the stream after the
+run has finished still receives them.
+
+**`final_answer` is never abridged.** The answer is carried under `content`, identically
+whether the frame comes from the live stream or from the catchup replay, and the same
+string is stored in the execution's `output_data`. Replayed frames additionally carry the
+raw log row under `message`. Read `content`. (An upper bound of 1,000,000 characters
+exists as a backstop; it is far above any model's output limit.)
+
+This matters because the stream deduplicates replay against live by event id: a replayed
+frame and its live twin share an id, so they must be the same string or a reconnecting
+client would be left with whichever arrived first.
+
 ### Scheduler
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/scheduler` | Status + jobs with next_run |
-| POST | `/scheduler/pause` | Pause scheduler |
-| POST | `/scheduler/resume` | Resume scheduler |
+| POST | `/scheduler/pause` | Pause every trigger |
+| POST | `/scheduler/resume` | Resume every trigger |
+
+**Notes:**
+- Pause covers both trigger types: `schedule` agents stop firing and `watch` agents stop
+  reacting to file events. Manual runs (`POST /agents/{id}/run`) are unaffected — pausing
+  the scheduler does not disable the run button.
+- Pause does not cancel an execution already running, and does not shut the backend down:
+  a paused workspace stays alive so it can be resumed.
 
 ### Events
 
@@ -109,6 +188,7 @@ Per-execution stream payloads include identity fields:
 | Event | When | Data fields |
 |-------|------|-------------|
 | `heartbeat` | 10s of inactivity | `timestamp` |
+| `shutdown` | The backend is going down | `reason` |
 | `execution_started` | Execution begins | `execution_id`, `agent_id`, `display_name`, `agent_name` (= id), `trigger` |
 | `execution_completed` | Execution finishes | `execution_id`, `agent_id`, `display_name`, `agent_name` (= id), `status`, `duration_ms` |
 | `agents_changed` | Agent file added/modified/deleted | `event` (`loaded`/`updated`/`removed`), `agent_id`, `display_name`, `agent_name` (= id) |

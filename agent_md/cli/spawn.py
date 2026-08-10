@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent_md.cli.client import BackendClient, get_log_path, get_socket_path, get_state_dir
+from agent_md.cli.client import BackendClient, get_log_path, get_pid_path, get_socket_path, get_state_dir
 
 # Rotate backend.log when it exceeds this size (bytes).
 _LOG_ROTATE_BYTES = 5 * 1024 * 1024
@@ -77,8 +77,13 @@ def _rotate_log_if_needed(log_path: Path) -> None:
         pass
 
 
-def _spawn_backend(workspace: Path | None = None) -> int:
-    """Spawn the backend as a detached process. Returns PID."""
+def _spawn_backend(workspace: Path | None = None, extra_args: list[str] | None = None) -> int:
+    """Spawn the backend as a detached process. Returns PID.
+
+    ``extra_args`` carries the server-mode flags of an explicit
+    ``agentmd start -d`` (--keep-alive, --port, --host, --api-key). Autospawn
+    passes none: it only ever needs the local socket.
+    """
     state_dir = get_state_dir()
     state_dir.mkdir(parents=True, exist_ok=True)
 
@@ -88,6 +93,8 @@ def _spawn_backend(workspace: Path | None = None) -> int:
     cmd = [sys.executable, "-m", "agent_md.main", "start", "--internal-backend"]
     if workspace:
         cmd.extend(["--workspace", str(workspace)])
+    if extra_args:
+        cmd.extend(extra_args)
 
     # Open for the child, then close the parent's fd so we don't leak it.
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
@@ -108,7 +115,6 @@ def _spawn_backend(workspace: Path | None = None) -> int:
     finally:
         log_file.close()
 
-    pid_path = state_dir / "backend.pid"
-    pid_path.write_text(str(proc.pid))
+    get_pid_path().write_text(str(proc.pid))
 
     return proc.pid

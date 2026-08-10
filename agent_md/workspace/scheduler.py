@@ -1,4 +1,5 @@
 import asyncio
+import fnmatch
 import logging
 import re
 from pathlib import Path
@@ -12,8 +13,83 @@ from watchdog.observers import Observer
 from agent_md.workspace.parser import is_agent_file, parse_agent_file
 from agent_md.workspace.registry import AgentConfig, AgentRegistry
 from agent_md.execution.runner import AgentRunner
+from agent_md.execution.self_writes import process_ledger
 
 logger = logging.getLogger(__name__)
+
+
+def _path_matches_globs(path: Path, patterns: list[str]) -> bool:
+    """Return True if *path* matches any glob in *patterns*.
+
+    Each pattern is tried against the absolute path string and the basename so
+    both ``*.pdf`` and ``**/inbox/*.csv`` work without special-casing.
+    """
+    if not patterns:
+        return False
+    absolute = str(path)
+    name = path.name
+    for pattern in patterns:
+        if fnmatch.fnmatch(absolute, pattern) or fnmatch.fnmatch(name, pattern):
+            return True
+        # Path.match handles ** recursively the way pathlib users expect
+        try:
+            if path.match(pattern):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+# Trigger types the scheduler owns. Refusing one of these is what "paused" and
+# "enabled: false" mean. `manual` and `chat` are deliberate acts by a human, so
+# neither flag applies to them — pausing the scheduler must not disable the
+# run button.
+_SCHEDULER_TRIGGERS = frozenset({"schedule", "watch"})
+
+
+async def check_admission(
+    config: AgentConfig,
+    db,
+    *,
+    trigger_type: str,
+    paused: bool = False,
+    session_id: str | None = None,
+) -> str | None:
+    """Decide whether an execution of *config* may start now.
+
+    The single place the admission rules live. Returns ``None`` when the
+    execution is admitted, otherwise a short reason phrased to read as the tail
+    of a sentence about the agent.
+
+    Both call sites — the trigger funnel (``AgentScheduler._execute_agent``) and
+    the manual funnel (``POST /agents/{id}/run``) — consume this. How a refusal
+    is *surfaced* stays with the caller, because a dropped timer tick and a
+    rejected HTTP request are not the same event: the trigger path logs and
+    drops, the HTTP layer answers 409. What may not diverge is the decision, and
+    that is why it is only written here.
+
+    ``on_pending: skip`` is evaluated per *conversation*, not per agent: a run is
+    refused only while the conversation it belongs to is itself parked on a
+    human. ``session_id`` names that conversation; ``None`` is the sessionless
+    bucket shared by manual, schedule and watch runs. Agent-wide was the reading
+    from before sessions existed, and it made one unanswered HILT close the agent
+    to every other conversation — including chats opened afterwards, which had
+    asked nothing.
+    """
+    if trigger_type in _SCHEDULER_TRIGGERS:
+        if not config.enabled:
+            return "agent is disabled"
+        if paused:
+            return "the scheduler is paused"
+        # A timer or a file event is not a turn in anyone's dialogue. ``AgentRunner.run``
+        # discards a session id on these triggers; the gate has to judge the same
+        # conversation the execution will actually belong to.
+        session_id = None
+    if config.on_pending == "skip" and await db.has_waiting_execution(config.id, session_id):
+        if session_id is None:
+            return "a previous run is waiting for a response"
+        return "this conversation is waiting for a response"
+    return None
 
 
 def parse_interval(interval_str: str) -> dict:
@@ -108,42 +184,63 @@ class AgentScheduler:
         self._remove_watch_handlers(agent_id)
 
     async def _execute_agent(self, agent_id: str, trigger_type: str, trigger_context: str | None = None) -> None:
-        """Callback for scheduled execution."""
+        """Callback for every trigger-driven execution — APScheduler and watchdog alike.
+
+        Both trigger sources land here and nowhere else, which makes the
+        ``check_admission`` call below the one thing standing between a trigger
+        firing and an execution existing. A watch event reaching this point with
+        the scheduler paused is dropped here, since stopping the ``Observer``
+        itself is not an option: watchdog observers cannot be restarted.
+        """
         config = self.registry.get(agent_id)
-        if config and config.enabled:
-            if config.on_pending == "skip" and await self.runner.db.has_waiting_execution(config.id):
-                logger.info(f"Skipping '{agent_id}': a session is waiting for a response")
-                return
-            cancel_event = asyncio.Event()
-            # Pre-create execution so we can register the cancel_event
-            execution_id = await self.runner.db.create_execution(
-                agent_id=config.id, trigger=trigger_type, status="running"
+        if config is None:
+            return
+
+        reason = await check_admission(
+            config,
+            self.runner.db,
+            trigger_type=trigger_type,
+            paused=self._paused,
+        )
+        if reason:
+            logger.info(f"Skipping '{agent_id}': {reason}")
+            return
+
+        cancel_event = asyncio.Event()
+        # Pre-create execution so we can register the cancel_event
+        execution_id = await self.runner.db.create_execution(agent_id=config.id, trigger=trigger_type, status="running")
+        self.cancel_events[execution_id] = cancel_event
+        try:
+            await self.runner.run(
+                config,
+                trigger_type,
+                trigger_context=trigger_context,
+                on_event=self.on_event,
+                on_start=self.on_start,
+                on_complete=self.on_complete,
+                event_bus=self.event_bus,
+                global_event_bus=self.global_event_bus,
+                cancel_event=cancel_event,
+                execution_id=execution_id,
             )
-            self.cancel_events[execution_id] = cancel_event
-            try:
-                await self.runner.run(
-                    config,
-                    trigger_type,
-                    trigger_context=trigger_context,
-                    on_event=self.on_event,
-                    on_start=self.on_start,
-                    on_complete=self.on_complete,
-                    event_bus=self.event_bus,
-                    global_event_bus=self.global_event_bus,
-                    cancel_event=cancel_event,
-                    execution_id=execution_id,
-                )
-            finally:
-                self.cancel_events.pop(execution_id, None)
-        elif config and not config.enabled:
-            logger.debug(f"Skipping disabled agent: {agent_id}")
+        finally:
+            self.cancel_events.pop(execution_id, None)
 
     def _add_watch_handler(self, config: AgentConfig) -> None:
         """Register watchdog handlers for a single watch agent."""
         resolved_paths = [self.path_context._resolve_relative(p) for p in config.trigger.paths]
         logger.info(f"Setting up watch for agent '{config.id}': {resolved_paths}")
 
-        handler = _AgentWatchHandler(config.id, resolved_paths, self._execute_agent, self._loop)
+        filters = config.trigger.filters
+        handler = _AgentWatchHandler(
+            config.id,
+            resolved_paths,
+            self._execute_agent,
+            self._loop,
+            include=list(filters.include) if filters else [],
+            exclude=list(filters.exclude) if filters else [],
+            debounce=config.trigger.debounce,
+        )
         watch_ids = []
 
         for path in resolved_paths:
@@ -223,13 +320,33 @@ class AgentScheduler:
             )
         return jobs
 
+    def has_active_triggers(self) -> bool:
+        """True while any trigger source can still fire an execution.
+
+        The idle-shutdown reads this. Counting only APScheduler jobs made a
+        workspace whose agents are all ``trigger: watch`` look idle, so the
+        five-minute timeout killed the backend and every watcher with it.
+
+        ``any`` over the values rather than a truth test on the dict: an entry
+        that registered no watch id observes nothing, and something that cannot
+        fire must not hold the backend up.
+        """
+        if self.scheduler.get_jobs():
+            return True
+        return any(self._watch_handlers.values())
+
     def pause(self) -> None:
-        """Pause the scheduler (does not cancel running jobs)."""
+        """Pause every trigger source (does not cancel running jobs).
+
+        Pausing APScheduler stops timers, but the watchdog ``Observer`` keeps
+        delivering events — those are refused at admission instead. See
+        ``_execute_agent``.
+        """
         self.scheduler.pause()
         self._paused = True
 
     def resume(self) -> None:
-        """Resume the scheduler."""
+        """Resume every trigger source."""
         self.scheduler.resume()
         self._paused = False
 
@@ -383,28 +500,66 @@ class _AgentWatchHandler(FileSystemEventHandler):
         watch_paths: list[Path],
         execute_fn,
         loop: asyncio.AbstractEventLoop | None,
+        *,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+        debounce: float = 0.5,
+        self_writes=None,
     ):
         self.agent_id = agent_id
         self.watch_paths = watch_paths
         self._execute_fn = execute_fn  # async fn(agent_id, trigger_type, trigger_context)
         self._loop = loop
+        self._include = list(include or [])
+        self._exclude = list(exclude or [])
+        self._debounce = debounce
+        self._self_writes = self_writes if self_writes is not None else process_ledger()
         self._debounce_timers: dict[Path, asyncio.TimerHandle] = {}
         self._pending_contexts: dict[Path, str] = {}
 
+    def _passes_filters(self, path: Path) -> bool:
+        """Apply trigger.filters include/exclude globs to a candidate path."""
+        if self._exclude and _path_matches_globs(path, self._exclude):
+            return False
+        if self._include and not _path_matches_globs(path, self._include):
+            return False
+        return True
+
+    def _is_own_write(self, path: Path) -> bool:
+        """True when this agent's own built-in write produced the event.
+
+        The local anti-loop guard. An agent watching a directory it writes to
+        would otherwise retrigger itself forever, and no amount of persisted
+        depth would stop it — the event arrives as a root cause. Scoped to this
+        agent, so another agent writing into the same directory still triggers
+        us. Best-effort: MCP and custom tools write without leaving a record.
+        """
+        if self._self_writes.is_self_write(path, self.agent_id):
+            logger.debug(f"Suppressed self-written path for '{self.agent_id}': {path}")
+            return True
+        return False
+
     def _is_relevant(self, event_path: str) -> bool:
-        """Check if event path is within watched paths."""
+        """Check if event path is within watched paths, passes filters, and is not ours."""
         path = Path(event_path).resolve()
+        in_watch = False
         for watch_path in self.watch_paths:
             if watch_path.is_dir():
                 try:
                     path.relative_to(watch_path)
-                    return True
+                    in_watch = True
+                    break
                 except ValueError:
                     continue
             else:
                 if path == watch_path:
-                    return True
-        return False
+                    in_watch = True
+                    break
+        if not in_watch:
+            return False
+        if not self._passes_filters(path):
+            return False
+        return not self._is_own_write(path)
 
     def _build_context(self, event) -> str:
         """Build trigger context string from event."""
@@ -428,8 +583,10 @@ class _AgentWatchHandler(FileSystemEventHandler):
     def _schedule_trigger(self, event) -> None:
         """Schedule agent trigger with debounce based on file path.
 
-        Multiple events for the same file within 500ms are collapsed into one trigger.
-        For moved events, the debounce key is the destination path.
+        Multiple events for the same file within the debounce window are
+        collapsed into one trigger. For moved events, the debounce key is the
+        destination path. The window defaults to 0.5s and is overridable via
+        ``trigger.debounce``.
         """
         if event.event_type == "moved":
             path = Path(event.dest_path).resolve()
@@ -444,7 +601,7 @@ class _AgentWatchHandler(FileSystemEventHandler):
         self._pending_contexts[path] = self._build_context(event)
 
         if self._loop:
-            self._debounce_timers[path] = self._loop.call_later(0.5, self._trigger_agent, path)
+            self._debounce_timers[path] = self._loop.call_later(self._debounce, self._trigger_agent, path)
 
     def on_created(self, event):
         if not event.is_directory and self._is_relevant(event.src_path):

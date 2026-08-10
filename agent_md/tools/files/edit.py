@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.execution.self_writes import self_write
+
 
 def create_file_edit_tool(agent_config, path_context):
     """Create a file_edit tool bound to an agent's path context."""
@@ -37,7 +39,8 @@ def create_file_edit_tool(agent_config, path_context):
                 return f"ERROR: File already exists: {path}. Use old_text to specify text to replace."
 
             resolved.parent.mkdir(parents=True, exist_ok=True)
-            resolved.write_text(new_text, encoding="utf-8")
+            with self_write(resolved):
+                resolved.write_text(new_text, encoding="utf-8")
             line_count = new_text.count("\n") + (1 if new_text and not new_text.endswith("\n") else 0)
             return f"Created {resolved} ({line_count} lines)"
 
@@ -65,7 +68,8 @@ def create_file_edit_tool(agent_config, path_context):
 
         new_content = content.replace(old_text, new_text) if replace_all else content.replace(old_text, new_text, 1)
 
-        resolved.write_text(new_content, encoding="utf-8")
+        with self_write(resolved):
+            resolved.write_text(new_content, encoding="utf-8")
 
         old_lines = old_text.count("\n")
         new_lines = new_text.count("\n")

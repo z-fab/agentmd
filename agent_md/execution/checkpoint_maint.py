@@ -41,9 +41,9 @@ async def _delete_threads(cp_path: Path, thread_ids: list[str]) -> int:
 async def sweep_old_checkpoints(db, db_path: str | Path, retention_days: int) -> int:
     """Delete checkpoint threads for finished executions older than retention_days.
 
-    Preserves the latest execution per agent (history seeding) and all waiting
-    executions (resume). Returns the number of threads removed. retention_days<=0
-    disables the sweep.
+    Preserves the latest execution per agent *and per session* (history seeding)
+    and all waiting executions (resume). Returns the number of threads removed.
+    retention_days<=0 disables the sweep.
     """
     if not retention_days or retention_days <= 0:
         return 0
@@ -52,7 +52,7 @@ async def sweep_old_checkpoints(db, db_path: str | Path, retention_days: int) ->
         return 0
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
-    keep = set(await db.latest_execution_id_per_agent()) | set(await db.waiting_execution_ids())
+    keep = set(await db.latest_execution_id_per_session()) | set(await db.waiting_execution_ids())
     eligible = [eid for eid in await db.finished_execution_ids_before(cutoff) if eid not in keep]
     removed = await _delete_threads(cp_path, [str(eid) for eid in eligible])
     if removed:
@@ -94,7 +94,7 @@ async def purge_checkpoints(db, db_path: str | Path, agent: str | None = None, f
     cp_path = checkpoint_db_path(db_path)
     if not cp_path.exists():
         return 0
-    keep = set() if force else set(await db.latest_execution_id_per_agent()) | set(await db.waiting_execution_ids())
+    keep = set() if force else set(await db.latest_execution_id_per_session()) | set(await db.waiting_execution_ids())
 
     if agent:
         targets = [eid for eid in await db.all_execution_ids_for_agent(agent) if eid not in keep]

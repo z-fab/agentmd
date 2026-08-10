@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS executions (
     total_tokens  INTEGER,
     cost_usd      REAL,
     pid           INTEGER,
-    parent_execution_id INTEGER
+    parent_execution_id INTEGER,
+    session_id    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS execution_logs (
@@ -62,6 +63,14 @@ _EXECUTIONS_MIGRATIONS: list[tuple[str, str]] = [
     ("cost_usd", "REAL"),
     ("pid", "INTEGER"),
     ("parent_execution_id", "INTEGER"),
+    ("session_id", "TEXT"),
+]
+
+# Indexes over migrated columns. They cannot live in SCHEMA: `executescript(SCHEMA)`
+# runs before `_migrate()`, so an index on a column an old DB has not gained yet
+# would fail on open.
+_POST_MIGRATION_INDEXES: list[str] = [
+    "CREATE INDEX IF NOT EXISTS idx_executions_session ON executions(agent_id, session_id)",
 ]
 
 _TERMINAL_STATUSES = frozenset({"success", "error", "aborted", "cancelled", "orphaned", "timeout"})
@@ -125,20 +134,32 @@ class Database:
             if col_name not in columns:
                 await db.execute(f"ALTER TABLE executions ADD COLUMN {col_name} {col_type}")
                 logger.info(f"Migration: added {col_name} column to executions")
+        for statement in _POST_MIGRATION_INDEXES:
+            await db.execute(statement)
         await db.commit()
 
     # --- Executions ---
 
     async def create_execution(
-        self, agent_id: str, trigger: str, status: str = "running", parent_execution_id: int | None = None
+        self,
+        agent_id: str,
+        trigger: str,
+        status: str = "running",
+        parent_execution_id: int | None = None,
+        session_id: str | None = None,
     ) -> int:
-        """Create a new execution record. Returns the execution ID."""
+        """Create a new execution record. Returns the execution ID.
+
+        ``session_id`` scopes the execution to a conversation; ``None`` means the
+        execution belongs to no conversation (manual runs, schedule, watch, agent).
+        """
         import os
 
         now = datetime.now(timezone.utc).isoformat()
         cursor = await self.db.execute(
-            "INSERT INTO executions (agent_id, status, trigger, started_at, pid, parent_execution_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (agent_id, status, trigger, now, os.getpid(), parent_execution_id),
+            "INSERT INTO executions (agent_id, status, trigger, started_at, pid, parent_execution_id, session_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (agent_id, status, trigger, now, os.getpid(), parent_execution_id, session_id),
         )
         await self.db.commit()
         return cursor.lastrowid
@@ -221,18 +242,76 @@ class Database:
         results = await self.get_executions(agent_id, limit=1)
         return results[0] if results else None
 
-    async def get_last_finished_execution(self, agent_id: str, exclude_id: int | None = None):
-        """Most recent execution for an agent that is not running/waiting/pending."""
+    async def get_last_executions(self, agent_ids: list[str] | None = None) -> dict[str, ExecutionRecord]:
+        """Return the most recent execution per agent in a single query.
+
+        When *agent_ids* is given, only those agents are considered (empty list
+        yields an empty dict without hitting the database). When omitted, every
+        agent that has at least one execution is included.
+        """
+        if agent_ids is not None and len(agent_ids) == 0:
+            return {}
+
+        if agent_ids is None:
+            sql = """
+                SELECT * FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY agent_id
+                               ORDER BY started_at DESC, id DESC
+                           ) AS rn
+                    FROM executions
+                )
+                WHERE rn = 1
+                """
+            params: tuple = ()
+        else:
+            placeholders = ",".join("?" * len(agent_ids))
+            sql = f"""
+                SELECT * FROM (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY agent_id
+                               ORDER BY started_at DESC, id DESC
+                           ) AS rn
+                    FROM executions
+                    WHERE agent_id IN ({placeholders})
+                )
+                WHERE rn = 1
+                """
+            params = tuple(agent_ids)
+
+        cursor = await self.db.execute(sql, params)
+        rows = await cursor.fetchall()
+        return {row["agent_id"]: ExecutionRecord(**dict(row)) for row in rows}
+
+    async def get_last_finished_execution(
+        self, agent_id: str, exclude_id: int | None = None, session_id: str | None = None
+    ):
+        """Most recent execution for an agent that is not running/waiting/pending.
+
+        The lookup is always scoped to one conversation: with ``session_id`` it
+        matches that session only, without it only sessionless executions
+        (``session_id IS NULL``). That is what keeps a chat and a scheduled run on
+        the same agent from seeding each other's history.
+        """
+        if session_id is None:
+            session_clause = "session_id IS NULL"
+            session_params: tuple = ()
+        else:
+            session_clause = "session_id = ?"
+            session_params = (session_id,)
         cursor = await self.db.execute(
-            """
+            f"""
             SELECT * FROM executions
             WHERE agent_id = ?
               AND status NOT IN ('running', 'waiting', 'pending')
               AND (? IS NULL OR id != ?)
+              AND {session_clause}
             ORDER BY id DESC
             LIMIT 1
-            """,
-            (agent_id, exclude_id, exclude_id),
+            """,  # noqa: S608 — session_clause is a fixed literal, not interpolated input
+            (agent_id, exclude_id, exclude_id, *session_params),
         )
         row = await cursor.fetchone()
         return ExecutionRecord(**dict(row)) if row else None
@@ -365,17 +444,39 @@ class Database:
         await self.db.commit()
         return cursor.rowcount > 0
 
-    async def has_waiting_execution(self, agent_id: str) -> bool:
-        cursor = await self.db.execute(
-            "SELECT 1 FROM executions WHERE agent_id = ? AND status = 'waiting' LIMIT 1",
-            (agent_id,),
-        )
+    async def has_waiting_execution(self, agent_id: str, session_id: str | None = None) -> bool:
+        """True when *this conversation* has an execution parked in ``waiting``.
+
+        Scoped exactly like ``get_last_finished_execution``: ``session_id`` selects
+        one chat, ``None`` selects the sessionless bucket that manual, schedule and
+        watch runs share. There is deliberately no agent-wide form — that was the
+        pre-session reading, and under it a HILT left unanswered in a chat closed
+        hours ago refused every later conversation with the same agent.
+        """
+        if session_id is None:
+            cursor = await self.db.execute(
+                "SELECT 1 FROM executions WHERE agent_id = ? AND session_id IS NULL AND status = 'waiting' LIMIT 1",
+                (agent_id,),
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT 1 FROM executions WHERE agent_id = ? AND session_id = ? AND status = 'waiting' LIMIT 1",
+                (agent_id, session_id),
+            )
         return await cursor.fetchone() is not None
 
     # --- Checkpoint maintenance helpers ---
 
-    async def latest_execution_id_per_agent(self) -> list[int]:
-        cursor = await self.db.execute("SELECT MAX(id) AS mx FROM executions GROUP BY agent_id")
+    async def latest_execution_id_per_session(self) -> list[int]:
+        """Latest execution id per (agent, session) — the checkpoint retention keep-set.
+
+        Grouping by session as well as agent is what stops the sweep from deleting
+        the checkpoint an active conversation seeds from: a chat session whose last
+        turn is not the agent's newest execution still keeps its own latest.
+        Sessionless executions group under a single ``NULL`` bucket per agent, which
+        is the pre-session behaviour.
+        """
+        cursor = await self.db.execute("SELECT MAX(id) AS mx FROM executions GROUP BY agent_id, session_id")
         rows = await cursor.fetchall()
         return [row["mx"] for row in rows if row["mx"] is not None]
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.execution.self_writes import self_write
 from agent_md.tools.memory._parser import parse_memory_file, serialize_memory_file
 
 MEMORY_SECTION_WARN_THRESHOLD = 50
@@ -34,7 +35,8 @@ def create_memory_append_tool(agent_config, path_context):
         else:
             sections[section] = content
 
-        memory_path.write_text(serialize_memory_file(sections), encoding="utf-8")
+        with self_write(memory_path):
+            memory_path.write_text(serialize_memory_file(sections), encoding="utf-8")
 
         line_count = len(sections[section].split("\n"))
         hint = ""

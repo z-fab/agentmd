@@ -1,13 +1,23 @@
 """Parse agent .md files into validated AgentConfig objects."""
 
 import hashlib
+import logging
 from pathlib import Path
 
 import yaml
 
 from agent_md.config.env import resolve_env_vars
-from agent_md.config.models import AgentConfig, ModelConfig, validate_agent_identity
+from agent_md.config.models import (
+    COMPUTED_FIELDS,
+    AgentConfig,
+    ModelConfig,
+    collect_unknown_keys,
+    format_unknown_key_warning,
+    validate_agent_identity,
+)
 from agent_md.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 def is_agent_file(path: Path) -> bool:
@@ -67,13 +77,24 @@ def parse_agent_file(path: Path) -> AgentConfig:
     # Compute config hash for change detection
     config_hash = hashlib.sha256(frontmatter_raw.encode()).hexdigest()[:16]
 
+    # Unknown keys are ignored by Pydantic — warn instead of failing, so a typo
+    # is visible without breaking files written for a newer agentmd.
+    unknown_keys = collect_unknown_keys(frontmatter)
+    for key in unknown_keys:
+        logger.warning("%s: %s", path.name, format_unknown_key_warning(key))
+
+    # Computed values are never taken from frontmatter — they are reported as
+    # unknown above and dropped here so they cannot collide with the kwargs.
+    fields = {k: v for k, v in frontmatter.items() if k not in COMPUTED_FIELDS}
+
     # Validate with Pydantic (name may be omitted → display defaults to id)
     config = AgentConfig(
-        **frontmatter,
+        **fields,
         id=agent_id,
         system_prompt=body,
-        file_path=str(path.resolve()),
         config_hash=config_hash,
+        file_path=str(path.resolve()),
+        unknown_keys=unknown_keys,
     )
 
     # Apply default model from config.yaml if not specified in agent

@@ -5,7 +5,7 @@ import logging
 import sys
 import time
 
-from agent_md.execution.logger import ExecutionLogger, _extract_text, agent_identity_payload
+from agent_md.execution.logger import ExecutionLogger, _extract_text, agent_identity_payload, final_answer_text
 from agent_md.sdk import _set_context, _reset_context
 from agent_md.workspace.path_context import PathContext
 from agent_md.config.pricing import estimate_cost
@@ -21,6 +21,9 @@ from agent_md.tools.registry import resolve_builtin_tools
 logger = logging.getLogger(__name__)
 
 _COMPLETE_SEQ = sys.maxsize  # ensures complete event is never filtered by SSE dedup
+
+# Triggers that fire without a human in the loop; they are never part of a chat.
+_AUTOMATIC_TRIGGERS = frozenset({"schedule", "watch"})
 
 
 class LimitExceeded(Exception):
@@ -87,6 +90,15 @@ def _classify_event_type(msg) -> str:
 def _agent_identity_fields(config: AgentConfig) -> dict:
     """Canonical identity fields for public SSE / EventBus payloads."""
     return agent_identity_payload(config.id, config.name)
+
+
+def _normalize_args(arguments: list[str] | str) -> list[str]:
+    """Normalize run arguments to a list for the execution_info contract."""
+    if isinstance(arguments, list):
+        return list(arguments)
+    if not arguments:
+        return []
+    return [arguments]
 
 
 def _build_event_data(msg, event_type: str, agent: AgentConfig | str) -> dict:
@@ -312,10 +324,116 @@ class AgentRunner:
                 },
             )
 
+    async def _emit_meta(
+        self,
+        ex_logger: ExecutionLogger,
+        execution_id: int,
+        event_bus,
+        config: AgentConfig,
+        *,
+        message: str,
+        payload: dict,
+    ) -> int:
+        """Persist and publish an SSE ``meta`` frame.
+
+        The bus/SSE event name stays ``meta`` (same channel as skill-context
+        frames). Subtypes are distinguished by ``payload["event_type"]`` —
+        ``execution_info`` for the initial context, ``stats`` for incremental
+        tokens/cost. Skill-context live frames keep ``event_type: "meta"``.
+        """
+        log_id = await ex_logger.log_event("meta", message, metadata=payload)
+        if event_bus is not None:
+            await event_bus.publish(
+                execution_id,
+                {
+                    "type": "meta",
+                    "seq": log_id,
+                    "data": {**payload, **_agent_identity_fields(config)},
+                },
+            )
+        return log_id
+
+    async def _emit_execution_info(
+        self,
+        ex_logger: ExecutionLogger,
+        execution_id: int,
+        event_bus,
+        config: AgentConfig,
+        *,
+        trigger_type: str,
+        arguments: list[str] | str,
+        session_id: str | None,
+    ) -> int:
+        """Emit the once-per-run initial meta (issue #3). Persisted for replay."""
+        model = f"{config.model.provider}/{config.model.name}" if config.model else None
+        payload = {
+            "event_type": "execution_info",
+            "model": model,
+            "trigger": trigger_type,
+            "args": _normalize_args(arguments),
+            "session_id": session_id,
+        }
+        return await self._emit_meta(
+            ex_logger,
+            execution_id,
+            event_bus,
+            config,
+            message="execution_info",
+            payload=payload,
+        )
+
+    async def _emit_stats(
+        self,
+        ex_logger: ExecutionLogger,
+        execution_id: int,
+        event_bus,
+        config: AgentConfig,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float | None,
+    ) -> int:
+        """Emit incremental token/cost stats (issue #1). Persisted for replay."""
+        payload = {
+            "event_type": "stats",
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "cost_usd": cost_usd,
+        }
+        return await self._emit_meta(
+            ex_logger,
+            execution_id,
+            event_bus,
+            config,
+            message="stats",
+            payload=payload,
+        )
+
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
-        """Build user input message with trigger context."""
-        if trigger_type == "manual":
-            return "Execute your task."
+        """Build user input message with trigger context.
+
+        When ``trigger.input`` is declared it replaces the hardcoded base prompt
+        for every trigger type. Composition with ``trigger_context`` (the
+        Phase 3 ``POST /run`` ``context`` body, or the watch event string):
+
+        - If the template contains ``{context}``, that placeholder is filled
+          with the context (or ``""``) and nothing further is appended.
+        - Watch templates may also use ``{event}`` and ``{path}`` / ``{file}``
+          when the context is ``"<event>: <path>"``.
+        - Otherwise, for ``manual`` / ``chat`` / ``agent``, a non-empty
+          ``trigger_context`` is still appended as `` ({context})`` — the same
+          Phase 3 shape — so declaring a template does not drop run context.
+        - For ``watch`` / ``schedule`` without placeholders, the template is
+          used as-is (the event/schedule detail is already optional context the
+          author can pull in via ``{context}``).
+        """
+        template = config.trigger.input
+        if template is not None:
+            return self._render_trigger_input(template, trigger_type, trigger_context, config)
+
+        if trigger_type in ("manual", "chat"):
+            return f"Execute your task. ({trigger_context})" if trigger_context else "Execute your task."
 
         if trigger_type == "schedule":
             if config.trigger.every:
@@ -341,6 +459,46 @@ class AgentRunner:
             return f"Execute your task. ({trigger_context})"
 
         return "Execute your task."
+
+    def _render_trigger_input(
+        self,
+        template: str,
+        trigger_type: str,
+        trigger_context: str | None,
+        config: AgentConfig,
+    ) -> str:
+        """Render a declared ``trigger.input`` template against runtime context."""
+        context = trigger_context or ""
+        event_type = ""
+        file_path = ""
+        if trigger_type == "watch" and trigger_context:
+            parts = trigger_context.split(": ", 1)
+            if len(parts) == 2:
+                event_type, file_path = parts
+
+        schedule_desc = ""
+        if config.trigger.every:
+            schedule_desc = f"every {config.trigger.every}"
+        elif config.trigger.cron:
+            schedule_desc = f"cron {config.trigger.cron}"
+
+        uses_context_placeholder = "{context}" in template
+        rendered = (
+            template.replace("{context}", context)
+            .replace("{event}", event_type)
+            .replace("{path}", file_path)
+            .replace("{file}", file_path)
+            .replace("{schedule}", schedule_desc)
+        )
+
+        if uses_context_placeholder:
+            return rendered
+
+        # Preserve Phase 3 composition for human/agent-driven runs: template
+        # replaces the hardcoded base, context still rides along in parentheses.
+        if trigger_type in ("manual", "chat", "agent") and trigger_context:
+            return f"{rendered} ({trigger_context})"
+        return rendered
 
     async def _build_graph(self, config: AgentConfig, **tool_kwargs):
         """Create model, resolve tools, and compile the graph.
@@ -402,18 +560,22 @@ class AgentRunner:
         )
         return graph, checkpoint_conn
 
-    async def _load_history_seed(self, graph, config: AgentConfig, execution_id: int) -> list:
+    async def _load_history_seed(
+        self, graph, config: AgentConfig, execution_id: int, session_id: str | None = None
+    ) -> list:
         """Return prior messages to seed a new run, trimmed to the history level.
 
-        Reads the most recent finished execution's checkpoint for this agent and
-        returns its non-system messages. Empty when history is off or no prior run.
+        Reads the most recent finished execution's checkpoint **for this
+        conversation** and returns its non-system messages: the same session when
+        *session_id* is given, sessionless executions otherwise. Empty when history
+        is off or no prior run exists in that conversation.
         """
         from agent_md.graph.agent import _trim_messages
         from agent_md.config.models import HISTORY_LIMITS
 
         if config.history == "off":
             return []
-        prev = await self.db.get_last_finished_execution(config.id, exclude_id=execution_id)
+        prev = await self.db.get_last_finished_execution(config.id, exclude_id=execution_id, session_id=session_id)
         if prev is None:
             return []
         try:
@@ -442,13 +604,17 @@ class AgentRunner:
         user_message: str | None = None,
         depth: int = 0,
         parent_execution_id: int | None = None,
+        session_id: str | None = None,
     ) -> dict:
         """Execute an agent and persist the result.
 
         Args:
             config: Validated agent configuration.
-            trigger_type: What triggered this execution ('manual', 'schedule', 'watch').
+            trigger_type: What triggered this execution ('manual', 'chat', 'schedule', 'watch', 'agent').
             trigger_context: Optional context about what triggered the execution (e.g., file path for watch).
+            session_id: Conversation this execution belongs to. Scopes the history
+                seed to that conversation; ``None`` keeps the execution sessionless.
+                Ignored for automatic triggers (see below).
             on_event: Optional callback ``(event_type, data_dict) -> None`` for
                 real-time UI updates (Rich console output).
             on_start: Optional callback ``(agent_name, model_info) -> None``
@@ -461,6 +627,13 @@ class AgentRunner:
         """
         logger.info(f"Starting execution: {config.name} (trigger={trigger_type})")
 
+        # Automatic runs never join a chat conversation: a schedule/watch firing is
+        # not a turn in anyone's dialogue, and letting it seed from (or into) a chat
+        # is exactly the cross-contamination sessions exist to prevent.
+        if session_id is not None and trigger_type in _AUTOMATIC_TRIGGERS:
+            logger.warning(f"Ignoring session_id on a '{trigger_type}' run of {config.id}")
+            session_id = None
+
         if on_start is not None:
             model_info = f"{config.model.provider} / {config.model.name}" if config.model else "default"
             on_start(config.name, model_info)
@@ -472,6 +645,7 @@ class AgentRunner:
                 trigger=trigger_type,
                 status="running",
                 parent_execution_id=parent_execution_id,
+                session_id=session_id,
             )
 
         ex_logger = ExecutionLogger(self.db, execution_id, config.id, display_name=config.name, on_event=on_event)
@@ -488,6 +662,18 @@ class AgentRunner:
                 }
             )
 
+        # Frozen execution context for clients (issue #3). Persisted so replay
+        # reopens with the same frame; not re-emitted on resume.
+        await self._emit_execution_info(
+            ex_logger,
+            execution_id,
+            event_bus,
+            config,
+            trigger_type=trigger_type,
+            arguments=arguments,
+            session_id=session_id,
+        )
+
         start_time = time.monotonic()
 
         # Token accumulators (parent model + folded sub-agent usage)
@@ -503,7 +689,7 @@ class AgentRunner:
         # Mutable bag filled by run_agent tool so child usage counts toward parent limits.
         sub_agent_usage: dict = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
-        sdk_token = _set_context(config, self.path_context)
+        sdk_token = _set_context(config, self.path_context, execution_id)
         checkpoint_conn = None
         try:
             try:
@@ -520,7 +706,7 @@ class AgentRunner:
                     cancel_event=cancel_event,
                     sub_agent_usage=sub_agent_usage,
                 )
-                history_seed = await self._load_history_seed(graph, config, execution_id)
+                history_seed = await self._load_history_seed(graph, config, execution_id, session_id)
 
                 # 3. Build user input with trigger context
                 user_input = self._build_user_input(trigger_type, trigger_context, config)
@@ -635,6 +821,19 @@ class AgentRunner:
                             )
                             _pricing_warned = True
 
+                        # Incremental stats for streaming clients (issue #1).
+                        # Folded parent+child totals match what ``complete`` reports.
+                        if getattr(msg, "type", "") == "ai":
+                            await self._emit_stats(
+                                ex_logger,
+                                execution_id,
+                                event_bus,
+                                config,
+                                input_tokens=total_input_tokens + child_input_tokens,
+                                output_tokens=total_output_tokens + child_output_tokens,
+                                cost_usd=cost_usd,
+                            )
+
                         _check_limits(config.settings, tool_call_count, combined_tokens, cost_usd)
 
                         # Loop detection: same tool error 3 consecutive times
@@ -662,8 +861,8 @@ class AgentRunner:
                 # 5. Extract final output
                 output = ""
                 if last_ai_msg:
-                    raw_content = getattr(last_ai_msg, "content", None)
-                    output = _extract_text(raw_content) if raw_content is not None else str(last_ai_msg)
+                    # Same value the logger persists — replay must equal live.
+                    output = final_answer_text(last_ai_msg)
                     log_id = await ex_logger.mark_final_answer(last_ai_msg)
                     if event_bus is not None:
                         await event_bus.publish(
@@ -682,7 +881,7 @@ class AgentRunner:
                     duration_ms,
                     total_input_tokens + child_input_tokens,
                     total_output_tokens + child_output_tokens,
-                    output_data=output[:10000],
+                    output_data=output,
                     cost_usd=cost_usd,
                 )
                 result["output"] = output
@@ -848,7 +1047,7 @@ class AgentRunner:
 
         graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
 
-        sdk_token = _set_context(config, self.path_context)
+        sdk_token = _set_context(config, self.path_context, execution_id)
         checkpoint_conn = None
         try:
             graph, checkpoint_conn = await self._build_graph(
@@ -909,6 +1108,16 @@ class AgentRunner:
                         tool_call_count += len(msg.tool_calls)
 
                     combined = total_input_tokens + total_output_tokens + child_input_tokens + child_output_tokens
+                    if getattr(msg, "type", "") == "ai":
+                        await self._emit_stats(
+                            ex_logger,
+                            execution_id,
+                            event_bus,
+                            config,
+                            input_tokens=total_input_tokens + child_input_tokens,
+                            output_tokens=total_output_tokens + child_output_tokens,
+                            cost_usd=cost_usd,
+                        )
                     _check_limits(config.settings, tool_call_count, combined, cost_usd)
 
                     # Loop detection: same tool error 3 consecutive times (parity with run())
@@ -949,8 +1158,8 @@ class AgentRunner:
             duration_ms = int((time.monotonic() - start_time) * 1000)
             output = ""
             if last_ai_msg:
-                raw = getattr(last_ai_msg, "content", None)
-                output = _extract_text(raw) if raw is not None else str(last_ai_msg)
+                # Same value the logger persists — replay must equal live.
+                output = final_answer_text(last_ai_msg)
                 log_id = await ex_logger.mark_final_answer(last_ai_msg)
                 if event_bus is not None:
                     await event_bus.publish(
@@ -967,7 +1176,7 @@ class AgentRunner:
                 duration_ms,
                 total_input_tokens + child_input_tokens,
                 total_output_tokens + child_output_tokens,
-                output_data=output[:10000],
+                output_data=output,
                 cost_usd=cost_usd,
             )
             result["output"] = output

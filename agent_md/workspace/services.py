@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent_md.workspace.bootstrap import bootstrap
-from agent_md.config.models import AgentConfig
+from agent_md.config.models import AgentConfig, format_unknown_key_warning
 from agent_md.workspace.parser import parse_agent_file
 
 
@@ -150,10 +150,12 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
             else:
                 missing.append(name)
 
+    # Unknown frontmatter keys (typos silently ignored by Pydantic)
+    warnings = [format_unknown_key_warning(key) for key in config.unknown_keys]
+
     # Check paths
     paths_valid = []
     paths_missing = []
-    warnings = []
     for alias, entry in config.paths.items():
         p = _resolve_relative(entry.path, ws)
         label = f"{alias} → {entry.path}"

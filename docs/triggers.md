@@ -274,6 +274,12 @@ trigger:
     - <path1>
     - <path2>
     - ...
+  # optional:
+  input: "Process {path}."
+  debounce: 0.5          # seconds (default 500ms); also accepts "2s" / "500ms"
+  filters:
+    include: ["*.pdf"]   # if set, path must match at least one
+    exclude: [".DS_Store", "*.tmp"]
 ```
 
 ### Paths
@@ -281,6 +287,57 @@ trigger:
 - **Relative paths:** Resolve from workspace root (e.g., `./uploads`, `./data`)
 - **Absolute paths:** Used as-is (e.g., `/var/log/app`)
 - **Home expansion:** Use `~` for home directory
+
+### Filters
+
+`filters.include` / `filters.exclude` are glob lists matched against the event path (basename and absolute path). Exclude wins over include. Matching happens in the watch handler — an excluded file never becomes a trigger, so the admission gate never sees it. Without `filters`, every file under `paths` still fires (including `.DS_Store`); declare an exclude when you want those dropped.
+
+### Debounce
+
+`debounce` (default `0.5` seconds) collapses rapid events for the same path into one trigger. Declare a larger window for downloads or editors that write many times in a burst.
+
+### Custom input
+
+`input` replaces the hardcoded watch prompt. Use `{event}`, `{path}` / `{file}`, and `{context}` for the raw event string. See [Agent Configuration](./agent-configuration.md#trigger) for how this composes with run `context` on manual/chat triggers.
+
+### Self-writes do not retrigger the agent
+
+A watch agent may write into the directory it watches — in fact it usually must, since watch paths are automatically part of the agent's allowed write paths. Its own writes do **not** trigger it again.
+
+Every built-in write tool (`file_write`, `file_edit`, `file_delete`, `file_move`, `memory_save`, `memory_append`) records the path it touched, the resulting modification time, and the agent that wrote it. The watch handler drops an event when all three of these hold:
+
+1. the path was written by **this** agent (another agent's write still triggers — see below);
+2. the file on disk still carries the exact mtime that write left behind;
+3. less than **2 seconds** have passed.
+
+Nothing is configurable here, and nothing needs to be: the check is about *identity of the change*, not about timing.
+
+**A user's edit is never swallowed.** Saving the file yourself right after the agent gives it a new modification time, so condition 2 fails and the agent runs — even one millisecond after its own write. The 2 s window is not there to tell you apart from the agent; it exists because filesystem events do not arrive instantly (up to one second on network mounts, where watchdog falls back to polling), and because a *deletion* records only "this path is absent", which is too coarse a fingerprint to trust indefinitely.
+
+**Only the writer is suppressed.** Agent B writing into a directory agent A watches still triggers A. A hand-off pipeline is the point, not a loop:
+
+```yaml
+# collector.md — trigger: schedule, writes ./inbox
+# processor.md — trigger: watch ./inbox, still fires on every file the collector drops
+```
+
+#### Known limits
+
+This is a best-effort layer with a declared boundary. In each case below the agent **does** retrigger itself, by design rather than by oversight — covering them would mean intercepting arbitrary third-party code:
+
+| Write path | Retriggers? | Why |
+|---|---|---|
+| Built-in file and memory tools | no | records its own writes |
+| **MCP server tool** | **yes** | writes inside another process, which agentmd never sees |
+| **Custom tool** (`_config/tools/`) | **yes** | writes with plain Python; use `agent_md.sdk.resolve_path` and the built-in tools if you need suppression |
+| **Sub-agent** invoked via `run_agent` | **yes** | the write is recorded under the sub-agent's id, not the caller's |
+| External process, another agentmd instance, `git checkout` | yes | correct — these are genuine outside changes |
+
+If an agent must write through one of the "yes" rows, keep it out of the loop the plain way: write to a directory the agent does not watch, or narrow `filters` so the produced files never match. A watch agent that writes into its own watched path via an MCP tool will run continuously.
+
+One limit runs the other way — the only case where **your** edit can be swallowed. Telling your save apart from the agent's write relies on the filesystem timestamping the two differently. APFS and ext4 record nanoseconds, so they always do. Filesystems that store whole seconds (HFS+, ext3) do not: a save landing in the same second as the agent's write to the same file carries an identical mtime and is dropped. Bounded to that 2 s window and to a file the agent just wrote, so at worst you save again.
+
+Causal tracking (execution depth, "which run caused this event") cannot substitute for any of this: a filesystem event carries no link back to the write that caused it, so every watch callback arrives as a fresh root.
 
 ### Events
 
@@ -290,7 +347,9 @@ Watch triggers activate on:
 
 - File modification
 
-- File deletion (optional, not triggered by default)
+- File deletion
+
+- File move
 
 ### Execution
 
@@ -597,16 +656,18 @@ trigger:
 
 ### Watch Trigger Triggers on Every Change
 
-**Problem:** Agent runs too many times when files are modified
+**Problem:** Agent runs too many times when files are modified (or fires on `.DS_Store`)
 
-**Workaround:** Use file extensions to filter:
+**Solution:** Use `filters` and raise `debounce`:
 ```yaml
-# Monitor specific files only
 trigger:
   type: watch
   paths:
-    - ./inbox/*.csv    # Only CSV files
-    - ./uploads/*.pdf  # Only PDF files
+    - ./inbox
+  debounce: 2s
+  filters:
+    include: ["*.csv", "*.pdf"]
+    exclude: [".DS_Store", "*.tmp", "**/.git/**"]
 ```
 
 ---

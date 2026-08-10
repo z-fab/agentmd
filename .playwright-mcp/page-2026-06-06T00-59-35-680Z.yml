@@ -1,0 +1,126 @@
+- generic [ref=e2]:
+  - heading "Padronização v2 — borda no card · pills + ícones Lucide" [level=1] [ref=e3]
+  - paragraph [ref=e4]: "Borda do card fininha e discreta (azul girando / âmbar pulsando). Pills no mesmo slot: ◌N rodando · ⏸N aguardando. Chips de trigger e status do History com ícones Lucide."
+  - generic [ref=e5]:
+    - text: Agents
+    - generic [ref=e6]: · clique = Run · ⋮ = menu · trigger (ícone) + modelo (sem provider)
+  - generic [ref=e7]:
+    - generic [ref=e8] [cursor=pointer]:
+      - generic [ref=e9]:
+        - generic [ref=e10]: ☀️
+        - generic [ref=e11]: Daily Processor
+        - img [ref=e13]
+      - generic [ref=e17]: Destila o daily nos projetos e escreve no _summary.md
+      - generic [ref=e18]:
+        - generic [ref=e19]:
+          - img [ref=e20]
+          - text: Manual
+        - generic [ref=e26]: gemini-3-flash-preview
+    - generic [ref=e27] [cursor=pointer]:
+      - generic [ref=e28]:
+        - generic [ref=e29]: 🔎
+        - generic [ref=e30]: Research Bot
+        - generic [ref=e31]: "2"
+        - img [ref=e34]
+      - generic [ref=e38]: Pesquisa fontes e resume os achados em um relatório.
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - img [ref=e41]
+          - text: Scheduled
+        - generic [ref=e44]: gpt-5.1
+    - generic [ref=e45] [cursor=pointer]:
+      - generic [ref=e46]:
+        - generic [ref=e47]: 🧭
+        - generic [ref=e48]: hello
+        - generic [ref=e49]:
+          - img [ref=e50]
+          - text: "1"
+        - img [ref=e54]
+      - generic [ref=e58]: Gera uma piada em português e salva com timestamp.
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - img [ref=e61]
+          - text: Manual
+        - generic [ref=e67]: gemini-3-flash-preview
+    - generic [ref=e68] [cursor=pointer]:
+      - generic [ref=e69]:
+        - generic [ref=e70]: 🛰️
+        - generic [ref=e71]: Ingest Pipeline
+        - generic [ref=e72]: "1"
+        - generic [ref=e74]:
+          - img [ref=e75]
+          - text: "2"
+        - img [ref=e79]
+      - generic [ref=e83]: Importa arquivos novos do vault e indexa.
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - img [ref=e86]
+          - text: Watch
+        - generic [ref=e89]: claude-opus-4-8
+  - generic [ref=e90]:
+    - text: Live
+    - generic [ref=e91]: · mesmo molde · pill com timer · borda discreta no card
+  - generic [ref=e92]:
+    - generic [ref=e93] [cursor=pointer]:
+      - generic [ref=e94]:
+        - generic [ref=e95]: 🔎
+        - generic [ref=e96]: Research Bot
+        - generic [ref=e97]: "#241"
+        - generic [ref=e98]: 0:18
+      - generic [ref=e100]: Chamando http_request · buscando fontes…
+      - generic [ref=e101]:
+        - generic [ref=e102]: 4.2k tok
+        - generic [ref=e103]: $0.011
+    - generic [ref=e104] [cursor=pointer]:
+      - generic [ref=e105]:
+        - generic [ref=e106]: 🧭
+        - generic [ref=e107]: hello
+        - generic [ref=e108]: "#242"
+        - generic [ref=e109]:
+          - img [ref=e110]
+          - text: 0:07
+      - generic [ref=e113]: Posso sobrescrever piada.md? — toque para responder
+      - generic [ref=e115]: 1.1k tok
+  - generic [ref=e116]:
+    - text: History
+    - generic [ref=e117]: · status como pill com ícone Lucide
+  - generic [ref=e118]:
+    - generic [ref=e119] [cursor=pointer]:
+      - generic [ref=e120]:
+        - generic [ref=e121]: ☀️
+        - generic [ref=e122]: Daily Processor
+        - generic [ref=e123]: "#240"
+        - generic [ref=e124]:
+          - img [ref=e125]
+          - text: Success
+      - generic [ref=e127]:
+        - generic [ref=e128]: 2h atrás
+        - generic [ref=e129]: 0:42
+        - generic [ref=e130]: 8.0k tok
+        - generic [ref=e131]: $0.02
+    - generic [ref=e132] [cursor=pointer]:
+      - generic [ref=e133]:
+        - generic [ref=e134]: 🔎
+        - generic [ref=e135]: Research Bot
+        - generic [ref=e136]: "#239"
+        - generic [ref=e137]:
+          - img [ref=e138]
+          - text: Failed
+      - generic [ref=e141]:
+        - generic [ref=e142]: 3h atrás
+        - generic [ref=e143]: 0:09
+        - generic [ref=e144]: rate limit exceeded…
+    - generic [ref=e145] [cursor=pointer]:
+      - generic [ref=e146]:
+        - generic [ref=e147]: 🧭
+        - generic [ref=e148]: hello
+        - generic [ref=e149]: "#238"
+        - generic [ref=e150]:
+          - img [ref=e151]
+          - text: Aborted
+      - generic [ref=e154]:
+        - generic [ref=e155]: ontem
+        - generic [ref=e156]: 0:15
+        - generic [ref=e157]: 2.0k tok
+  - generic [ref=e158]: para iterar
+  - paragraph [ref=e159]: "1) A borda no card (azul girando / âmbar pulsando) está discreta o suficiente — passa “tem algo acontecendo” sem chamar atenção? 2) O spinner menor na pill ficou bom? 3) Ícones dos chips de trigger — Manual (cursor-click), Scheduled (relógio), Watch (olho): ok ou troco algum? 4) Status do History como pill (✓ Success / ✕ Failed / ⊘ Aborted) no canto direito — bom assim, ou prefere na linha de meta?"

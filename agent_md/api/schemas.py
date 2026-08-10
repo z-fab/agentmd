@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+# Long enough for a UUID or any sane opaque token, short enough that a session id
+# can never become a place to smuggle payloads into the checkpoint key space.
+MAX_SESSION_ID_LENGTH = 200
 
 
 # --- Requests ---
@@ -12,6 +16,20 @@ class RunRequest(BaseModel):
     args: list[str] = []
     context: str | None = None
     message: str | None = None
+    session_id: str | None = None
+
+    @field_validator("session_id")
+    @classmethod
+    def _normalize_session_id(cls, v: str | None) -> str | None:
+        """Blank is the same as absent; anything else must be a usable key."""
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if len(v) > MAX_SESSION_ID_LENGTH:
+            raise ValueError(f"session_id must be at most {MAX_SESSION_ID_LENGTH} characters")
+        return v
 
 
 # --- Responses ---
@@ -37,6 +55,13 @@ class ShutdownResponse(BaseModel):
     message: str = "shutting down"
 
 
+class LastResult(BaseModel):
+    """Most recent execution summary for an agent listing."""
+
+    status: str
+    started_at: str
+
+
 class AgentSummary(BaseModel):
     """Public agent listing.
 
@@ -56,11 +81,12 @@ class AgentSummary(BaseModel):
     trigger_type: str
     model_provider: str | None = None
     model_name: str | None = None
+    next_run: str | None = None
+    last_result: LastResult | None = None
 
 
 class AgentDetail(AgentSummary):
     last_run: str | None = None
-    next_run: str | None = None
     history: str
     settings: dict
     paths: dict[str, str] = {}
@@ -92,6 +118,7 @@ class ExecutionSummary(BaseModel):
     cost_usd: float | None = None
     error: str | None = None
     parent_execution_id: int | None = None
+    session_id: str | None = None
 
 
 class ExecutionDetail(ExecutionSummary):

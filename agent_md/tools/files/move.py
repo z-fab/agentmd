@@ -6,6 +6,8 @@ import shutil
 
 from langchain_core.tools import tool
 
+from agent_md.execution.self_writes import self_write
+
 
 def create_file_move_tool(agent_config, path_context):
     """Create a file_move tool bound to an agent's path context."""
@@ -37,7 +39,10 @@ def create_file_move_tool(agent_config, path_context):
 
         try:
             resolved_dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(resolved_src), str(resolved_dst))
+            # Both ends: a move fires a delete for the source and a create for
+            # the destination, and a watcher may be looking at either.
+            with self_write(resolved_src, resolved_dst):
+                shutil.move(str(resolved_src), str(resolved_dst))
             return f"Moved: {resolved_src} -> {resolved_dst}"
         except Exception as e:
             return f"ERROR moving file: {e}"

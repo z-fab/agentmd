@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.execution.self_writes import self_write
+
 
 def create_file_delete_tool(agent_config, path_context):
     """Create a file_delete tool bound to an agent's path context."""
@@ -32,7 +34,8 @@ def create_file_delete_tool(agent_config, path_context):
             return f"ERROR: Not a file (refusing to delete directory): {resolved}"
 
         try:
-            resolved.unlink()
+            with self_write(resolved):
+                resolved.unlink()
             return f"Deleted: {resolved}"
         except Exception as e:
             return f"ERROR deleting file: {e}"

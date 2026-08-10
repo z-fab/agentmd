@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from agent_md.api.app import create_app
@@ -85,6 +87,47 @@ async def test_run_skipped_when_waiting(app_client):
     await app.state.db.create_execution("busy", "manual", status="waiting")
     r = await client.post("/agents/busy/run", json={})
     assert r.status_code == 409
+
+
+async def test_run_skipped_when_the_same_session_waits(app_client):
+    app, client = app_client
+    from agent_md.config.models import AgentConfig
+
+    cfg = AgentConfig(name="busy", model={"provider": "google", "name": "x"}, on_pending="skip")
+    app.state.runtime.registry.register(cfg)
+    await app.state.db.create_execution("busy", "chat", status="waiting", session_id="s1")
+
+    r = await client.post("/agents/busy/run", json={"message": "hi", "session_id": "s1"})
+
+    assert r.status_code == 409
+    assert "this conversation is waiting" in r.json()["detail"]
+
+
+async def test_a_stale_hilt_in_one_chat_does_not_close_the_agent(app_client, monkeypatch):
+    """`amd chat` opened a fresh session and was refused for a conversation it
+    had never taken part in. A pending HILT holds its own conversation, not the
+    agent."""
+    app, client = app_client
+    from agent_md.config.models import AgentConfig
+
+    cfg = AgentConfig(name="busy", model={"provider": "google", "name": "x"}, on_pending="skip")
+    app.state.runtime.registry.register(cfg)
+    await app.state.db.create_execution("busy", "chat", status="waiting", session_id="old-session")
+
+    started = asyncio.Event()
+
+    async def fake_run(config, **kwargs):
+        started.set()
+        return {"status": "success"}
+
+    monkeypatch.setattr(app.state.runtime.runner, "run", fake_run)
+
+    r = await client.post("/agents/busy/run", json={"message": "hi", "session_id": "new-session"})
+
+    assert r.status_code == 200
+    await asyncio.wait_for(started.wait(), timeout=5)
+    execution = await app.state.db.get_execution(r.json()["execution_id"])
+    assert execution.session_id == "new-session"
 
 
 async def test_respond_without_live_task_rebuilds(app_client, monkeypatch):

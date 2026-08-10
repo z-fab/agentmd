@@ -7,10 +7,12 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_md.config.icons import resolve_agent_icon
+from agent_md.workspace.scheduler import check_admission
 from agent_md.api.schemas import (
     AgentDetail,
     AgentSummary,
     ExecutionSummary,
+    LastResult,
     ReloadResponse,
     RunRequest,
     RunResponse,
@@ -37,7 +39,25 @@ def _summary_fields(config) -> dict:
 @router.get("", response_model=list[AgentSummary])
 async def list_agents(request: Request):
     rt = request.app.state.runtime
-    return [AgentSummary(**_summary_fields(c)) for c in rt.registry.all()]
+    configs = rt.registry.all()
+    last_by_id = await rt.db.get_last_executions([c.id for c in configs])
+
+    summaries: list[AgentSummary] = []
+    for config in configs:
+        last_exec = last_by_id.get(config.id)
+        next_run = None
+        if rt.scheduler and config.trigger.type == "schedule":
+            next_run = rt.scheduler.get_next_run(config.id)
+        summaries.append(
+            AgentSummary(
+                **_summary_fields(config),
+                next_run=next_run,
+                last_result=(
+                    LastResult(status=last_exec.status, started_at=last_exec.started_at) if last_exec else None
+                ),
+            )
+        )
+    return summaries
 
 
 @router.get("/{agent_id}", response_model=AgentDetail)
@@ -58,6 +78,7 @@ async def get_agent(agent_id: str, request: Request):
         **_summary_fields(config),
         last_run=last_exec.started_at if last_exec else None,
         next_run=next_run,
+        last_result=(LastResult(status=last_exec.status, started_at=last_exec.started_at) if last_exec else None),
         history=config.history,
         settings=config.settings.model_dump(),
         paths=resolved_paths,
@@ -117,36 +138,74 @@ async def run_agent(agent_id: str, request: Request, body: RunRequest | None = N
     if not config:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    if config.on_pending == "skip" and await rt.db.has_waiting_execution(config.id):
-        raise HTTPException(status_code=409, detail=f"Agent '{agent_id}' has a session waiting for a response")
-
     body = body or RunRequest()
     arguments = body.args or []
+    session_id = body.session_id
+    # A run that carries a conversation is a chat turn; without one it is a plain
+    # manual run. Recording the real trigger is what makes the two distinguishable.
+    trigger = "chat" if session_id else "manual"
+
+    # Same admission decision the trigger path makes, rendered as HTTP: a caller
+    # who asked for a run gets told why it was refused, where a timer tick is
+    # only logged. Scoped to the conversation this run joins — a chat parked on a
+    # HILT holds itself, not every other session of the same agent.
+    reason = await check_admission(config, rt.db, trigger_type=trigger, session_id=session_id)
+    if reason:
+        raise HTTPException(status_code=409, detail=f"Agent '{agent_id}': {reason}")
 
     cancel_event = asyncio.Event()
-    execution_id = await rt.db.create_execution(agent_id=config.id, trigger="manual", status="running")
+    execution_id = await rt.db.create_execution(
+        agent_id=config.id, trigger=trigger, status="running", session_id=session_id
+    )
     state.cancel_events[execution_id] = cancel_event
 
     model_info = f"{config.model.provider}/{config.model.name}" if config.model else None
 
     from agent_md.util.tasks import spawn_background
 
-    spawn_background(_run_in_background(rt, config, execution_id, state, arguments, body.message, cancel_event))
+    spawn_background(
+        _run_in_background(
+            rt,
+            config,
+            execution_id,
+            state,
+            arguments,
+            body.message,
+            cancel_event,
+            trigger_type=trigger,
+            trigger_context=body.context,
+            session_id=session_id,
+        )
+    )
     return RunResponse(execution_id=execution_id, model=model_info)
 
 
-async def _run_in_background(rt, config, execution_id, state, arguments, message, cancel_event):
+async def _run_in_background(
+    rt,
+    config,
+    execution_id,
+    state,
+    arguments,
+    message,
+    cancel_event,
+    *,
+    trigger_type: str = "manual",
+    trigger_context: str | None = None,
+    session_id: str | None = None,
+):
     """Run agent execution as a background task."""
     try:
         await rt.runner.run(
             config,
-            trigger_type="manual",
+            trigger_type=trigger_type,
+            trigger_context=trigger_context,
             arguments=arguments,
             event_bus=state.event_bus,
             global_event_bus=state.global_event_bus,
             cancel_event=cancel_event,
             execution_id=execution_id,
             user_message=message,
+            session_id=session_id,
         )
     finally:
         state.cancel_events.pop(execution_id, None)
@@ -173,6 +232,8 @@ async def agent_runs(agent_id: str, request: Request, limit: int = 10):
             total_tokens=e.total_tokens,
             cost_usd=e.cost_usd,
             error=e.error,
+            parent_execution_id=e.parent_execution_id,
+            session_id=e.session_id,
         )
         for e in execs
     ]

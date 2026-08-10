@@ -21,6 +21,7 @@ class ExecutionRecord:
         self.cost_usd: Optional[float] = kwargs.get("cost_usd")
         self.pid: Optional[int] = kwargs.get("pid")
         self.parent_execution_id: Optional[int] = kwargs.get("parent_execution_id")
+        self.session_id: Optional[str] = kwargs.get("session_id")
 
 
 class LogRecord:

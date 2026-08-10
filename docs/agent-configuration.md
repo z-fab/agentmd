@@ -259,6 +259,26 @@ trigger:
     - ./data
 ```
 
+Optional fields shared by every trigger type (all omit-able; omitting keeps prior behaviour):
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `input` | string | unset | User-turn template. Replaces the hardcoded prompt. Placeholders: `{context}`, and for watch `{event}` / `{path}` / `{file}`, for schedule `{schedule}`. When the template has no `{context}` and a run supplies context (`POST /run` body, or an agent caller), `manual` / `chat` / `agent` still append ` ({context})`. |
+| `filters` | object | unset | Watch only. `include` / `exclude` glob lists. Applied in the filesystem watcher before a trigger is scheduled. |
+| `debounce` | number or `"2s"` / `"500ms"` | `0.5` | Watch only. Seconds to wait after the last change for a path before firing. |
+
+```yaml
+trigger:
+  type: watch
+  paths:
+    - ./inbox
+  input: "Process {path} ({event})."
+  debounce: 2s
+  filters:
+    include: ["*.pdf", "*.csv"]
+    exclude: [".DS_Store", "*.tmp"]
+```
+
 ### `settings`
 
 | Property | Value |
@@ -563,10 +583,12 @@ The effective confirm set is: **(global defaults ∪ `confirm`) − `auto_approv
 | **Allowed values** | `skip`, `parallel` |
 | **Default** | `skip` |
 
-Controls whether a new run can start while an execution is `waiting` (paused for user input):
+Controls whether a new run can start while an execution **in the same conversation** is `waiting` (paused for user input):
 
-- `skip` (default): scheduler and file-watcher skip a new trigger while one session is paused.
+- `skip` (default): a run is refused while the conversation it joins is paused. A chat turn is held by its own session only; `agentmd run`, `schedule` and `watch` share one sessionless bucket and hold each other. A pending HILT in one chat does not block another chat, or the scheduler.
 - `parallel`: allows multiple concurrent waiting sessions (each uses an isolated checkpoint thread).
+
+See [Human-in-the-loop](human-in-the-loop.md#on_pending) for the full blocking table.
 
 ```yaml
 on_pending: parallel
@@ -637,6 +659,31 @@ model:
 model:
   url: http://localhost:8000
 ```
+
+## Unknown Keys
+
+A key agentmd does not recognize is **ignored, with a warning** — never a hard
+error, so a file written for a newer version still loads on an older one.
+
+```yaml
+---
+triger:            # typo: parsed, ignored, agent stays `manual`
+  type: schedule
+  every: 1h
+---
+```
+
+The warning shows up in two places: the backend log when the file is parsed, and
+`agentmd validate`, which names the key and suggests the field it resembles.
+
+```
+  Frontmatter
+    ⚠ unknown frontmatter key 'triger' (ignored) — did you mean 'trigger'?
+```
+
+Nested keys are reported with their path (`trigger.typ`). `id:` is the one
+exception: identity comes from the filename stem, so declaring it is an error
+rather than a warning.
 
 ## Environment Variable Substitution
 

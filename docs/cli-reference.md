@@ -126,6 +126,10 @@ agentmd start [OPTIONS]
 |--------|-------|------|---------|-------------|
 | `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
 | `--daemon` | `-d` | Flag | false | Run in background |
+| `--keep-alive` | | Flag | false | Never shut down on idle (server mode) |
+| `--port INT` | | Integer | none | Also listen on TCP; requires `--api-key` |
+| `--host TEXT` | | String | `127.0.0.1` | Interface for `--port` |
+| `--api-key TEXT` | | String | none | Key required on TCP requests (`X-API-Key`) |
 | `--quiet` | `-q` | Flag | false | Suppress output except errors |
 
 ### Examples
@@ -142,15 +146,60 @@ agentmd start --workspace /data/agents
 
 # Start daemon with custom workspace
 agentmd start -d -w /data/agents
+
+# Serve other machines over TCP, authenticated, never idling out
+agentmd start --keep-alive --host 0.0.0.0 --port 4100 --api-key "$AGENTMD_KEY"
 ```
 
 ### Daemon Mode
 
 When started with `--daemon` / `-d`:
 - Runs as a detached background process
-- Logs output to `{workspace}/data/agentmd.log`
-- PID stored in `{workspace}/data/agentmd.pid`
+- Logs output to `~/.local/state/agentmd/backend.log` (rotated at 5 MB)
+- PID stored in `~/.local/state/agentmd/backend.pid`
+- Server flags (`--keep-alive`, `--port`, `--host`, `--api-key`) are passed through to the detached process
 - Use `agentmd status` to check and `agentmd stop` to stop
+
+### Server Mode
+
+By default the backend is a personal, on-demand process: the CLI starts it, it
+listens on a Unix socket at `~/.local/state/agentmd/agentmd.sock` (mode `600`),
+and it shuts itself down after 5 minutes with nothing to do — no scheduled
+agent, no running execution, no open stream.
+
+Three options turn it into a service:
+
+| Option | What it changes |
+|--------|-----------------|
+| `--keep-alive` | Disables the idle shutdown entirely. The process runs until `agentmd stop`, `POST /shutdown`, or a signal. Use it for a supervised process (systemd, launchd, a container) and for any workspace whose agents are all `manual` — those have no scheduled job to keep it alive. |
+| `--port` | Adds a TCP listener alongside the socket, so processes that are not the local CLI can reach the API. |
+| `--api-key` | The key TCP callers must send as `X-API-Key`. |
+
+**`--port` requires `--api-key`.** Without it, `agentmd start` refuses to boot:
+the API can execute arbitrary agents (`POST /agents/{id}/run`), and a TCP
+listener is reachable by anything that can route to the host. There is no
+"unauthenticated port" mode.
+
+Authentication is per transport:
+
+| Transport | Auth | Why |
+|-----------|------|-----|
+| Unix socket | none | The socket file is `chmod 600` — the OS already restricts it to your user. The local CLI sends no key. |
+| TCP (`--port`) | `X-API-Key` on every route except `/health` | Reachable off-box. |
+
+Both listeners serve the same runtime, so `agentmd list`, `agentmd run` and the
+rest keep working locally, without a key, while the port stays authenticated.
+`--api-key` alone (no `--port`) changes nothing and warns as much.
+
+`--host` defaults to `127.0.0.1`. Setting `0.0.0.0` publishes the port on every
+interface — do that only behind a firewall or a reverse proxy that terminates
+TLS, since the API key travels in cleartext over plain HTTP.
+
+In service mode (`--port` or `--keep-alive`) an execution parked in `waiting`
+— a [human-in-the-loop](human-in-the-loop.md) prompt — also holds the backend
+up, so a remote caller can still answer it. On the plain local socket it does
+not: a forgotten HILT would otherwise make the backend immortal, and
+`agentmd respond` restarts the backend and resumes the execution on demand.
 
 ---
 
@@ -561,7 +610,7 @@ agentmd status [OPTIONS]
 
 ## agentmd stop
 
-Stop the background runtime.
+Stop the background runtime, and confirm the process actually exited.
 
 ### Usage
 
@@ -574,8 +623,28 @@ agentmd stop [OPTIONS]
 | Option | Short | Type | Default | Description |
 |--------|-------|------|---------|-------------|
 | `--workspace PATH` | `-w` | Path | from config.yaml | Override workspace directory |
+| `--timeout SECONDS` | | Float | 15 | Wait for a graceful exit before escalating |
 
-Sends SIGTERM for graceful shutdown. Falls back to SIGKILL after 5 seconds if needed.
+### What it does
+
+1. Reads the backend's PID from `/info` **before** asking it to stop — once
+   shutdown begins the socket is closed and unlinked, so nothing on the socket
+   can tell you whether the process is still there.
+2. Sends `POST /shutdown` and waits up to `--timeout` for the process to exit.
+3. If it is still alive: `SIGTERM`, then 5 more seconds.
+4. If it is *still* alive: `SIGKILL`, then 3 more seconds.
+5. Exits non-zero, loudly, if the process survived all of that — or if the PID
+   could not be determined and the exit therefore could not be confirmed.
+
+`stop` never reports success for a backend that is still running. That matters
+beyond tidiness: a backend that has dropped its socket but not exited still
+holds the scheduler, so a `start` issued after a falsely-successful `stop`
+spawns a second one and every `trigger: schedule` agent fires twice.
+
+The default 15 s covers the whole orderly path — the connection drain plus
+lifespan shutdown, whose slowest step is the file watcher's 5 s join — so a
+backend that was about to exit cleanly is not signalled out from under itself.
+A healthy backend exits in well under a second and `stop` returns immediately.
 
 ---
 

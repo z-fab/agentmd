@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Annotated, Optional
 from urllib.parse import quote
@@ -17,6 +18,7 @@ from agent_md.cli.theme import (
     display_icon,
     format_agent_label,
     format_duration,
+    format_meta_log_content,
     format_relative_time,
     format_tokens,
     format_trigger,
@@ -30,6 +32,10 @@ from agent_md.cli.theme import (
 )
 from agent_md.config.icons import resolve_agent_icon
 from agent_md.config.models import AgentConfig
+
+# Marker for warnings produced by format_unknown_key_warning(), which `validate`
+# groups under its own heading instead of the generic warnings list.
+_UNKNOWN_KEY_PREFIX = "unknown frontmatter key"
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +392,14 @@ def new(
 # agentmd start
 # ---------------------------------------------------------------------------
 
+# Cap on uvicorn's graceful drain. Its default is *no* timeout, so one open
+# connection — an SSE stream is enough — keeps the process alive forever after
+# the listening socket is already closed and unlinked. The streams now close
+# themselves on shutdown (see agent_md/api/sse.py); this is the backstop for
+# anything else that holds a connection. Past the cap uvicorn cancels the stuck
+# tasks and still runs lifespan shutdown, so the database closes cleanly.
+_GRACEFUL_DRAIN_SECONDS = 8.0
+
 
 @app.command()
 def start(
@@ -401,8 +415,19 @@ def start(
     """Start the Agentmd backend."""
     from rich.console import Console
 
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
+
     console = Console()
     ws = Path(workspace) if workspace else None
+
+    # Checked here, not only in _run_backend: the daemon path never gets there.
+    if port and not api_key:
+        console.print(f"[red]{TcpRequiresApiKey()}[/red]")
+        raise typer.Exit(1)
+    if api_key and not port:
+        console.print(
+            "[yellow]--api-key has no effect without --port (the Unix socket is guarded by file permissions).[/yellow]"
+        )
 
     if daemon and not internal_backend:
         from agent_md.cli.spawn import _spawn_backend
@@ -413,21 +438,31 @@ def start(
             console.print("[yellow]Backend is already running.[/yellow]")
             return
 
-        pid = _spawn_backend(ws)
+        pid = _spawn_backend(ws, _server_args(keep_alive, port, host, api_key))
         console.print(f"[green]Backend started[/green] (PID {pid})")
+        if port:
+            console.print(f"  Listening on http://{host}:{port}")
         console.print(f"  Logs: {get_log_path()}")
         return
 
     if not quiet and not internal_backend:
         console.print("[bold]Agentmd Backend[/bold]")
 
-    from agent_md.cli.errors import BackendAlreadyRunning
-
     try:
         asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
-    except BackendAlreadyRunning as e:
+    except (BackendAlreadyRunning, TcpRequiresApiKey) as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+
+
+def _server_args(keep_alive: bool, port: int | None, host: str, api_key: str | None) -> list[str]:
+    """Flags the detached child needs to come up in the same server mode."""
+    args: list[str] = []
+    if keep_alive:
+        args.append("--keep-alive")
+    if port:
+        args.extend(["--port", str(port), "--host", host, "--api-key", api_key])
+    return args
 
 
 async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
@@ -435,8 +470,12 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     import uvicorn
     from agent_md.api.app import create_app
     from agent_md.cli.client import BackendClient, get_socket_path, get_state_dir
-    from agent_md.cli.errors import BackendAlreadyRunning
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
     from agent_md.util.tasks import spawn_background
+
+    # Refuse an unauthenticated TCP bind before touching the socket or the runtime.
+    if port and not api_key:
+        raise TcpRequiresApiKey()
 
     socket_path = get_socket_path()
     state_dir = get_state_dir()
@@ -452,13 +491,18 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
 
     app = create_app(workspace=workspace, start_scheduler=True)
     app.state.keep_alive = keep_alive
+    # Service mode: someone other than the local CLI may be driving the backend,
+    # so a HILT execution waiting for a human must keep it alive.
+    app.state.service_mode = bool(port) or keep_alive
 
-    if api_key and port:
-        from agent_md.api.auth import ApiKeyMiddleware
-
-        app.add_middleware(ApiKeyMiddleware, api_key=api_key)
-
-    config = uvicorn.Config(app, uds=str(socket_path), log_level="warning" if quiet else "info")
+    # The socket app is never wrapped — the local CLI sends no key and the
+    # socket is already restricted to the owner (chmod 600 below).
+    config = uvicorn.Config(
+        app,
+        uds=str(socket_path),
+        log_level="warning" if quiet else "info",
+        timeout_graceful_shutdown=_GRACEFUL_DRAIN_SECONDS,
+    )
     server = uvicorn.Server(config)
 
     async def _set_socket_perms():
@@ -476,7 +520,18 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     spawn_background(_watch_shutdown())
 
     if port:
-        tcp_config = uvicorn.Config(app, host=host, port=port, log_level="warning" if quiet else "info")
+        from agent_md.api.auth import ApiKeyMiddleware
+
+        # Auth lives on the TCP entrypoint only: same app, same runtime, but
+        # every request that arrives over the network must carry the key.
+        tcp_app = ApiKeyMiddleware(app, api_key=api_key)
+        tcp_config = uvicorn.Config(
+            tcp_app,
+            host=host,
+            port=port,
+            log_level="warning" if quiet else "info",
+            timeout_graceful_shutdown=_GRACEFUL_DRAIN_SECONDS,
+        )
         tcp_server = uvicorn.Server(tcp_config)
 
         async def _watch_shutdown_tcp():
@@ -862,6 +917,9 @@ def chat(
         raise typer.Exit(1)
     agent_info = resp.json()
     model_info = f"{agent_info.get('model_provider', '')}/{agent_info.get('model_name', '')}"
+    # One UUID for this process: every turn reuses it so the server seeds history
+    # from this conversation only. Closing and reopening chat starts a new session.
+    session_id = str(uuid.uuid4())
     console.print(f"[bold]Chat with {agent_label}[/bold] [dim]({model_info})[/dim]")
     console.print("[dim]Type /exit to end the session[/dim]\n")
 
@@ -882,7 +940,10 @@ def chat(
             if not user_input.strip():
                 continue
 
-            resp = client.post(_agent_path(agent, "/run"), json={"message": user_input})
+            resp = client.post(
+                _agent_path(agent, "/run"),
+                json={"message": user_input, "session_id": session_id},
+            )
             if resp.status_code != 200:
                 console.print(f"[red]Error: {resp.text}[/red]")
                 break
@@ -950,11 +1011,8 @@ def list_agents(
     async def _list_with_last_runs():
         async with _runtime(workspace) as rt:
             agents = rt.registry.all()
-            last_runs: dict[str, str] = {}
-            for a in agents:
-                ex = await rt.db.get_last_execution(a.id)
-                if ex:
-                    last_runs[a.id] = ex.started_at
+            last_by_id = await rt.db.get_last_executions([a.id for a in agents])
+            last_runs = {aid: ex.started_at for aid, ex in last_by_id.items()}
             return agents, last_runs
 
     agents, last_runs = asyncio.run(_list_with_last_runs())
@@ -1118,6 +1176,12 @@ def _show_execution_detail(execution_id: int, workspace: Path | None, verbose: b
                 console.print(f"  [dim]{ts}  {emoji}  System prompt ({chars:,} chars)[/dim]")
         elif log.event_type == "human":
             console.print(f"  [dim]{ts}  {emoji}  {log.message}[/dim]")
+        elif log.event_type == "meta":
+            # Payload lives in metadata JSON; message is only the subtype label.
+            # Stats are shown always: `logs -e` is the detail view, and each
+            # line is a compact one-liner (see format_meta_log_content).
+            content = format_meta_log_content(log.metadata, log.message)
+            console.print(f"  [dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]")
         else:
             content = log.message or ""
             console.print(f"  [dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]")
@@ -1215,6 +1279,8 @@ def validate(
     trigger_str = format_trigger(config)
     trigger_valid = "[green]\u2713 Valid[/green]"
     for w in result.warnings:
+        if w.startswith(_UNKNOWN_KEY_PREFIX):
+            continue
         if "cron" in w.lower() or "watch path" in w.lower():
             trigger_valid = f"[red]\u2717 {w}[/red]"
             errors += 1
@@ -1258,9 +1324,19 @@ def validate(
         for p in result.paths_missing:
             print_check(p, "warn", "does not exist yet")
 
+    # Unknown frontmatter keys — a typo like `triger:` is ignored at parse time,
+    # so this is the only place it becomes visible before the agent misbehaves.
+    unknown_warnings = [w for w in result.warnings if w.startswith(_UNKNOWN_KEY_PREFIX)]
+    if unknown_warnings:
+        console.print("\n  [bold]Frontmatter[/bold]")
+        for w in unknown_warnings:
+            print_check(w, "warn")
+
     # Other warnings (not already surfaced above)
     _surfaced = {"cron", "watch path", "path:"}
-    other_warnings = [w for w in result.warnings if not any(k in w.lower() for k in _surfaced)]
+    other_warnings = [
+        w for w in result.warnings if w not in unknown_warnings and not any(k in w.lower() for k in _surfaced)
+    ]
     if other_warnings:
         console.print("\n  [bold]Warnings[/bold]")
         for w in other_warnings:
@@ -1481,13 +1557,118 @@ def checkpoint(
     asyncio.run(_go())
 
 
+# Escalation budget for `agentmd stop`. The graceful window has to cover the
+# whole orderly path — uvicorn's connection drain (_GRACEFUL_DRAIN_SECONDS)
+# plus lifespan shutdown, whose slowest step is the watchdog observer's 5s
+# join — or we would SIGTERM a backend that was about to exit cleanly and skip
+# its own cleanup. Everything after that is escalation, and each rung is only
+# long enough to observe the process go away.
+_STOP_GRACE_SECONDS = 15.0
+_STOP_SIGTERM_SECONDS = 5.0
+_STOP_SIGKILL_SECONDS = 3.0
+_POLL_INTERVAL = 0.1
+
+
+def _pid_alive(pid: int) -> bool:
+    """True while a process with *pid* exists.
+
+    Deliberately not imported from ``workspace.bootstrap``: that module pulls in
+    the runner, scheduler and parser at import time, and ``stop`` must stay a
+    cheap CLI command.
+    """
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists, owned by someone else
+    except OSError:
+        return False
+    return True
+
+
+def _reap(pid: int) -> None:
+    """Reap *pid* if it happens to be our own child.
+
+    An exited child that nobody waits on stays a zombie, and a zombie still
+    answers ``kill(pid, 0)`` — so without this, a backend spawned by this same
+    process would look immortal all the way past SIGKILL. Normally the backend
+    is reparented to init and this is a no-op.
+    """
+    import os
+
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except (ChildProcessError, OSError, AttributeError):
+        pass
+
+
+def _signal_pid(pid: int, sig, console) -> bool:
+    """Send *sig* to *pid*. False if the process was already gone."""
+    import os
+
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        return False
+    except OSError as e:
+        console.print(f"[red]Could not signal PID {pid}: {e}[/red]")
+        raise typer.Exit(1)
+    return True
+
+
+def _wait_for_exit(pid: int, timeout: float) -> bool:
+    """Poll until *pid* is gone. True if it exited within *timeout*."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        _reap(pid)
+        if not _pid_alive(pid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_POLL_INTERVAL)
+
+
+def _backend_pid(client) -> int | None:
+    """The running backend's PID, or None if it cannot be determined.
+
+    ``/info`` is authoritative — it is ``os.getpid()`` reported by the very
+    process answering on our socket. The pid file is only a fallback for a
+    backend that answers ``/health`` but not ``/info``; it can in principle
+    name a recycled PID, which is why it is not the primary source.
+    """
+    from agent_md.cli.client import get_pid_path
+
+    try:
+        resp = client.get("/info")
+        if resp.status_code == 200:
+            return int(resp.json()["pid"])
+    except Exception:
+        pass
+
+    try:
+        return int(get_pid_path().read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
 @app.command()
 def stop(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", help="Seconds to wait for a graceful exit before escalating"),
+    ] = _STOP_GRACE_SECONDS,
 ):
-    """Stop the Agentmd backend."""
+    """Stop the Agentmd backend, and confirm the process actually exited."""
+    import signal
+
     from rich.console import Console
-    from agent_md.cli.client import BackendClient
+    from agent_md.cli.client import BackendClient, get_pid_path
 
     console = Console()
     client = BackendClient()
@@ -1496,11 +1677,62 @@ def stop(
         console.print("[yellow]Backend is not running.[/yellow]")
         return
 
+    # Read the PID before asking it to go: once shutdown starts, the socket is
+    # closed and unlinked, and /info stops answering long before the process is
+    # actually gone. That gap is what used to make `stop` report success while a
+    # second backend was already free to spawn beside the first.
+    pid = _backend_pid(client)
+
     try:
         resp = client.post("/shutdown")
-        if resp.status_code == 200:
-            console.print("[green]Backend is shutting down.[/green]")
-        else:
-            console.print(f"[red]Shutdown failed: {resp.text}[/red]")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+    if resp.status_code != 200:
+        console.print(f"[red]Shutdown failed: {resp.text}[/red]")
+        raise typer.Exit(1)
+
+    if pid is None:
+        console.print(
+            "[yellow]Shutdown requested, but the backend PID is unknown — "
+            "cannot confirm it exited. Check with: agentmd status[/yellow]"
+        )
+        raise typer.Exit(1)
+
+    def _done(how: str) -> None:
+        console.print(f"[green]Backend stopped{how}.[/green]")
+        # A stale pid file would otherwise outlive the backend and, after PID
+        # reuse, point the fallback above at an unrelated process.
+        try:
+            get_pid_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    if _wait_for_exit(pid, timeout):
+        _done("")
+        return
+
+    console.print(f"[yellow]PID {pid} did not exit within {timeout:.0f}s — sending SIGTERM.[/yellow]")
+    if not _signal_pid(pid, signal.SIGTERM, console):
+        _done(" (exited before SIGTERM)")
+        return
+    if _wait_for_exit(pid, _STOP_SIGTERM_SECONDS):
+        _done(" (SIGTERM)")
+        return
+
+    sigkill = getattr(signal, "SIGKILL", None)
+    if sigkill is None:  # Windows: os.kill(SIGTERM) already means TerminateProcess
+        console.print(f"[red]Backend PID {pid} survived the shutdown request. Investigate manually.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[yellow]PID {pid} survived SIGTERM — sending SIGKILL.[/yellow]")
+    if not _signal_pid(pid, sigkill, console):
+        _done(" (exited before SIGKILL)")
+        return
+    if _wait_for_exit(pid, _STOP_SIGKILL_SECONDS):
+        _done(" (SIGKILL)")
+        return
+
+    console.print(f"[red]Backend PID {pid} is still alive after SIGKILL. Investigate manually.[/red]")
+    raise typer.Exit(1)
