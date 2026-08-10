@@ -32,6 +32,10 @@ from agent_md.cli.theme import (
 from agent_md.config.icons import resolve_agent_icon
 from agent_md.config.models import AgentConfig
 
+# Marker for warnings produced by format_unknown_key_warning(), which `validate`
+# groups under its own heading instead of the generic warnings list.
+_UNKNOWN_KEY_PREFIX = "unknown frontmatter key"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -402,8 +406,19 @@ def start(
     """Start the Agentmd backend."""
     from rich.console import Console
 
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
+
     console = Console()
     ws = Path(workspace) if workspace else None
+
+    # Checked here, not only in _run_backend: the daemon path never gets there.
+    if port and not api_key:
+        console.print(f"[red]{TcpRequiresApiKey()}[/red]")
+        raise typer.Exit(1)
+    if api_key and not port:
+        console.print(
+            "[yellow]--api-key has no effect without --port (the Unix socket is guarded by file permissions).[/yellow]"
+        )
 
     if daemon and not internal_backend:
         from agent_md.cli.spawn import _spawn_backend
@@ -414,21 +429,31 @@ def start(
             console.print("[yellow]Backend is already running.[/yellow]")
             return
 
-        pid = _spawn_backend(ws)
+        pid = _spawn_backend(ws, _server_args(keep_alive, port, host, api_key))
         console.print(f"[green]Backend started[/green] (PID {pid})")
+        if port:
+            console.print(f"  Listening on http://{host}:{port}")
         console.print(f"  Logs: {get_log_path()}")
         return
 
     if not quiet and not internal_backend:
         console.print("[bold]Agentmd Backend[/bold]")
 
-    from agent_md.cli.errors import BackendAlreadyRunning
-
     try:
         asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
-    except BackendAlreadyRunning as e:
+    except (BackendAlreadyRunning, TcpRequiresApiKey) as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+
+
+def _server_args(keep_alive: bool, port: int | None, host: str, api_key: str | None) -> list[str]:
+    """Flags the detached child needs to come up in the same server mode."""
+    args: list[str] = []
+    if keep_alive:
+        args.append("--keep-alive")
+    if port:
+        args.extend(["--port", str(port), "--host", host, "--api-key", api_key])
+    return args
 
 
 async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
@@ -436,8 +461,12 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     import uvicorn
     from agent_md.api.app import create_app
     from agent_md.cli.client import BackendClient, get_socket_path, get_state_dir
-    from agent_md.cli.errors import BackendAlreadyRunning
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
     from agent_md.util.tasks import spawn_background
+
+    # Refuse an unauthenticated TCP bind before touching the socket or the runtime.
+    if port and not api_key:
+        raise TcpRequiresApiKey()
 
     socket_path = get_socket_path()
     state_dir = get_state_dir()
@@ -453,12 +482,12 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
 
     app = create_app(workspace=workspace, start_scheduler=True)
     app.state.keep_alive = keep_alive
+    # Service mode: someone other than the local CLI may be driving the backend,
+    # so a HILT execution waiting for a human must keep it alive.
+    app.state.service_mode = bool(port) or keep_alive
 
-    if api_key and port:
-        from agent_md.api.auth import ApiKeyMiddleware
-
-        app.add_middleware(ApiKeyMiddleware, api_key=api_key)
-
+    # The socket app is never wrapped — the local CLI sends no key and the
+    # socket is already restricted to the owner (chmod 600 below).
     config = uvicorn.Config(app, uds=str(socket_path), log_level="warning" if quiet else "info")
     server = uvicorn.Server(config)
 
@@ -477,7 +506,12 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     spawn_background(_watch_shutdown())
 
     if port:
-        tcp_config = uvicorn.Config(app, host=host, port=port, log_level="warning" if quiet else "info")
+        from agent_md.api.auth import ApiKeyMiddleware
+
+        # Auth lives on the TCP entrypoint only: same app, same runtime, but
+        # every request that arrives over the network must carry the key.
+        tcp_app = ApiKeyMiddleware(app, api_key=api_key)
+        tcp_config = uvicorn.Config(tcp_app, host=host, port=port, log_level="warning" if quiet else "info")
         tcp_server = uvicorn.Server(tcp_config)
 
         async def _watch_shutdown_tcp():
@@ -1219,6 +1253,8 @@ def validate(
     trigger_str = format_trigger(config)
     trigger_valid = "[green]\u2713 Valid[/green]"
     for w in result.warnings:
+        if w.startswith(_UNKNOWN_KEY_PREFIX):
+            continue
         if "cron" in w.lower() or "watch path" in w.lower():
             trigger_valid = f"[red]\u2717 {w}[/red]"
             errors += 1
@@ -1262,9 +1298,19 @@ def validate(
         for p in result.paths_missing:
             print_check(p, "warn", "does not exist yet")
 
+    # Unknown frontmatter keys — a typo like `triger:` is ignored at parse time,
+    # so this is the only place it becomes visible before the agent misbehaves.
+    unknown_warnings = [w for w in result.warnings if w.startswith(_UNKNOWN_KEY_PREFIX)]
+    if unknown_warnings:
+        console.print("\n  [bold]Frontmatter[/bold]")
+        for w in unknown_warnings:
+            print_check(w, "warn")
+
     # Other warnings (not already surfaced above)
     _surfaced = {"cron", "watch path", "path:"}
-    other_warnings = [w for w in result.warnings if not any(k in w.lower() for k in _surfaced)]
+    other_warnings = [
+        w for w in result.warnings if w not in unknown_warnings and not any(k in w.lower() for k in _surfaced)
+    ]
     if other_warnings:
         console.print("\n  [bold]Warnings[/bold]")
         for w in other_warnings:

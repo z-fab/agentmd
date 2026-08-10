@@ -1,5 +1,7 @@
+import difflib
 import re
-from typing import Literal, Optional
+from types import UnionType
+from typing import Literal, Optional, Union, get_args, get_origin
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -278,6 +280,7 @@ class AgentConfig(BaseModel):
     system_prompt: str = ""
     file_path: str = ""
     config_hash: str = ""
+    unknown_keys: list[str] = []  # frontmatter keys the parser ignored (typos)
 
     @model_validator(mode="before")
     @classmethod
@@ -412,3 +415,66 @@ class AgentConfig(BaseModel):
         if not re.match(r"^\d+[smhd]$", v):
             raise ValueError(f"Invalid confirm_timeout: '{v}'. Use e.g. '30s', '5m', '2h', '1d', or 'none'.")
         return v
+
+
+# --- Unknown frontmatter keys -------------------------------------------------
+#
+# Pydantic ignores extra keys, so a typo like `triger:` used to vanish without a
+# trace and the agent silently ran as `manual`. These helpers make the ignored
+# keys visible — as a warning, never an error: frontmatter written for a newer
+# agentmd must keep loading on an older one.
+
+# Aliases the validators above accept but that are not fields themselves.
+_FRONTMATTER_ALIASES = {"tools"}
+
+# Values the parser computes; never valid frontmatter keys.
+COMPUTED_FIELDS = {"id", "system_prompt", "file_path", "config_hash", "unknown_keys"}
+
+
+def _nested_model(annotation) -> type[BaseModel] | None:
+    """Return the nested model behind ``X`` or ``X | None`` — never behind a container."""
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    if get_origin(annotation) in (Union, UnionType):
+        for arg in get_args(annotation):
+            if isinstance(arg, type) and issubclass(arg, BaseModel):
+                return arg
+    return None
+
+
+def collect_unknown_keys(data, model: type[BaseModel] = None, prefix: str = "") -> list[str]:
+    """Return the keys in *data* that *model* does not define, dotted for nested maps."""
+    model = model or AgentConfig
+    unknown: list[str] = []
+    if not isinstance(data, dict):
+        return unknown
+
+    fields = model.model_fields
+    for key, value in data.items():
+        name = f"{prefix}{key}"
+        if not isinstance(key, str):
+            unknown.append(name)
+            continue
+        if key in _FRONTMATTER_ALIASES:
+            continue
+        if key not in fields or key in COMPUTED_FIELDS:
+            unknown.append(name)
+            continue
+        nested = _nested_model(fields[key].annotation)
+        if nested is not None:
+            unknown.extend(collect_unknown_keys(value, nested, prefix=f"{name}."))
+    return unknown
+
+
+def format_unknown_key_warning(key: str) -> str:
+    """Describe an unknown frontmatter *key*, suggesting the field it resembles."""
+    parts = key.split(".")
+    model: type[BaseModel] | None = AgentConfig
+    for part in parts[:-1]:
+        field = model.model_fields.get(part) if model else None
+        model = _nested_model(field.annotation) if field else None
+
+    candidates = sorted(set(model.model_fields) - COMPUTED_FIELDS) if model else []
+    match = difflib.get_close_matches(parts[-1], candidates, n=1, cutoff=0.7)
+    hint = f" — did you mean '{'.'.join(parts[:-1] + [match[0]])}'?" if match else ""
+    return f"unknown frontmatter key '{key}' (ignored){hint}"

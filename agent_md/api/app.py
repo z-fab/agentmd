@@ -51,9 +51,18 @@ async def _lifespan(app: FastAPI):
     lifecycle = LifecycleManager(shutdown_event=state.shutdown_event)
     lifecycle.keep_alive = getattr(state, "keep_alive", False)
     lifecycle.has_active_triggers = lambda: bool(rt.scheduler and rt.scheduler.has_active_triggers())
-    # Note: 'waiting' (HILT) executions have no live task and intentionally do
-    # NOT keep the backend alive — respond() rebuilds and resumes on demand.
     lifecycle.has_running_executions = lambda: bool(state.cancel_events)
+    # 'waiting' (HILT) executions have no live task. On the local socket they
+    # intentionally do NOT keep the backend alive — respond() rebuilds and
+    # resumes on demand, and a forgotten HILT must not become an immortal
+    # backend. In service mode (TCP or --keep-alive) the opposite holds: the
+    # caller is remote, so parking on a human must not drop the server.
+    if getattr(state, "service_mode", False):
+
+        async def _has_waiting() -> bool:
+            return bool(await rt.db.waiting_execution_ids())
+
+        lifecycle.has_waiting_executions = _has_waiting
     lifecycle.has_active_streams = lambda: (state.event_bus.stream_count + state.global_event_bus.stream_count) > 0
     state.lifecycle = lifecycle
 

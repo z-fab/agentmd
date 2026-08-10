@@ -77,8 +77,13 @@ def _rotate_log_if_needed(log_path: Path) -> None:
         pass
 
 
-def _spawn_backend(workspace: Path | None = None) -> int:
-    """Spawn the backend as a detached process. Returns PID."""
+def _spawn_backend(workspace: Path | None = None, extra_args: list[str] | None = None) -> int:
+    """Spawn the backend as a detached process. Returns PID.
+
+    ``extra_args`` carries the server-mode flags of an explicit
+    ``agentmd start -d`` (--keep-alive, --port, --host, --api-key). Autospawn
+    passes none: it only ever needs the local socket.
+    """
     state_dir = get_state_dir()
     state_dir.mkdir(parents=True, exist_ok=True)
 
@@ -88,6 +93,8 @@ def _spawn_backend(workspace: Path | None = None) -> int:
     cmd = [sys.executable, "-m", "agent_md.main", "start", "--internal-backend"]
     if workspace:
         cmd.extend(["--workspace", str(workspace)])
+    if extra_args:
+        cmd.extend(extra_args)
 
     # Open for the child, then close the parent's fd so we don't leak it.
     log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115

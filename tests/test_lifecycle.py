@@ -65,6 +65,40 @@ async def test_active_triggers_prevent_shutdown(lifecycle):
 
 
 @pytest.mark.asyncio
+async def test_waiting_executions_prevent_shutdown(lifecycle):
+    """Service mode wires this hook; the local socket leaves it False."""
+    lifecycle.has_waiting_executions = lambda: True
+
+    task = asyncio.create_task(lifecycle.run())
+    await asyncio.sleep(1.5)
+    assert not lifecycle.shutdown_event.is_set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_async_check_is_awaited(lifecycle):
+    """The waiting check hits the DB, so hooks may be coroutines."""
+
+    async def waiting():
+        return True
+
+    lifecycle.has_waiting_executions = waiting
+
+    task = asyncio.create_task(lifecycle.run())
+    await asyncio.sleep(1.5)
+    assert not lifecycle.shutdown_event.is_set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
 async def test_active_streams_prevent_shutdown(lifecycle):
     lifecycle.has_active_triggers = lambda: False
     lifecycle.has_running_executions = lambda: False

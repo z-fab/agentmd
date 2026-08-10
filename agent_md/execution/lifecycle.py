@@ -8,6 +8,7 @@ graceful shutdown via the shared ``shutdown_event``.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 
@@ -34,14 +35,24 @@ class LifecycleManager:
         self.has_active_triggers: callable = lambda: False
         self.has_running_executions: callable = lambda: False
         self.has_active_streams: callable = lambda: False
+        # Service mode only: a HILT execution parked on a human keeps the
+        # backend up. Left False for the local socket, where an abandoned
+        # 'waiting' would otherwise make the backend immortal.
+        self.has_waiting_executions: callable = lambda: False
 
-    def _is_idle(self) -> bool:
-        if self.has_active_triggers():
-            return False
-        if self.has_running_executions():
-            return False
-        if self.has_active_streams():
-            return False
+    async def _is_idle(self) -> bool:
+        checks = (
+            self.has_active_triggers,
+            self.has_running_executions,
+            self.has_active_streams,
+            self.has_waiting_executions,
+        )
+        for check in checks:
+            result = check()
+            if inspect.isawaitable(result):
+                result = await result
+            if result:
+                return False
         return True
 
     async def run(self) -> None:
@@ -50,7 +61,7 @@ class LifecycleManager:
                 await asyncio.sleep(self.check_interval)
                 continue
 
-            if self._is_idle():
+            if await self._is_idle():
                 if self._idle_since is None:
                     self._idle_since = time.monotonic()
                     logger.info("Backend is idle, starting timeout countdown")

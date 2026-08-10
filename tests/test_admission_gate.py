@@ -342,7 +342,7 @@ async def test_app_lifecycle_sees_a_watch_only_workspace(tmp_path):
     async with app.router.lifespan_context(app):
         jobs = app.state.runtime.scheduler.get_jobs()
         active = app.state.lifecycle.has_active_triggers()
-        idle = app.state.lifecycle._is_idle()
+        idle = await app.state.lifecycle._is_idle()
 
     # Asserted after the lifespan closes, deliberately. `_lifespan` has no
     # try/finally around its `yield`, so an exception raised inside this `async
