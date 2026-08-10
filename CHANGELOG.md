@@ -11,11 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-<<<<<<< HEAD
 - **Enriched scalar `trigger:`** — optional `input` (user-turn template with `{context}` / `{event}` / `{path}` placeholders), `filters.include` / `filters.exclude` globs for watch, and `debounce` (default still 0.5s). Agents that omit the fields behave as before. Watch filters run in the filesystem handler, not the admission gate. A declared `input` replaces the hardcoded prompt; for `manual` / `chat` / `agent`, a run `context` still appends as ` ({context})` unless the template already uses `{context}`.
-=======
 - **Unknown frontmatter keys are reported** — a typo like `triger:` was ignored in silence and the agent ran as `manual` with no indication anything was wrong. Unknown keys are now logged when the file is parsed and listed by `agentmd validate`, with a did-you-mean for the field they resemble; nested keys are reported by path (`trigger.typ`). Still a warning, never an error, so a file written for a newer agentmd keeps loading on an older one.
->>>>>>> feat/fase-2-servidor
 - **Conversations have an id** — `POST /agents/{id}/run` accepts `session_id`, persisted in the new `executions.session_id` column and exposed on execution responses. A run carrying one is recorded with `trigger: "chat"` instead of `"manual"`. Existing databases gain the column on open; nothing else changes for clients that do not send it.
 - **`context` in the run body is no longer discarded** — it was accepted and dropped; it now reaches the runner as `trigger_context` and is appended to the user turn of manual and chat runs.
 - **SSE `meta` execution_info** ([#3](https://github.com/z-fab/agentmd/issues/3)) — every run opens its stream with a persisted `meta` frame whose payload `event_type` is `execution_info`, carrying `agent_id`, `display_name`, `model`, `trigger`, `args`, and `session_id`. Reconnect/replay reproduces it.
