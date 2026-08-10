@@ -15,6 +15,23 @@ curl --unix-socket ~/.local/state/agentmd/agentmd.sock http://localhost/health
 curl -H "X-API-Key: YOUR_KEY" http://127.0.0.1:4100/health
 ```
 
+### Authentication
+
+Auth is decided by the transport a request arrives on, not by the route:
+
+| Transport | Requirement |
+|-----------|-------------|
+| Unix socket | None. The socket file is `chmod 600`, so the OS restricts it to your user, and the CLI sends no key. |
+| TCP (`--port`) | `X-API-Key: <key>` on every route except `/health`. Missing or wrong key → `401 {"detail": "Invalid or missing API key"}`. |
+
+`--port` without `--api-key` is refused at startup — the API can execute
+arbitrary agents, so there is no unauthenticated TCP mode. Both listeners serve
+the same runtime and the same data; only the door differs.
+
+Keep the port on `127.0.0.1` unless a firewall or a TLS-terminating proxy sits
+in front of it: plain HTTP carries the key in cleartext. See
+[Server Mode](cli-reference.md#server-mode) for the startup flags.
+
 ## Endpoints
 
 ### Health & Info

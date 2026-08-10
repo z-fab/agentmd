@@ -638,6 +638,31 @@ model:
   url: http://localhost:8000
 ```
 
+## Unknown Keys
+
+A key agentmd does not recognize is **ignored, with a warning** — never a hard
+error, so a file written for a newer version still loads on an older one.
+
+```yaml
+---
+triger:            # typo: parsed, ignored, agent stays `manual`
+  type: schedule
+  every: 1h
+---
+```
+
+The warning shows up in two places: the backend log when the file is parsed, and
+`agentmd validate`, which names the key and suggests the field it resembles.
+
+```
+  Frontmatter
+    ⚠ unknown frontmatter key 'triger' (ignored) — did you mean 'trigger'?
+```
+
+Nested keys are reported with their path (`trigger.typ`). `id:` is the one
+exception: identity comes from the filename stem, so declaring it is an error
+rather than a warning.
+
 ## Environment Variable Substitution
 
 Use `${VAR_NAME}` syntax in the prompt body (Markdown section) to inject values from `.env` or shell environment at runtime. This keeps secrets out of agent files.
