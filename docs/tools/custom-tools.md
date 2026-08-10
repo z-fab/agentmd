@@ -344,10 +344,15 @@ Custom tools that need to read or write files should use `agent_md.sdk` for sand
 |---|---|---|
 | `resolve_path(path)` | `(Path \| None, str \| None)` | Resolve aliases + validate sandbox |
 | `workspace_root()` | `Path` | Absolute path to workspace root |
-| `agent_name()` | `str` | Name of the executing agent |
+| `agent_name()` | `str` | Display name of the executing agent |
+| `agent_id()` | `str` | Canonical id (filename stem) of the executing agent |
 | `agent_paths()` | `dict[str, Path]` | Agent's declared path aliases, resolved |
+| `execution_id()` | `int \| None` | Id of the execution currently running |
 
 All functions are available during agent execution. Calling them outside of execution raises `RuntimeError`.
+
+!!! warning "A custom tool writing into a watched directory retriggers the agent"
+    The built-in write tools record what they write so a `trigger: watch` agent does not fire on its own changes. A custom tool writing with plain `write_text` leaves no such record, so the agent will trigger itself in a loop. Write through `file_write` when the target is inside a path the agent watches, or keep the two apart. See [Known limits](../triggers.md#known-limits).
 
 For pausing execution to ask the user a question, see [SDK — Human-in-the-Loop Primitives](#sdk--human-in-the-loop-primitives) below.
 

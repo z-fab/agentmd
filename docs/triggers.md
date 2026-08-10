@@ -300,6 +300,43 @@ trigger:
 
 `input` replaces the hardcoded watch prompt. Use `{event}`, `{path}` / `{file}`, and `{context}` for the raw event string. See [Agent Configuration](./agent-configuration.md#trigger) for how this composes with run `context` on manual/chat triggers.
 
+### Self-writes do not retrigger the agent
+
+A watch agent may write into the directory it watches — in fact it usually must, since watch paths are automatically part of the agent's allowed write paths. Its own writes do **not** trigger it again.
+
+Every built-in write tool (`file_write`, `file_edit`, `file_delete`, `file_move`, `memory_save`, `memory_append`) records the path it touched, the resulting modification time, and the agent that wrote it. The watch handler drops an event when all three of these hold:
+
+1. the path was written by **this** agent (another agent's write still triggers — see below);
+2. the file on disk still carries the exact mtime that write left behind;
+3. less than **2 seconds** have passed.
+
+Nothing is configurable here, and nothing needs to be: the check is about *identity of the change*, not about timing.
+
+**A user's edit is never swallowed.** Saving the file yourself right after the agent gives it a new modification time, so condition 2 fails and the agent runs — even one millisecond after its own write. The 2 s window is not there to tell you apart from the agent; it exists because filesystem events do not arrive instantly (up to one second on network mounts, where watchdog falls back to polling), and because a *deletion* records only "this path is absent", which is too coarse a fingerprint to trust indefinitely.
+
+**Only the writer is suppressed.** Agent B writing into a directory agent A watches still triggers A. A hand-off pipeline is the point, not a loop:
+
+```yaml
+# collector.md — trigger: schedule, writes ./inbox
+# processor.md — trigger: watch ./inbox, still fires on every file the collector drops
+```
+
+#### Known limits
+
+This is a best-effort layer with a declared boundary. In each case below the agent **does** retrigger itself, by design rather than by oversight — covering them would mean intercepting arbitrary third-party code:
+
+| Write path | Retriggers? | Why |
+|---|---|---|
+| Built-in file and memory tools | no | records its own writes |
+| **MCP server tool** | **yes** | writes inside another process, which agentmd never sees |
+| **Custom tool** (`_config/tools/`) | **yes** | writes with plain Python; use `agent_md.sdk.resolve_path` and the built-in tools if you need suppression |
+| **Sub-agent** invoked via `run_agent` | **yes** | the write is recorded under the sub-agent's id, not the caller's |
+| External process, another agentmd instance, `git checkout` | yes | correct — these are genuine outside changes |
+
+If an agent must write through one of the "yes" rows, keep it out of the loop the plain way: write to a directory the agent does not watch, or narrow `filters` so the produced files never match. A watch agent that writes into its own watched path via an MCP tool will run continuously.
+
+Causal tracking (execution depth, "which run caused this event") cannot substitute for any of this: a filesystem event carries no link back to the write that caused it, so every watch callback arrives as a fresh root.
+
 ### Events
 
 Watch triggers activate on:
