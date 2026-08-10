@@ -41,25 +41,14 @@ EVENT_TIMEOUT = 5.0
 QUIET_TIMEOUT = 1.0
 """How long a suppressed write must stay quiet. Comfortably above the ~20ms
 FSEvents latency measured locally and the 50ms debounce used here, and inside
-``SUPPRESSION_WINDOW`` so the window itself is not what ends the wait."""
+``SUPPRESSION_WINDOW`` so the window itself is not what ends the wait.
 
-
-async def _until(predicate, timeout: float, *, interval: float = 0.02) -> bool:
-    """Poll *predicate* until it holds, or *timeout* elapses. Never blocks forever.
-
-    Polling rather than one long ``wait_for``, for a reason that also makes the
-    negative assertions trustworthy: ``_schedule_trigger`` arms its debounce with
-    ``loop.call_later`` from the watchdog thread, which does not wake a sleeping
-    loop. A single long await would therefore sit through the whole timeout and
-    report "nothing arrived" even for an event that was never suppressed.
-    """
-    deadline = time.monotonic() + timeout
-    while True:
-        if predicate():
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        await asyncio.sleep(interval)
+The negative assertion below is a single long ``wait_for``, which is only
+trustworthy because the debounce is armed with ``call_soon_threadsafe`` (issue
+#15). While it was armed with ``call_later`` from the watchdog thread it did not
+wake a sleeping loop, so the wait sat through the whole timeout and reported
+"nothing arrived" even for an event that was never suppressed — the assertion
+passed with the suppression turned off, and needed polling to mean anything."""
 
 
 @pytest.fixture
@@ -504,12 +493,16 @@ async def test_real_watchdog_ignores_the_agents_write_and_keeps_the_users(worksp
         with _as_agent(config, path_context, 99):
             create_file_write_tool(config, path_context).invoke({"path": str(notes / "by-agent.md"), "content": "self"})
 
-        arrived = await _until(lambda: not triggered.empty(), QUIET_TIMEOUT)
-        assert arrived is False, f"the agent's own write triggered it: {triggered.get_nowait()}"
+        try:
+            leaked = await asyncio.wait_for(triggered.get(), QUIET_TIMEOUT)
+        except asyncio.TimeoutError:
+            pass
+        else:
+            pytest.fail(f"the agent's own write triggered it: {leaked}")
 
         (notes / "by-user.md").write_text("hello")
-        assert await _until(lambda: not triggered.empty(), EVENT_TIMEOUT), "the user's write never triggered"
-        assert "by-user.md" in triggered.get_nowait()
+        context = await asyncio.wait_for(triggered.get(), EVENT_TIMEOUT)
+        assert "by-user.md" in context
     finally:
         observer.stop()
         observer.join(timeout=5)
