@@ -18,6 +18,7 @@ from agent_md.cli.theme import (
     display_icon,
     format_agent_label,
     format_duration,
+    format_meta_log_content,
     format_relative_time,
     format_tokens,
     format_trigger,
@@ -1156,6 +1157,12 @@ def _show_execution_detail(execution_id: int, workspace: Path | None, verbose: b
                 console.print(f"  [dim]{ts}  {emoji}  System prompt ({chars:,} chars)[/dim]")
         elif log.event_type == "human":
             console.print(f"  [dim]{ts}  {emoji}  {log.message}[/dim]")
+        elif log.event_type == "meta":
+            # Payload lives in metadata JSON; message is only the subtype label.
+            # Stats are shown always: `logs -e` is the detail view, and each
+            # line is a compact one-liner (see format_meta_log_content).
+            content = format_meta_log_content(log.metadata, log.message)
+            console.print(f"  [dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]")
         else:
             content = log.message or ""
             console.print(f"  [dim]{ts}[/dim]  [{style}]{emoji} {content}[/{style}]")
