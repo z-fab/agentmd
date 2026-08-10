@@ -233,3 +233,25 @@ async def test_list_agents_uses_one_last_execution_query(app_with_agents, client
 
     last_exec_queries = [sql for sql in sql_log if "from executions" in sql.lower() and "row_number()" in sql.lower()]
     assert len(last_exec_queries) == 1
+
+
+@pytest.mark.asyncio
+async def test_run_409_renders_the_gate_reason(app_with_agents, client):
+    """The endpoint answers with the gate's decision, not one of its own.
+
+    Layering is deliberate: the trigger path drops a refusal with a log line, the
+    HTTP path answers 409. What may not diverge is *whether* to refuse, so the
+    detail here is the gate's own reason string.
+    """
+    from agent_md.workspace.scheduler import check_admission
+
+    rt = app_with_agents.state.runtime
+    config = rt.registry.get("test-agent")
+    await rt.db.create_execution(config.id, "manual", status="waiting")
+
+    expected = await check_admission(config, rt.db, trigger_type="manual")
+    assert expected is not None
+
+    resp = await client.post("/agents/test-agent/run", json={})
+    assert resp.status_code == 409
+    assert resp.json()["detail"].endswith(expected)
