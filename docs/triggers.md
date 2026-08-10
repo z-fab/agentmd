@@ -274,6 +274,12 @@ trigger:
     - <path1>
     - <path2>
     - ...
+  # optional:
+  input: "Process {path}."
+  debounce: 0.5          # seconds (default 500ms); also accepts "2s" / "500ms"
+  filters:
+    include: ["*.pdf"]   # if set, path must match at least one
+    exclude: [".DS_Store", "*.tmp"]
 ```
 
 ### Paths
@@ -281,6 +287,18 @@ trigger:
 - **Relative paths:** Resolve from workspace root (e.g., `./uploads`, `./data`)
 - **Absolute paths:** Used as-is (e.g., `/var/log/app`)
 - **Home expansion:** Use `~` for home directory
+
+### Filters
+
+`filters.include` / `filters.exclude` are glob lists matched against the event path (basename and absolute path). Exclude wins over include. Matching happens in the watch handler — an excluded file never becomes a trigger, so the admission gate never sees it. Without `filters`, every file under `paths` still fires (including `.DS_Store`); declare an exclude when you want those dropped.
+
+### Debounce
+
+`debounce` (default `0.5` seconds) collapses rapid events for the same path into one trigger. Declare a larger window for downloads or editors that write many times in a burst.
+
+### Custom input
+
+`input` replaces the hardcoded watch prompt. Use `{event}`, `{path}` / `{file}`, and `{context}` for the raw event string. See [Agent Configuration](./agent-configuration.md#trigger) for how this composes with run `context` on manual/chat triggers.
 
 ### Events
 
@@ -290,7 +308,9 @@ Watch triggers activate on:
 
 - File modification
 
-- File deletion (optional, not triggered by default)
+- File deletion
+
+- File move
 
 ### Execution
 
@@ -597,16 +617,18 @@ trigger:
 
 ### Watch Trigger Triggers on Every Change
 
-**Problem:** Agent runs too many times when files are modified
+**Problem:** Agent runs too many times when files are modified (or fires on `.DS_Store`)
 
-**Workaround:** Use file extensions to filter:
+**Solution:** Use `filters` and raise `debounce`:
 ```yaml
-# Monitor specific files only
 trigger:
   type: watch
   paths:
-    - ./inbox/*.csv    # Only CSV files
-    - ./uploads/*.pdf  # Only PDF files
+    - ./inbox
+  debounce: 2s
+  filters:
+    include: ["*.csv", "*.pdf"]
+    exclude: [".DS_Store", "*.tmp", "**/.git/**"]
 ```
 
 ---

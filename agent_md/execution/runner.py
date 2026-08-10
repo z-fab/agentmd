@@ -411,7 +411,27 @@ class AgentRunner:
         )
 
     def _build_user_input(self, trigger_type: str, trigger_context: str | None, config: AgentConfig) -> str:
-        """Build user input message with trigger context."""
+        """Build user input message with trigger context.
+
+        When ``trigger.input`` is declared it replaces the hardcoded base prompt
+        for every trigger type. Composition with ``trigger_context`` (the
+        Phase 3 ``POST /run`` ``context`` body, or the watch event string):
+
+        - If the template contains ``{context}``, that placeholder is filled
+          with the context (or ``""``) and nothing further is appended.
+        - Watch templates may also use ``{event}`` and ``{path}`` / ``{file}``
+          when the context is ``"<event>: <path>"``.
+        - Otherwise, for ``manual`` / ``chat`` / ``agent``, a non-empty
+          ``trigger_context`` is still appended as `` ({context})`` — the same
+          Phase 3 shape — so declaring a template does not drop run context.
+        - For ``watch`` / ``schedule`` without placeholders, the template is
+          used as-is (the event/schedule detail is already optional context the
+          author can pull in via ``{context}``).
+        """
+        template = config.trigger.input
+        if template is not None:
+            return self._render_trigger_input(template, trigger_type, trigger_context, config)
+
         if trigger_type in ("manual", "chat"):
             return f"Execute your task. ({trigger_context})" if trigger_context else "Execute your task."
 
@@ -439,6 +459,46 @@ class AgentRunner:
             return f"Execute your task. ({trigger_context})"
 
         return "Execute your task."
+
+    def _render_trigger_input(
+        self,
+        template: str,
+        trigger_type: str,
+        trigger_context: str | None,
+        config: AgentConfig,
+    ) -> str:
+        """Render a declared ``trigger.input`` template against runtime context."""
+        context = trigger_context or ""
+        event_type = ""
+        file_path = ""
+        if trigger_type == "watch" and trigger_context:
+            parts = trigger_context.split(": ", 1)
+            if len(parts) == 2:
+                event_type, file_path = parts
+
+        schedule_desc = ""
+        if config.trigger.every:
+            schedule_desc = f"every {config.trigger.every}"
+        elif config.trigger.cron:
+            schedule_desc = f"cron {config.trigger.cron}"
+
+        uses_context_placeholder = "{context}" in template
+        rendered = (
+            template.replace("{context}", context)
+            .replace("{event}", event_type)
+            .replace("{path}", file_path)
+            .replace("{file}", file_path)
+            .replace("{schedule}", schedule_desc)
+        )
+
+        if uses_context_placeholder:
+            return rendered
+
+        # Preserve Phase 3 composition for human/agent-driven runs: template
+        # replaces the hardcoded base, context still rides along in parentheses.
+        if trigger_type in ("manual", "chat", "agent") and trigger_context:
+            return f"{rendered} ({trigger_context})"
+        return rendered
 
     async def _build_graph(self, config: AgentConfig, **tool_kwargs):
         """Create model, resolve tools, and compile the graph.

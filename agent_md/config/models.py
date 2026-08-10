@@ -60,6 +60,28 @@ class PathEntry(BaseModel):
         return data
 
 
+class TriggerFilters(BaseModel):
+    """Glob include/exclude filters for watch triggers.
+
+    When ``include`` is non-empty, the event path must match at least one
+    pattern. Any path matching an ``exclude`` pattern is dropped. Matching
+    is applied in the watch handler before a trigger is scheduled — it is
+    not an admission-gate concern.
+    """
+
+    include: list[str] = []
+    exclude: list[str] = []
+
+    @field_validator("include", "exclude", mode="before")
+    @classmethod
+    def normalize_globs(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [v]
+        return v
+
+
 class TriggerConfig(BaseModel):
     """Configuration for agent triggers."""
 
@@ -67,6 +89,9 @@ class TriggerConfig(BaseModel):
     every: Optional[str] = None  # e.g. '30m', '2h', '1d' (for schedule)
     cron: Optional[str] = None  # cron expression (for schedule)
     paths: list[str] = []  # paths to watch (for watch)
+    input: Optional[str] = None  # optional user-input template replacing hardcoded prompts
+    filters: Optional[TriggerFilters] = None  # watch include/exclude globs
+    debounce: float = 0.5  # watch debounce window in seconds (default 500ms)
 
     @field_validator("type")
     @classmethod
@@ -82,6 +107,31 @@ class TriggerConfig(BaseModel):
         """Accept a single string or a list of strings."""
         if isinstance(v, str):
             return [v]
+        return v
+
+    @field_validator("debounce", mode="before")
+    @classmethod
+    def normalize_debounce(cls, v):
+        """Accept seconds as float/int, or a duration string like ``2s`` / ``500ms``."""
+        if v is None:
+            return 0.5
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            s = v.strip().lower()
+            m = re.match(r"^(\d+(?:\.\d+)?)\s*(ms|s)?$", s)
+            if not m:
+                raise ValueError(f"Invalid debounce '{v}'. Use seconds (e.g. 2.0) or '500ms'/'2s'")
+            amount = float(m.group(1))
+            unit = m.group(2) or "s"
+            return amount / 1000.0 if unit == "ms" else amount
+        raise ValueError(f"Invalid debounce type: {type(v).__name__}")
+
+    @field_validator("debounce")
+    @classmethod
+    def debounce_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("debounce must be >= 0")
         return v
 
     @model_validator(mode="after")
