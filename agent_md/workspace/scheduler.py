@@ -580,6 +580,21 @@ class _AgentWatchHandler(FileSystemEventHandler):
             )
             logger.info(f"Triggered agent '{self.agent_id}': {context}")
 
+    def _arm_debounce(self, path: Path, context: str) -> None:
+        """Restart the debounce window for *path*. Runs in the event loop thread.
+
+        Cancelling the previous timer and arming the new one happen together in
+        this one callback. ``call_soon_threadsafe`` delivers handovers in FIFO
+        order onto a single thread, so two events for the same path are two
+        sequential runs of this function — never two live timers.
+        """
+        old_timer = self._debounce_timers.pop(path, None)
+        if old_timer:
+            old_timer.cancel()
+
+        self._pending_contexts[path] = context
+        self._debounce_timers[path] = self._loop.call_later(self._debounce, self._trigger_agent, path)
+
     def _schedule_trigger(self, event) -> None:
         """Schedule agent trigger with debounce based on file path.
 
@@ -587,21 +602,27 @@ class _AgentWatchHandler(FileSystemEventHandler):
         collapsed into one trigger. For moved events, the debounce key is the
         destination path. The window defaults to 0.5s and is overridable via
         ``trigger.debounce``.
+
+        Called from the watchdog's thread, which hands the event to the loop and
+        touches no handler state: ``call_later`` is not thread-safe and, worse,
+        does not wake a sleeping loop — the timer lands in the heap while
+        ``select`` is still blocked on a timeout computed before it existed, so
+        the trigger waits for whatever else wakes the loop next.
         """
         if event.event_type == "moved":
             path = Path(event.dest_path).resolve()
         else:
             path = Path(event.src_path).resolve()
 
-        # Cancel existing timer for this path
-        old_timer = self._debounce_timers.get(path)
-        if old_timer:
-            old_timer.cancel()
+        if not self._loop:
+            return
 
-        self._pending_contexts[path] = self._build_context(event)
-
-        if self._loop:
-            self._debounce_timers[path] = self._loop.call_later(self._debounce, self._trigger_agent, path)
+        context = self._build_context(event)
+        try:
+            self._loop.call_soon_threadsafe(self._arm_debounce, path, context)
+        except RuntimeError:
+            # The loop is closed — the workspace is shutting down under us.
+            logger.debug(f"Dropped watch event for '{self.agent_id}', loop is gone: {context}")
 
     def on_created(self, event):
         if not event.is_directory and self._is_relevant(event.src_path):
