@@ -155,8 +155,9 @@ agentmd start --keep-alive --host 0.0.0.0 --port 4100 --api-key "$AGENTMD_KEY"
 
 When started with `--daemon` / `-d`:
 - Runs as a detached background process
-- Logs output to `{workspace}/data/agentmd.log`
-- PID stored in `{workspace}/data/agentmd.pid`
+- Logs output to `~/.local/state/agentmd/backend.log` (rotated at 5 MB)
+- PID stored in `~/.local/state/agentmd/backend.pid`
+- Server flags (`--keep-alive`, `--port`, `--host`, `--api-key`) are passed through to the detached process
 - Use `agentmd status` to check and `agentmd stop` to stop
 
 ### Server Mode

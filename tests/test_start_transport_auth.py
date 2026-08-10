@@ -131,3 +131,45 @@ def test_cli_start_port_without_key_exits(tmp_path, short_state_dir):
     result = CliRunner().invoke(cli_app, ["start", "--port", str(_free_port()), "-w", str(tmp_path / "ws")])
     assert result.exit_code == 1
     assert "--api-key" in result.output
+
+
+# --- daemon mode --------------------------------------------------------------
+
+
+@pytest.fixture
+def spawned(monkeypatch):
+    """Capture what `start -d` would launch, without launching it."""
+    from agent_md.cli import spawn
+
+    calls: list[tuple] = []
+    monkeypatch.setattr(spawn.BackendClient, "health_check", lambda self: False)
+    monkeypatch.setattr(spawn, "_spawn_backend", lambda ws=None, extra=None: calls.append((ws, extra)) or 4242)
+    return calls
+
+
+def test_daemon_forwards_server_flags(tmp_path, short_state_dir, spawned):
+    """`start -d --port` used to drop every server flag on the floor."""
+    port = _free_port()
+    result = CliRunner().invoke(
+        cli_app,
+        ["start", "-d", "--keep-alive", "--port", str(port), "--host", "0.0.0.0", "--api-key", API_KEY],
+    )
+
+    assert result.exit_code == 0, result.output
+    _, extra = spawned[0]
+    assert extra == ["--keep-alive", "--port", str(port), "--host", "0.0.0.0", "--api-key", API_KEY]
+
+
+def test_daemon_without_server_flags_passes_none(tmp_path, short_state_dir, spawned):
+    result = CliRunner().invoke(cli_app, ["start", "-d"])
+
+    assert result.exit_code == 0, result.output
+    assert spawned[0][1] == []
+
+
+def test_daemon_refuses_port_without_key(tmp_path, short_state_dir, spawned):
+    result = CliRunner().invoke(cli_app, ["start", "-d", "--port", str(_free_port())])
+
+    assert result.exit_code == 1
+    assert "--api-key" in result.output
+    assert spawned == []

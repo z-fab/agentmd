@@ -406,8 +406,19 @@ def start(
     """Start the Agentmd backend."""
     from rich.console import Console
 
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
+
     console = Console()
     ws = Path(workspace) if workspace else None
+
+    # Checked here, not only in _run_backend: the daemon path never gets there.
+    if port and not api_key:
+        console.print(f"[red]{TcpRequiresApiKey()}[/red]")
+        raise typer.Exit(1)
+    if api_key and not port:
+        console.print(
+            "[yellow]--api-key has no effect without --port (the Unix socket is guarded by file permissions).[/yellow]"
+        )
 
     if daemon and not internal_backend:
         from agent_md.cli.spawn import _spawn_backend
@@ -418,26 +429,31 @@ def start(
             console.print("[yellow]Backend is already running.[/yellow]")
             return
 
-        pid = _spawn_backend(ws)
+        pid = _spawn_backend(ws, _server_args(keep_alive, port, host, api_key))
         console.print(f"[green]Backend started[/green] (PID {pid})")
+        if port:
+            console.print(f"  Listening on http://{host}:{port}")
         console.print(f"  Logs: {get_log_path()}")
         return
 
     if not quiet and not internal_backend:
         console.print("[bold]Agentmd Backend[/bold]")
 
-    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
-
-    if api_key and not port:
-        console.print(
-            "[yellow]--api-key has no effect without --port (the Unix socket is guarded by file permissions).[/yellow]"
-        )
-
     try:
         asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
     except (BackendAlreadyRunning, TcpRequiresApiKey) as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+
+
+def _server_args(keep_alive: bool, port: int | None, host: str, api_key: str | None) -> list[str]:
+    """Flags the detached child needs to come up in the same server mode."""
+    args: list[str] = []
+    if keep_alive:
+        args.append("--keep-alive")
+    if port:
+        args.extend(["--port", str(port), "--host", host, "--api-key", api_key])
+    return args
 
 
 async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
