@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
+from agent_md.execution.self_writes import self_write
 from agent_md.tools.memory._parser import parse_memory_file, serialize_memory_file
 
 
@@ -30,7 +31,8 @@ def create_memory_save_tool(agent_config, path_context):
 
         sections[section] = content
 
-        memory_path.write_text(serialize_memory_file(sections), encoding="utf-8")
+        with self_write(memory_path):
+            memory_path.write_text(serialize_memory_file(sections), encoding="utf-8")
         return f"Memory section '{section}' saved ({len(content)} chars)."
 
     return memory_save
