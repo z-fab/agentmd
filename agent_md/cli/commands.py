@@ -32,6 +32,10 @@ from agent_md.cli.theme import (
 from agent_md.config.icons import resolve_agent_icon
 from agent_md.config.models import AgentConfig
 
+# Marker for warnings produced by format_unknown_key_warning(), which `validate`
+# groups under its own heading instead of the generic warnings list.
+_UNKNOWN_KEY_PREFIX = "unknown frontmatter key"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1233,6 +1237,8 @@ def validate(
     trigger_str = format_trigger(config)
     trigger_valid = "[green]\u2713 Valid[/green]"
     for w in result.warnings:
+        if w.startswith(_UNKNOWN_KEY_PREFIX):
+            continue
         if "cron" in w.lower() or "watch path" in w.lower():
             trigger_valid = f"[red]\u2717 {w}[/red]"
             errors += 1
@@ -1276,9 +1282,19 @@ def validate(
         for p in result.paths_missing:
             print_check(p, "warn", "does not exist yet")
 
+    # Unknown frontmatter keys — a typo like `triger:` is ignored at parse time,
+    # so this is the only place it becomes visible before the agent misbehaves.
+    unknown_warnings = [w for w in result.warnings if w.startswith(_UNKNOWN_KEY_PREFIX)]
+    if unknown_warnings:
+        console.print("\n  [bold]Frontmatter[/bold]")
+        for w in unknown_warnings:
+            print_check(w, "warn")
+
     # Other warnings (not already surfaced above)
     _surfaced = {"cron", "watch path", "path:"}
-    other_warnings = [w for w in result.warnings if not any(k in w.lower() for k in _surfaced)]
+    other_warnings = [
+        w for w in result.warnings if w not in unknown_warnings and not any(k in w.lower() for k in _surfaced)
+    ]
     if other_warnings:
         console.print("\n  [bold]Warnings[/bold]")
         for w in other_warnings:
