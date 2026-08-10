@@ -340,6 +340,16 @@ async def test_app_lifecycle_sees_a_watch_only_workspace(tmp_path):
         start_scheduler=True,
     )
     async with app.router.lifespan_context(app):
-        assert app.state.runtime.scheduler.get_jobs() == []
-        assert app.state.lifecycle.has_active_triggers() is True
-        assert app.state.lifecycle._is_idle() is False
+        jobs = app.state.runtime.scheduler.get_jobs()
+        active = app.state.lifecycle.has_active_triggers()
+        idle = app.state.lifecycle._is_idle()
+
+    # Asserted after the lifespan closes, deliberately. `_lifespan` has no
+    # try/finally around its `yield`, so an exception raised inside this `async
+    # with` propagates out before `rt.aclose()` runs: the Database stays open and
+    # aiosqlite's non-daemon worker thread keeps the interpreter alive. pytest
+    # would print the failure in under a second and then hang forever — a stuck
+    # CI job instead of a red test.
+    assert jobs == []
+    assert active is True
+    assert idle is False
