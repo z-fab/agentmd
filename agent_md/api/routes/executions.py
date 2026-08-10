@@ -18,6 +18,7 @@ from agent_md.api.schemas import (
     RespondRequest,
     RespondResponse,
 )
+from agent_md.api.sse import SHUTDOWN, TIMEOUT, next_event
 from agent_md.execution.logger import agent_identity_payload
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -185,10 +186,16 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             return
 
         # Drain live events (dedup against replay)
+        shutdown_event = getattr(request.app.state, "shutdown_event", None)
         while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=30.0)
-            except asyncio.TimeoutError:
+            event = await next_event(queue, shutdown_event, 30.0)
+            if event is SHUTDOWN:
+                # A still-running execution would otherwise hold this connection
+                # open past `agentmd stop`, and uvicorn will not exit while a
+                # connection is open. Close the response and let the backend go.
+                yield ServerSentEvent(data={"status": "shutdown", **identity}, event="shutdown")
+                return
+            if event is TIMEOUT:
                 execution = await db.get_execution(exec_id)
                 if not execution or execution.status not in ("running", "pending"):
                     ev = "waiting" if execution and execution.status == "waiting" else "complete"
