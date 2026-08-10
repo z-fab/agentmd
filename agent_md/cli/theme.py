@@ -142,6 +142,8 @@ EVENT_DISPLAY: dict[str, tuple[str, str]] = {
     "tool_call": ("\U0001f527", "yellow"),
     "tool_result": ("\U0001f4ce", "green"),
     "final_answer": ("\u2705", "bold green"),
+    # Informational channel (execution_info / stats / skill-context).
+    "meta": ("\u2139\ufe0f", "blue"),
 }
 
 
@@ -153,6 +155,95 @@ EVENT_DISPLAY: dict[str, tuple[str, str]] = {
 def sanitize_event_content(text: str) -> str:
     """Replace newlines and collapse whitespace for single-line event display."""
     return " ".join(text.replace("\n", " ").split())
+
+
+def format_meta_log_content(metadata: str | None, message: str | None = None) -> str:
+    """Build a one-line summary for a persisted ``meta`` log row.
+
+    Reads only fields present in *metadata* JSON — never invents values.
+    Subtypes are discriminated by payload ``event_type``:
+
+    - ``execution_info`` — model / trigger / agent / args / session
+    - ``stats`` — token counts and cost
+    - ``meta`` (skill-context) — truncated ``content``
+
+    Falls back to *message* (the DB label) when metadata is missing or
+    unparseable.
+    """
+    import json
+
+    payload: dict | None = None
+    if metadata:
+        try:
+            parsed = json.loads(metadata)
+            if isinstance(parsed, dict):
+                payload = parsed
+        except (json.JSONDecodeError, TypeError):
+            payload = None
+
+    if payload is None:
+        return message or ""
+
+    subtype = payload.get("event_type") or message or "meta"
+
+    if subtype == "execution_info":
+        parts: list[str] = []
+        model = payload.get("model")
+        if model:
+            parts.append(str(model))
+        trigger = payload.get("trigger")
+        if trigger:
+            parts.append(str(trigger))
+        display_name = payload.get("display_name")
+        agent_id = payload.get("agent_id")
+        if display_name and agent_id and display_name != agent_id:
+            parts.append(f"{display_name} ({agent_id})")
+        elif display_name:
+            parts.append(str(display_name))
+        elif agent_id:
+            parts.append(str(agent_id))
+        args = payload.get("args")
+        # Only render args when the list is non-empty (empty is the default).
+        if isinstance(args, list) and args:
+            parts.append(f"args={list(args)!r}")
+        # session_id is meaningful when set; omit null (common outside chat).
+        if "session_id" in payload and payload["session_id"] is not None:
+            parts.append(f"session={payload['session_id']}")
+        return " · ".join(parts) if parts else (message or "execution_info")
+    if subtype == "stats":
+        parts = []
+        total = payload.get("total_tokens")
+        inp = payload.get("input_tokens")
+        out = payload.get("output_tokens")
+        if total is not None:
+            detail = format_tokens(total if isinstance(total, int) else None)
+            if inp is not None and out is not None:
+                parts.append(f"{detail} tokens ({format_tokens(inp)} in / {format_tokens(out)} out)")
+            else:
+                parts.append(f"{detail} tokens")
+        elif inp is not None or out is not None:
+            bits = []
+            if inp is not None:
+                bits.append(f"{format_tokens(inp)} in")
+            if out is not None:
+                bits.append(f"{format_tokens(out)} out")
+            parts.append(" / ".join(bits))
+        if "cost_usd" in payload:
+            cost = payload["cost_usd"]
+            if cost is None:
+                parts.append("cost unknown")
+            else:
+                try:
+                    parts.append(f"${float(cost):.4f}")
+                except (TypeError, ValueError):
+                    parts.append(f"cost={cost!r}")
+        return " · ".join(parts) if parts else (message or "stats")
+
+    # Skill-context (event_type "meta") and any other meta payload.
+    content = payload.get("content")
+    if content:
+        return sanitize_event_content(str(content))[:200]
+    return message or subtype
 
 
 # ---------------------------------------------------------------------------
