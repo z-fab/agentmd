@@ -147,8 +147,9 @@ async def run_agent(agent_id: str, request: Request, body: RunRequest | None = N
 
     # Same admission decision the trigger path makes, rendered as HTTP: a caller
     # who asked for a run gets told why it was refused, where a timer tick is
-    # only logged.
-    reason = await check_admission(config, rt.db, trigger_type=trigger)
+    # only logged. Scoped to the conversation this run joins — a chat parked on a
+    # HILT holds itself, not every other session of the same agent.
+    reason = await check_admission(config, rt.db, trigger_type=trigger, session_id=session_id)
     if reason:
         raise HTTPException(status_code=409, detail=f"Agent '{agent_id}': {reason}")
 

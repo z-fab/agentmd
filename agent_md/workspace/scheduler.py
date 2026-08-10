@@ -53,6 +53,7 @@ async def check_admission(
     *,
     trigger_type: str,
     paused: bool = False,
+    session_id: str | None = None,
 ) -> str | None:
     """Decide whether an execution of *config* may start now.
 
@@ -66,14 +67,28 @@ async def check_admission(
     rejected HTTP request are not the same event: the trigger path logs and
     drops, the HTTP layer answers 409. What may not diverge is the decision, and
     that is why it is only written here.
+
+    ``on_pending: skip`` is evaluated per *conversation*, not per agent: a run is
+    refused only while the conversation it belongs to is itself parked on a
+    human. ``session_id`` names that conversation; ``None`` is the sessionless
+    bucket shared by manual, schedule and watch runs. Agent-wide was the reading
+    from before sessions existed, and it made one unanswered HILT close the agent
+    to every other conversation — including chats opened afterwards, which had
+    asked nothing.
     """
     if trigger_type in _SCHEDULER_TRIGGERS:
         if not config.enabled:
             return "agent is disabled"
         if paused:
             return "the scheduler is paused"
-    if config.on_pending == "skip" and await db.has_waiting_execution(config.id):
-        return "a session is waiting for a response"
+        # A timer or a file event is not a turn in anyone's dialogue. ``AgentRunner.run``
+        # discards a session id on these triggers; the gate has to judge the same
+        # conversation the execution will actually belong to.
+        session_id = None
+    if config.on_pending == "skip" and await db.has_waiting_execution(config.id, session_id):
+        if session_id is None:
+            return "a previous run is waiting for a response"
+        return "this conversation is waiting for a response"
     return None
 
 

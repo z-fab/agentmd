@@ -444,11 +444,25 @@ class Database:
         await self.db.commit()
         return cursor.rowcount > 0
 
-    async def has_waiting_execution(self, agent_id: str) -> bool:
-        cursor = await self.db.execute(
-            "SELECT 1 FROM executions WHERE agent_id = ? AND status = 'waiting' LIMIT 1",
-            (agent_id,),
-        )
+    async def has_waiting_execution(self, agent_id: str, session_id: str | None = None) -> bool:
+        """True when *this conversation* has an execution parked in ``waiting``.
+
+        Scoped exactly like ``get_last_finished_execution``: ``session_id`` selects
+        one chat, ``None`` selects the sessionless bucket that manual, schedule and
+        watch runs share. There is deliberately no agent-wide form — that was the
+        pre-session reading, and under it a HILT left unanswered in a chat closed
+        hours ago refused every later conversation with the same agent.
+        """
+        if session_id is None:
+            cursor = await self.db.execute(
+                "SELECT 1 FROM executions WHERE agent_id = ? AND session_id IS NULL AND status = 'waiting' LIMIT 1",
+                (agent_id,),
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT 1 FROM executions WHERE agent_id = ? AND session_id = ? AND status = 'waiting' LIMIT 1",
+                (agent_id, session_id),
+            )
         return await cursor.fetchone() is not None
 
     # --- Checkpoint maintenance helpers ---
