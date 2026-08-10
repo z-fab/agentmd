@@ -259,6 +259,26 @@ trigger:
     - ./data
 ```
 
+Optional fields shared by every trigger type (all omit-able; omitting keeps prior behaviour):
+
+| Field | Type | Default | Meaning |
+|-------|------|---------|---------|
+| `input` | string | unset | User-turn template. Replaces the hardcoded prompt. Placeholders: `{context}`, and for watch `{event}` / `{path}` / `{file}`, for schedule `{schedule}`. When the template has no `{context}` and a run supplies context (`POST /run` body, or an agent caller), `manual` / `chat` / `agent` still append ` ({context})`. |
+| `filters` | object | unset | Watch only. `include` / `exclude` glob lists. Applied in the filesystem watcher before a trigger is scheduled. |
+| `debounce` | number or `"2s"` / `"500ms"` | `0.5` | Watch only. Seconds to wait after the last change for a path before firing. |
+
+```yaml
+trigger:
+  type: watch
+  paths:
+    - ./inbox
+  input: "Process {path} ({event})."
+  debounce: 2s
+  filters:
+    include: ["*.pdf", "*.csv"]
+    exclude: [".DS_Store", "*.tmp"]
+```
+
 ### `settings`
 
 | Property | Value |
