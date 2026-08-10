@@ -3,7 +3,7 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.17.0] — 2026-08-10
 
 ### Security
 
@@ -34,6 +34,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 ### Documentation
 
 - **Server mode is documented** — `--keep-alive`, `--port`, `--host` and `--api-key` were absent from the CLI reference. It now has a Server Mode section (when to keep the backend alive, why `--port` requires `--api-key`, what `--host 0.0.0.0` costs, how `waiting` behaves per mode), the API reference has an Authentication section, and the daemon log/PID paths were corrected to the XDG state directory the code actually uses.
+
+### Upgrading
+
+Nothing to migrate: no schema rewrite, no config change, and agents keep working untouched. Three behaviours changed, all visible only if you were relying on the old one.
+
+- **`agentmd stop` now confirms the backend exited** and waits for it — up to 15 s for a natural exit, then SIGTERM, then SIGKILL. It used to return the moment it posted `/shutdown`, reporting success for a process that could stay alive and leave a second scheduler running. A healthy backend still stops in about a second; `--timeout` adjusts the wait.
+- **A pending confirmation now holds its own conversation, not the whole agent.** A HILT prompt left unanswered in one chat no longer refuses runs in other sessions of the same agent. Runs without a session — `agentmd run`, `schedule`, `watch` — still share one bucket and block each other, as before.
+- **SSE streams emit a terminal `shutdown` frame** when the backend goes down, instead of the connection simply dying. A client that treats an unknown event as an error will now see that error at shutdown.
 
 ## [0.16.0] — 2026-08-08
 
