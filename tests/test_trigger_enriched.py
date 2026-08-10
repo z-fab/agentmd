@@ -8,6 +8,10 @@ event becomes a trigger; they do not live in ``check_admission``.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -129,6 +133,13 @@ class _FakeHandle:
 
 
 class _FakeLoop:
+    """Stands in for the event loop, running handovers inline.
+
+    ``_schedule_trigger`` no longer arms the timer itself — it hands the work to
+    the loop thread. Running the callback inline keeps these tests synchronous
+    while exercising the real path.
+    """
+
     def __init__(self):
         self.calls: list[tuple[float, object, tuple]] = []
 
@@ -136,6 +147,10 @@ class _FakeLoop:
         handle = _FakeHandle()
         self.calls.append((delay, callback, args))
         return handle
+
+    def call_soon_threadsafe(self, callback, *args):
+        callback(*args)
+        return _FakeHandle()
 
 
 def _make_event(path: Path, event_type: str = "modified"):
@@ -256,6 +271,156 @@ def test_scheduler_passes_config_debounce_and_filters_to_handler(tmp_path, monke
     assert captured["debounce"] == 2.5
     assert captured["include"] == ["*.pdf"]
     assert captured["exclude"] == [".DS_Store"]
+
+
+# --- arming the timer from the watchdog thread -------------------------------
+
+
+IDLE_SLEEP = 1.0
+"""How long the loop stays idle while a foreign thread arms the timer.
+
+Comfortably longer than the debounce below, so a timer that fails to wake the
+loop shows up as a delay of roughly this value instead of the nominal window.
+"""
+
+FAST_DEBOUNCE = 0.05
+NOMINAL_WINDOW = 0.3
+"""Upper bound on the measured delay: the debounce plus generous scheduling slack."""
+
+
+def _record_execute(stamps: list[float], done: asyncio.Event):
+    """An ``execute_fn`` that timestamps the moment ``_trigger_agent`` calls it."""
+
+    async def _noop():
+        return None
+
+    def execute(agent_id, trigger_type, trigger_context=None):
+        stamps.append(time.monotonic())
+        done.set()
+        return _noop()
+
+    return execute
+
+
+async def test_timer_armed_from_another_thread_fires_within_its_window(tmp_path):
+    """The delay must be the debounce, not however long the loop happens to sleep.
+
+    ``call_later`` is not thread-safe and does not wake a sleeping loop: the
+    timer lands in the heap while ``select`` is still blocked on a timeout it
+    computed before the timer existed. Measured on the unfixed code, a 50ms
+    debounce armed against a loop sleeping for 3s fired at 3.003s.
+
+    This asserts the *measured* delay, because a test that only checks the
+    callback eventually ran passes on the broken code too.
+    """
+    watched = tmp_path / "inbox"
+    watched.mkdir()
+    target = watched / "a.txt"
+    target.write_text("x")
+
+    stamps: list[float] = []
+    done = asyncio.Event()
+    handler = _AgentWatchHandler(
+        "w",
+        [watched.resolve()],
+        _record_execute(stamps, done),
+        asyncio.get_running_loop(),
+        debounce=FAST_DEBOUNCE,
+    )
+
+    armed: list[float] = []
+
+    def arm():
+        # Wait for the loop to be blocked in select before arming; arming before
+        # it sleeps would let it fold the timer into its own timeout and hide
+        # the bug.
+        time.sleep(0.2)
+        armed.append(time.monotonic())
+        handler._schedule_trigger(_make_event(target))
+
+    thread = threading.Thread(target=arm)
+    thread.start()
+    try:
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(done.wait(), IDLE_SLEEP)
+    finally:
+        thread.join(timeout=5)
+
+    assert stamps, f"the timer never fired within {IDLE_SLEEP}s"
+    delay = stamps[0] - armed[0]
+    assert delay < NOMINAL_WINDOW, f"timer armed from another thread fired {delay:.3f}s later"
+
+
+async def test_scheduling_from_another_thread_touches_no_state_in_that_thread(tmp_path):
+    """``_debounce_timers`` and ``_pending_contexts`` belong to the loop thread.
+
+    The watchdog thread only hands the event over; both dicts must still be
+    untouched when its call returns, and populated once the loop has run.
+    """
+    watched = tmp_path / "inbox"
+    watched.mkdir()
+    target = watched / "a.txt"
+    target.write_text("x")
+
+    handler = _AgentWatchHandler(
+        "w",
+        [watched.resolve()],
+        _record_execute([], asyncio.Event()),
+        asyncio.get_running_loop(),
+        debounce=10.0,
+    )
+
+    thread = threading.Thread(target=handler._schedule_trigger, args=(_make_event(target),))
+    thread.start()
+    thread.join(timeout=5)
+
+    assert handler._debounce_timers == {}
+    assert handler._pending_contexts == {}
+
+    await asyncio.sleep(0)  # let the loop drain the handover
+    assert list(handler._debounce_timers) == [target.resolve()]
+    assert list(handler._pending_contexts) == [target.resolve()]
+
+    handler._debounce_timers[target.resolve()].cancel()
+
+
+async def test_rapid_events_from_the_watchdog_thread_still_collapse_to_one_timer(tmp_path):
+    """The cancel moved into the loop thread; it must still cancel exactly one.
+
+    Both events are handed over before the loop runs either handover, so this is
+    the interleaving that would leave two live timers if the cancel and the arm
+    were not done together inside the loop thread.
+    """
+    watched = tmp_path / "inbox"
+    watched.mkdir()
+    target = watched / "a.txt"
+    target.write_text("x")
+
+    stamps: list[float] = []
+    done = asyncio.Event()
+    handler = _AgentWatchHandler(
+        "w",
+        [watched.resolve()],
+        _record_execute(stamps, done),
+        asyncio.get_running_loop(),
+        debounce=FAST_DEBOUNCE,
+    )
+
+    def arm_twice():
+        handler._schedule_trigger(_make_event(target))
+        handler._schedule_trigger(_make_event(target, "created"))
+
+    thread = threading.Thread(target=arm_twice)
+    thread.start()
+    thread.join(timeout=5)
+
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(done.wait(), IDLE_SLEEP)
+    await asyncio.sleep(FAST_DEBOUNCE * 3)  # a second timer would have fired by now
+
+    assert len(stamps) == 1, f"debounce armed {len(stamps)} triggers for one path"
+    assert handler._debounce_timers == {}
+    assert handler._pending_contexts == {}
 
 
 # --- trigger.input × trigger_context -----------------------------------------
