@@ -422,11 +422,16 @@ def start(
     if not quiet and not internal_backend:
         console.print("[bold]Agentmd Backend[/bold]")
 
-    from agent_md.cli.errors import BackendAlreadyRunning
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
+
+    if api_key and not port:
+        console.print(
+            "[yellow]--api-key has no effect without --port (the Unix socket is guarded by file permissions).[/yellow]"
+        )
 
     try:
         asyncio.run(_run_backend(ws, keep_alive, port, host, api_key, quiet or internal_backend))
-    except BackendAlreadyRunning as e:
+    except (BackendAlreadyRunning, TcpRequiresApiKey) as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
 
@@ -436,8 +441,12 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     import uvicorn
     from agent_md.api.app import create_app
     from agent_md.cli.client import BackendClient, get_socket_path, get_state_dir
-    from agent_md.cli.errors import BackendAlreadyRunning
+    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
     from agent_md.util.tasks import spawn_background
+
+    # Refuse an unauthenticated TCP bind before touching the socket or the runtime.
+    if port and not api_key:
+        raise TcpRequiresApiKey()
 
     socket_path = get_socket_path()
     state_dir = get_state_dir()
@@ -454,11 +463,8 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     app = create_app(workspace=workspace, start_scheduler=True)
     app.state.keep_alive = keep_alive
 
-    if api_key and port:
-        from agent_md.api.auth import ApiKeyMiddleware
-
-        app.add_middleware(ApiKeyMiddleware, api_key=api_key)
-
+    # The socket app is never wrapped — the local CLI sends no key and the
+    # socket is already restricted to the owner (chmod 600 below).
     config = uvicorn.Config(app, uds=str(socket_path), log_level="warning" if quiet else "info")
     server = uvicorn.Server(config)
 
@@ -477,7 +483,12 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     spawn_background(_watch_shutdown())
 
     if port:
-        tcp_config = uvicorn.Config(app, host=host, port=port, log_level="warning" if quiet else "info")
+        from agent_md.api.auth import ApiKeyMiddleware
+
+        # Auth lives on the TCP entrypoint only: same app, same runtime, but
+        # every request that arrives over the network must carry the key.
+        tcp_app = ApiKeyMiddleware(app, api_key=api_key)
+        tcp_config = uvicorn.Config(tcp_app, host=host, port=port, log_level="warning" if quiet else "info")
         tcp_server = uvicorn.Server(tcp_config)
 
         async def _watch_shutdown_tcp():

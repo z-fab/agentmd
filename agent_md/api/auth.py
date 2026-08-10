@@ -1,38 +1,67 @@
-"""API key middleware for TCP transport.
+"""API key middleware for the TCP transport.
 
-Only applied when the backend is started with --port. Unix socket
-connections are implicitly trusted (file permissions are the gate).
+Applied by wrapping the ASGI app handed to the TCP uvicorn server — never
+via ``app.add_middleware``. The socket and TCP servers share a single
+FastAPI instance (one runtime, one bootstrap), so a middleware installed on
+the app itself would also guard the Unix socket, and the local CLI's
+``BackendClient`` sends no key: every local command would answer 401.
+
+Unix socket connections stay implicitly trusted — file permissions
+(``chmod 600``) are the gate there.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 _PUBLIC_PATHS = {"/health"}
 
+_UNAUTHORIZED_BODY = json.dumps({"detail": "Invalid or missing API key"}).encode()
 
-class ApiKeyMiddleware(BaseHTTPMiddleware):
-    """Require X-API-Key header on all routes except /health."""
 
-    def __init__(self, app, api_key: str) -> None:
-        super().__init__(app)
+class ApiKeyMiddleware:
+    """Require an ``X-API-Key`` header on every route except ``/health``."""
+
+    def __init__(self, app: ASGIApp, api_key: str) -> None:
+        self.app = app
         self.api_key = api_key
 
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path in _PUBLIC_PATHS:
-            return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Lifespan flows straight through: the wrapped app owns the runtime.
+        if scope["type"] == "lifespan":
+            await self.app(scope, receive, send)
+            return
 
-        provided = request.headers.get("X-API-Key")
-        if not provided or provided != self.api_key:
-            return Response(
-                content=json.dumps({"detail": "Invalid or missing API key"}),
-                status_code=401,
-                media_type="application/json",
-            )
+        if scope["type"] == "http" and scope.get("path") in _PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
 
-        return await call_next(request)
+        if self._authorized(scope):
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1008})
+            return
+
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(_UNAUTHORIZED_BODY)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": _UNAUTHORIZED_BODY})
+
+    def _authorized(self, scope: Scope) -> bool:
+        expected = self.api_key.encode()
+        for name, value in scope.get("headers", []):
+            if name == b"x-api-key":
+                return hmac.compare_digest(value, expected)
+        return False

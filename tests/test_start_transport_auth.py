@@ -1,0 +1,133 @@
+"""End-to-end transport tests for ``agentmd start --port``.
+
+Boots the real backend (Unix socket + TCP, one shared app) and checks both
+doors: the local CLI keeps working unauthenticated over the socket while the
+TCP listener rejects requests without the key.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import socket as socketlib
+import tempfile
+from pathlib import Path
+
+import httpx
+import pytest
+from typer.testing import CliRunner
+
+from agent_md.cli.client import BackendClient
+from agent_md.cli.commands import _run_backend
+from agent_md.cli.errors import TcpRequiresApiKey
+from agent_md.main import app as cli_app
+
+API_KEY = "e2e-secret-key"
+BOOT_TIMEOUT = 20.0
+SHUTDOWN_TIMEOUT = 20.0
+
+
+@pytest.fixture
+def short_state_dir(monkeypatch):
+    """A short XDG_STATE_HOME — AF_UNIX paths cap at ~104 bytes on macOS."""
+    with tempfile.TemporaryDirectory(prefix="amd", dir="/tmp") as d:
+        monkeypatch.setenv("XDG_STATE_HOME", d)
+        yield Path(d)
+
+
+def _free_port() -> int:
+    with socketlib.socket(socketlib.AF_INET, socketlib.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def _wait_until(predicate, timeout: float = BOOT_TIMEOUT) -> None:
+    """Poll *predicate* (async) until true, or fail once *timeout* elapses."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        if await predicate():
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"condition not met within {timeout}s")
+
+
+@pytest.fixture
+async def backend(tmp_path, short_state_dir):
+    """Run the backend on a socket + TCP port; yield ``(socket_client, base_url)``."""
+    workspace = tmp_path / "ws"
+    (workspace / "agents").mkdir(parents=True)
+
+    port = _free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    server = asyncio.create_task(
+        _run_backend(workspace, False, port, "127.0.0.1", API_KEY, True),
+    )
+
+    socket_client = BackendClient()._async_client()
+    tcp_probe = httpx.AsyncClient(base_url=base_url, timeout=5.0)
+
+    async def _both_up() -> bool:
+        if server.done():  # surface a boot failure instead of timing out
+            server.result()
+        try:
+            await socket_client.get("/health")
+            await tcp_probe.get("/health")
+        except (httpx.ConnectError, httpx.TimeoutException, OSError):
+            return False
+        return True
+
+    try:
+        await _wait_until(_both_up)
+        yield socket_client, base_url
+    finally:
+        await tcp_probe.aclose()
+        if not server.done():
+            with contextlib.suppress(Exception):
+                await socket_client.post("/shutdown")
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(server), timeout=SHUTDOWN_TIMEOUT)
+        await socket_client.aclose()
+        server.cancel()
+        with contextlib.suppress(BaseException):
+            await server
+
+
+async def test_socket_transport_works_without_key(backend):
+    """The regression the naive fix causes: local CLI commands answering 401."""
+    socket_client, _ = backend
+    resp = await socket_client.get("/info")
+    assert resp.status_code == 200
+    assert (await socket_client.get("/agents")).status_code == 200
+
+
+async def test_tcp_transport_rejects_missing_key(backend):
+    _, base_url = backend
+    async with httpx.AsyncClient(base_url=base_url, timeout=5.0) as c:
+        assert (await c.get("/info")).status_code == 401
+        assert (await c.post("/agents/anything/run", json={})).status_code == 401
+
+
+async def test_tcp_transport_accepts_valid_key(backend):
+    _, base_url = backend
+    async with httpx.AsyncClient(base_url=base_url, timeout=5.0) as c:
+        resp = await c.get("/info", headers={"X-API-Key": API_KEY})
+        assert resp.status_code == 200
+
+
+async def test_tcp_health_stays_public(backend):
+    _, base_url = backend
+    async with httpx.AsyncClient(base_url=base_url, timeout=5.0) as c:
+        assert (await c.get("/health")).status_code == 200
+
+
+async def test_port_without_api_key_is_refused(tmp_path, short_state_dir):
+    """No key, no TCP bind — and nothing else starts either."""
+    with pytest.raises(TcpRequiresApiKey):
+        await _run_backend(tmp_path / "ws", False, _free_port(), "127.0.0.1", None, True)
+    assert not (short_state_dir / "agentmd" / "agentmd.sock").exists()
+
+
+def test_cli_start_port_without_key_exits(tmp_path, short_state_dir):
+    result = CliRunner().invoke(cli_app, ["start", "--port", str(_free_port()), "-w", str(tmp_path / "ws")])
+    assert result.exit_code == 1
+    assert "--api-key" in result.output
