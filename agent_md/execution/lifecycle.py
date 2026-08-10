@@ -29,12 +29,14 @@ class LifecycleManager:
         self.keep_alive = False
         self._idle_since: float | None = None
 
-        self.has_scheduled_agents: callable = lambda: False
+        # Named for trigger sources, not for APScheduler jobs: a workspace whose
+        # agents are all `trigger: watch` has no job and is still not idle.
+        self.has_active_triggers: callable = lambda: False
         self.has_running_executions: callable = lambda: False
         self.has_active_streams: callable = lambda: False
 
     def _is_idle(self) -> bool:
-        if self.has_scheduled_agents():
+        if self.has_active_triggers():
             return False
         if self.has_running_executions():
             return False
