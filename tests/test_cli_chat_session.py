@@ -122,56 +122,60 @@ async def test_two_cli_sessions_stay_isolated_through_seed(tmp_path, monkeypatch
     db_path = tmp_path / "chat-sessions.db"
     db = Database(db_path)
     await db.connect()
-    pc = PathContext(
-        workspace_root=tmp_path,
-        agents_dir=tmp_path,
-        db_path=db_path,
-        mcp_config=tmp_path / "m.json",
-        tools_dir=tmp_path,
-        skills_dir=tmp_path,
-    )
-    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db_path))
-    config = AgentConfig(name="talker", model={"provider": "google", "name": "x"}, history="low")
-    spy = _SpyModel()
-    monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: spy)
-
-    # Same contract the CLI posts: message + session_id (UUID) → trigger chat.
-    sess_a = str(uuid.uuid4())
-    sess_b = str(uuid.uuid4())
     try:
-        for session, message in [
-            (sess_a, "alpha one"),
-            (sess_b, "beta one"),
-            (sess_a, "alpha two"),
-            (sess_b, "beta two"),
-        ]:
-            res = await runner.run(
-                config,
-                trigger_type="chat",
-                session_id=session,
-                user_message=message,
-            )
-            assert res["status"] == "success", res
+        pc = PathContext(
+            workspace_root=tmp_path,
+            agents_dir=tmp_path,
+            db_path=db_path,
+            mcp_config=tmp_path / "m.json",
+            tools_dir=tmp_path,
+            skills_dir=tmp_path,
+        )
+        runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db_path))
+        config = AgentConfig(name="talker", model={"provider": "google", "name": "x"}, history="low")
+        spy = _SpyModel()
+        monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: spy)
+
+        # Same contract the CLI posts: message + session_id (UUID) → trigger chat.
+        sess_a = str(uuid.uuid4())
+        sess_b = str(uuid.uuid4())
+        try:
+            for session, message in [
+                (sess_a, "alpha one"),
+                (sess_b, "beta one"),
+                (sess_a, "alpha two"),
+                (sess_b, "beta two"),
+            ]:
+                res = await runner.run(
+                    config,
+                    trigger_type="chat",
+                    session_id=session,
+                    user_message=message,
+                )
+                assert res["status"] == "success", res
+        finally:
+            await runner.aclose()
+
+        def _texts(messages):
+            return [
+                getattr(m, "content", "")
+                if isinstance(getattr(m, "content", ""), str)
+                else str(getattr(m, "content", ""))
+                for m in messages
+            ]
+
+        a2 = " ".join(_texts(spy.seen[2]))
+        b2 = " ".join(_texts(spy.seen[3]))
+        assert "alpha one" in a2 and "beta one" not in a2
+        assert "beta one" in b2 and "alpha one" not in b2
+        assert "answer 2" not in a2  # B's first answer
+        assert "alpha two" not in b2
+
+        rows = await db.list_executions(agent_id="talker", limit=10)
+        assert {r.session_id for r in rows} == {sess_a, sess_b}
+        assert {r.trigger for r in rows} == {"chat"}
     finally:
-        await runner.aclose()
-
-    def _texts(messages):
-        return [
-            getattr(m, "content", "") if isinstance(getattr(m, "content", ""), str) else str(getattr(m, "content", ""))
-            for m in messages
-        ]
-
-    a2 = " ".join(_texts(spy.seen[2]))
-    b2 = " ".join(_texts(spy.seen[3]))
-    assert "alpha one" in a2 and "beta one" not in a2
-    assert "beta one" in b2 and "alpha one" not in b2
-    assert "answer 2" not in a2  # B's first answer
-    assert "alpha two" not in b2
-
-    rows = await db.list_executions(agent_id="talker", limit=10)
-    assert {r.session_id for r in rows} == {sess_a, sess_b}
-    assert {r.trigger for r in rows} == {"chat"}
-    await db.close()
+        await db.close()
 
 
 def test_chat_hilt_waiting_fallback_still_polls_pending(monkeypatch):

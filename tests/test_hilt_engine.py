@@ -101,23 +101,25 @@ class _FakeModel:
         return AIMessage(content="all done")
 
 
-async def test_run_pauses_then_resume_completes(tmp_path, monkeypatch):
-    from agent_md.execution.runner import AgentRunner
-    from agent_md.db.database import Database
+def _path_context(tmp_path, db):
     from agent_md.workspace.path_context import PathContext
-    from agent_md.config.models import AgentConfig
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
-    pc = PathContext(
+    return PathContext(
         workspace_root=tmp_path,
         agents_dir=tmp_path,
-        db_path=tmp_path / "t.db",
+        db_path=db.db_path,
         mcp_config=tmp_path / "m.json",
         tools_dir=tmp_path,
         skills_dir=tmp_path,
     )
-    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
+
+
+async def test_run_pauses_then_resume_completes(tmp_path, db, monkeypatch):
+    from agent_md.execution.runner import AgentRunner
+    from agent_md.config.models import AgentConfig
+
+    pc = _path_context(tmp_path, db)
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db.db_path))
     config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off", confirm=["file_delete"])
     fake_model = _FakeModel()
     monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: fake_model)
@@ -131,26 +133,14 @@ async def test_run_pauses_then_resume_completes(tmp_path, monkeypatch):
     res2 = await runner.resume(config, ex, {"approved": True})
     assert res2["status"] == "success"
     assert "all done" in res2["output"]
-    await db.close()
 
 
-async def test_resume_twice_second_is_skipped(tmp_path, monkeypatch):
+async def test_resume_twice_second_is_skipped(tmp_path, db, monkeypatch):
     from agent_md.execution.runner import AgentRunner
-    from agent_md.db.database import Database
-    from agent_md.workspace.path_context import PathContext
     from agent_md.config.models import AgentConfig
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
-    pc = PathContext(
-        workspace_root=tmp_path,
-        agents_dir=tmp_path,
-        db_path=tmp_path / "t.db",
-        mcp_config=tmp_path / "m.json",
-        tools_dir=tmp_path,
-        skills_dir=tmp_path,
-    )
-    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
+    pc = _path_context(tmp_path, db)
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db.db_path))
     fake_model = _FakeModel()
     config = AgentConfig(name="del", model={"provider": "google", "name": "x"}, history="off", confirm=["file_delete"])
     monkeypatch.setattr("agent_md.execution.runner.create_chat_model", lambda **kw: fake_model)
@@ -162,26 +152,14 @@ async def test_resume_twice_second_is_skipped(tmp_path, monkeypatch):
     # Execution is no longer waiting; a second resume must be skipped (not re-run).
     second = await runner.resume(config, ex, {"approved": True})
     assert second["status"] == "skipped"
-    await db.close()
 
 
-async def test_confirm_timeout_denies(tmp_path, monkeypatch):
+async def test_confirm_timeout_denies(tmp_path, db, monkeypatch):
     from agent_md.execution.runner import AgentRunner
-    from agent_md.db.database import Database
-    from agent_md.workspace.path_context import PathContext
     from agent_md.config.models import AgentConfig
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
-    pc = PathContext(
-        workspace_root=tmp_path,
-        agents_dir=tmp_path,
-        db_path=tmp_path / "t.db",
-        mcp_config=tmp_path / "m.json",
-        tools_dir=tmp_path,
-        skills_dir=tmp_path,
-    )
-    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
+    pc = _path_context(tmp_path, db)
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db.db_path))
     config = AgentConfig(
         name="del",
         model={"provider": "google", "name": "x"},
@@ -201,7 +179,6 @@ async def test_confirm_timeout_denies(tmp_path, monkeypatch):
     await asyncio.sleep(1.5)  # let the deny-on-timeout fire and resume
     e = await db.get_execution(ex)
     assert e.status == "success"  # denied tool returns message, agent finishes
-    await db.close()
 
 
 class _LoopModel:
@@ -235,23 +212,12 @@ class _LoopModel:
         )
 
 
-async def test_resume_enforces_limits(tmp_path, monkeypatch):
+async def test_resume_enforces_limits(tmp_path, db, monkeypatch):
     from agent_md.execution.runner import AgentRunner
-    from agent_md.db.database import Database
-    from agent_md.workspace.path_context import PathContext
     from agent_md.config.models import AgentConfig
 
-    db = Database(tmp_path / "t.db")
-    await db.connect()
-    pc = PathContext(
-        workspace_root=tmp_path,
-        agents_dir=tmp_path,
-        db_path=tmp_path / "t.db",
-        mcp_config=tmp_path / "m.json",
-        tools_dir=tmp_path,
-        skills_dir=tmp_path,
-    )
-    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "t.db"))
+    pc = _path_context(tmp_path, db)
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db.db_path))
     model = _LoopModel()
     config = AgentConfig(
         name="loopy",
@@ -275,7 +241,6 @@ async def test_resume_enforces_limits(tmp_path, monkeypatch):
     e = await db.get_execution(ex)
     assert e.status == "aborted"
     assert "max_tool_calls" in (e.error or "")
-    await db.close()
 
 
 class _SeedSpyModel:
@@ -310,24 +275,13 @@ def _text(msg) -> str:
     return str(content)
 
 
-async def test_history_seed_injects_prior_run(tmp_path, monkeypatch):
+async def test_history_seed_injects_prior_run(tmp_path, db, monkeypatch):
     """End-to-end: run 1 completes, run 2 receives run-1 messages as seed."""
     from agent_md.execution.runner import AgentRunner
-    from agent_md.db.database import Database
-    from agent_md.workspace.path_context import PathContext
     from agent_md.config.models import AgentConfig
 
-    db = Database(tmp_path / "seed.db")
-    await db.connect()
-    pc = PathContext(
-        workspace_root=tmp_path,
-        agents_dir=tmp_path,
-        db_path=tmp_path / "seed.db",
-        mcp_config=tmp_path / "m.json",
-        tools_dir=tmp_path,
-        skills_dir=tmp_path,
-    )
-    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(tmp_path / "seed.db"))
+    pc = _path_context(tmp_path, db)
+    runner = AgentRunner(db, mcp_manager=_NoMCP(), path_context=pc, db_path=str(db.db_path))
     # history="low" enables seeding (history != "off")
     config = AgentConfig(name="seeder", model={"provider": "google", "name": "x"}, history="low")
 
@@ -346,7 +300,6 @@ async def test_history_seed_injects_prior_run(tmp_path, monkeypatch):
         assert res2["status"] == "success", f"Run 2 expected success, got: {res2}"
     finally:
         await runner.aclose()
-        await db.close()
 
     # spy.seen[0] = run 1's single ainvoke
     # spy.seen[1] = run 2's single ainvoke (first and only call of that run)

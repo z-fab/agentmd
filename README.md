@@ -289,7 +289,22 @@ uv sync
 uv pip install -e ".[all]"
 agentmd setup              # Interactive setup wizard
 ruff format .              # Format code
+uv run pytest              # Full suite
 ```
+
+### Test teardown
+
+A hang looks like broken CI, not a red test. Follow the conventions in
+`tests/conftest.py`:
+
+- Prefer the shared `db` fixture (or `try`/`finally`) — never `await db.close()`
+  after assertions. aiosqlite's connection thread is non-daemon.
+- Bound stream/event waits with `asyncio.wait_for`.
+- Stop backends via the internal shutdown path, not HTTP.
+
+`pytest-timeout` is intentionally not a project dependency: a global ceiling
+masks hangs instead of fixing teardown, and wall-clock mutation checks catch
+the real failure mode.
 
 ---
 

@@ -28,24 +28,6 @@ TRIGGER_DRIVEN = ("schedule", "watch")
 USER_DRIVEN = ("manual", "chat")
 
 
-@pytest.fixture
-async def db(tmp_path):
-    """A connected Database closed in teardown, never at the end of a test body.
-
-    aiosqlite runs the connection on a non-daemon thread: a Database left open
-    keeps the interpreter alive at exit, so a failing test would hang pytest
-    instead of reporting the failure.
-    """
-    from agent_md.db.database import Database
-
-    database = Database(tmp_path / "gate.db")
-    await database.connect()
-    try:
-        yield database
-    finally:
-        await database.close()
-
-
 def _agent(**kwargs) -> AgentConfig:
     kwargs.setdefault("name", "watcher")
     kwargs.setdefault("model", {"provider": "google", "name": "x"})
