@@ -19,13 +19,35 @@ from __future__ import annotations
 
 import contextvars
 from pathlib import Path
+from typing import NamedTuple
 
-_current_context: contextvars.ContextVar[tuple | None] = contextvars.ContextVar("agentmd_context", default=None)
+
+class _ExecutionContext(NamedTuple):
+    """What the SDK knows about the execution running on the current task.
+
+    A ``NamedTuple`` rather than a bare tuple so fields can be added without
+    breaking readers: ``execution_id`` arrived this way. It defaults to ``None``
+    because tools and tests may set a context outside a recorded execution.
+    """
+
+    agent_config: object
+    path_context: object
+    execution_id: int | None = None
 
 
-def _set_context(agent_config, path_context) -> contextvars.Token:
-    """Set the agent context for the current async task. Returns a reset token."""
-    return _current_context.set((agent_config, path_context))
+_current_context: contextvars.ContextVar[_ExecutionContext | None] = contextvars.ContextVar(
+    "agentmd_context", default=None
+)
+
+
+def _set_context(agent_config, path_context, execution_id: int | None = None) -> contextvars.Token:
+    """Set the agent context for the current async task. Returns a reset token.
+
+    Always pair with :func:`_reset_context` on the token in a ``finally``: the
+    token is what keeps one execution's context from leaking into whatever runs
+    next on the same task.
+    """
+    return _current_context.set(_ExecutionContext(agent_config, path_context, execution_id))
 
 
 def _reset_context(token: contextvars.Token) -> None:
@@ -33,8 +55,18 @@ def _reset_context(token: contextvars.Token) -> None:
     _current_context.reset(token)
 
 
-def _get_context() -> tuple:
-    """Return (agent_config, path_context) or raise if not in an execution."""
+def _current_execution() -> _ExecutionContext | None:
+    """Return the current context, or None outside an execution.
+
+    The non-raising counterpart of :func:`_get_context`, for internal callers
+    that must stay silent when no execution is on the task — the self-write
+    ledger records nothing for a write that belongs to no agent.
+    """
+    return _current_context.get()
+
+
+def _get_context() -> _ExecutionContext:
+    """Return the current execution context or raise if not in an execution."""
     ctx = _current_context.get()
     if ctx is None:
         raise RuntimeError("Must be called within an agent execution")
@@ -50,26 +82,32 @@ def resolve_path(path: str) -> tuple[Path | None, str | None]:
     Returns:
         ``(resolved_path, None)`` on success, ``(None, error_message)`` on failure.
     """
-    config, path_context = _get_context()
-    return path_context.validate_path(path, config)
+    ctx = _get_context()
+    return ctx.path_context.validate_path(path, ctx.agent_config)
 
 
 def workspace_root() -> Path:
     """Return the absolute path to the workspace root directory."""
-    _, path_context = _get_context()
-    return path_context.workspace_root
+    return _get_context().path_context.workspace_root
 
 
 def agent_id() -> str:
     """Return the canonical id (filename stem) of the currently executing agent."""
-    config, _ = _get_context()
-    return config.id
+    return _get_context().agent_config.id
 
 
 def agent_name() -> str:
     """Return the display name of the currently executing agent."""
-    config, _ = _get_context()
-    return config.name
+    return _get_context().agent_config.name
+
+
+def execution_id() -> int | None:
+    """Return the id of the execution currently running on this task.
+
+    ``None`` only when the context was set without one (custom tool tests, and
+    code paths that build a context before an execution row exists).
+    """
+    return _get_context().execution_id
 
 
 def agent_paths() -> dict[str, Path]:
@@ -81,10 +119,10 @@ def agent_paths() -> dict[str, Path]:
 
         {"output": Path("/abs/path/to/output"), "data": Path("/abs/path/to/data")}
     """
-    config, path_context = _get_context()
+    ctx = _get_context()
     result = {}
-    for alias, entry in config.paths.items():
-        result[alias] = path_context._resolve_relative(entry.path)
+    for alias, entry in ctx.agent_config.paths.items():
+        result[alias] = ctx.path_context._resolve_relative(entry.path)
     return result
 
 
@@ -129,6 +167,7 @@ __all__ = [
     "agent_id",
     "agent_name",
     "agent_paths",
+    "execution_id",
     "request_confirmation",
     "request_input",
     "request_choice",

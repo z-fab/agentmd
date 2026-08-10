@@ -689,7 +689,7 @@ class AgentRunner:
         # Mutable bag filled by run_agent tool so child usage counts toward parent limits.
         sub_agent_usage: dict = {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
-        sdk_token = _set_context(config, self.path_context)
+        sdk_token = _set_context(config, self.path_context, execution_id)
         checkpoint_conn = None
         try:
             try:
@@ -1047,7 +1047,7 @@ class AgentRunner:
 
         graph_config["recursion_limit"] = compute_recursion_limit(config.settings.max_tool_calls, has_post_tool)
 
-        sdk_token = _set_context(config, self.path_context)
+        sdk_token = _set_context(config, self.path_context, execution_id)
         checkpoint_conn = None
         try:
             graph, checkpoint_conn = await self._build_graph(
