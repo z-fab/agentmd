@@ -5,8 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Security
+
+- **`--port` no longer binds an unauthenticated TCP listener** — the API key middleware was installed only when `--port` *and* `--api-key` were both given, while the TCP server came up either way. `agentmd start --port 8000` therefore exposed every endpoint with no authentication, including `POST /agents/{id}/run`, which executes an arbitrary agent; `--host` defaults to `127.0.0.1` but is freely overridable to `0.0.0.0`. `--port` now requires `--api-key` and refuses to start without it. Authentication is applied per transport: the TCP entrypoint is wrapped, the Unix socket (already `chmod 600`) is not — so the local CLI, which sends no key, keeps working while the port is guarded. Keys are compared in constant time.
+
 ### Added
 
+- **Unknown frontmatter keys are reported** — a typo like `triger:` was ignored in silence and the agent ran as `manual` with no indication anything was wrong. Unknown keys are now logged when the file is parsed and listed by `agentmd validate`, with a did-you-mean for the field they resemble; nested keys are reported by path (`trigger.typ`). Still a warning, never an error, so a file written for a newer agentmd keeps loading on an older one.
 - **Conversations have an id** — `POST /agents/{id}/run` accepts `session_id`, persisted in the new `executions.session_id` column and exposed on execution responses. A run carrying one is recorded with `trigger: "chat"` instead of `"manual"`. Existing databases gain the column on open; nothing else changes for clients that do not send it.
 - **`context` in the run body is no longer discarded** — it was accepted and dropped; it now reaches the runner as `trigger_context` and is appended to the user turn of manual and chat runs.
 - **SSE `meta` execution_info** ([#3](https://github.com/z-fab/agentmd/issues/3)) — every run opens its stream with a persisted `meta` frame whose payload `event_type` is `execution_info`, carrying `agent_id`, `display_name`, `model`, `trigger`, `args`, and `session_id`. Reconnect/replay reproduces it.
@@ -16,6 +21,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 - **History seeding is scoped to a conversation** — a new run seeded from "the last finished execution of this agent", whatever its origin. An agent with `trigger: schedule` and an open chat mixed the two: the scheduled run inherited the chat's context and the next chat turn inherited the scheduled run's. Two simultaneous chats on one agent shared the same line. Seeding now follows `session_id` — same session for chat turns, sessionless executions otherwise — and `schedule`/`watch` runs never join a chat session. Checkpoint retention keeps the newest execution per *session* (not just per agent), so an active conversation cannot lose its memory to the 30-day sweep.
 - **`final_answer` is no longer truncated** ([#2](https://github.com/z-fab/agentmd/issues/2)) — the log row kept only the first 500 characters while the live SSE event carried the whole answer, and `output_data` was cut at 10,000. Because the stream deduplicates catchup against live by event id, whichever version reached the client first won: replaying the short row made the complete live frame get dropped under the same id, so `run --detach` + `logs`, any stream reconnect, and every HILT cycle (the CLI reopens the stream after answering) could show a permanently clipped answer. The answer is now stored whole and the replayed frame carries it under `content`, the same key and the same bytes as the live one. An upper bound of 1,000,000 characters remains as a backstop, well above any model's output limit.
+- **A waiting execution keeps a server backend alive** — an execution parked in `waiting` (human-in-the-loop) has no live task, so the idle timeout ignored it and the backend could shut down under a remote caller that had no way to restart it. In service mode (`--port` or `--keep-alive`) a waiting execution now holds the backend open. On the plain local socket it deliberately does not: `agentmd respond` rebuilds and resumes from the checkpoint on demand, and a forgotten HILT must not turn the backend immortal.
+- **`start -d` no longer drops its server flags** — `agentmd start -d --keep-alive --port 4100 --api-key K` reported "Backend started" and then spawned a socket-only backend, because the daemon path passed only `--workspace` to the detached child. The flags are now carried through, and the daemon prints the address it is listening on. Autospawn is unchanged — it still asks for the socket alone.
+
+### Documentation
+
+- **Server mode is documented** — `--keep-alive`, `--port`, `--host` and `--api-key` were absent from the CLI reference. It now has a Server Mode section (when to keep the backend alive, why `--port` requires `--api-key`, what `--host 0.0.0.0` costs, how `waiting` behaves per mode), the API reference has an Authentication section, and the daemon log/PID paths were corrected to the XDG state directory the code actually uses.
 
 ## [0.16.0] — 2026-08-08
 
