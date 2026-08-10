@@ -583,10 +583,12 @@ The effective confirm set is: **(global defaults ∪ `confirm`) − `auto_approv
 | **Allowed values** | `skip`, `parallel` |
 | **Default** | `skip` |
 
-Controls whether a new run can start while an execution is `waiting` (paused for user input):
+Controls whether a new run can start while an execution **in the same conversation** is `waiting` (paused for user input):
 
-- `skip` (default): scheduler and file-watcher skip a new trigger while one session is paused.
+- `skip` (default): a run is refused while the conversation it joins is paused. A chat turn is held by its own session only; `agentmd run`, `schedule` and `watch` share one sessionless bucket and hold each other. A pending HILT in one chat does not block another chat, or the scheduler.
 - `parallel`: allows multiple concurrent waiting sessions (each uses an isolated checkpoint thread).
+
+See [Human-in-the-loop](human-in-the-loop.md#on_pending) for the full blocking table.
 
 ```yaml
 on_pending: parallel
