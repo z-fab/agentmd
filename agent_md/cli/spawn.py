@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent_md.cli.client import BackendClient, get_log_path, get_socket_path, get_state_dir
+from agent_md.cli.client import BackendClient, get_log_path, get_pid_path, get_socket_path, get_state_dir
 
 # Rotate backend.log when it exceeds this size (bytes).
 _LOG_ROTATE_BYTES = 5 * 1024 * 1024
@@ -115,7 +115,6 @@ def _spawn_backend(workspace: Path | None = None, extra_args: list[str] | None =
     finally:
         log_file.close()
 
-    pid_path = state_dir / "backend.pid"
-    pid_path.write_text(str(proc.pid))
+    get_pid_path().write_text(str(proc.pid))
 
     return proc.pid
