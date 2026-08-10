@@ -335,6 +335,8 @@ This is a best-effort layer with a declared boundary. In each case below the age
 
 If an agent must write through one of the "yes" rows, keep it out of the loop the plain way: write to a directory the agent does not watch, or narrow `filters` so the produced files never match. A watch agent that writes into its own watched path via an MCP tool will run continuously.
 
+One limit runs the other way — the only case where **your** edit can be swallowed. Telling your save apart from the agent's write relies on the filesystem timestamping the two differently. APFS and ext4 record nanoseconds, so they always do. Filesystems that store whole seconds (HFS+, ext3) do not: a save landing in the same second as the agent's write to the same file carries an identical mtime and is dropped. Bounded to that 2 s window and to a file the agent just wrote, so at worst you save again.
+
 Causal tracking (execution depth, "which run caused this event") cannot substitute for any of this: a filesystem event carries no link back to the write that caused it, so every watch callback arrives as a fresh root.
 
 ### Events
