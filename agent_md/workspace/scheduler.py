@@ -13,6 +13,7 @@ from watchdog.observers import Observer
 from agent_md.workspace.parser import is_agent_file, parse_agent_file
 from agent_md.workspace.registry import AgentConfig, AgentRegistry
 from agent_md.execution.runner import AgentRunner
+from agent_md.execution.self_writes import process_ledger
 
 logger = logging.getLogger(__name__)
 
@@ -488,6 +489,7 @@ class _AgentWatchHandler(FileSystemEventHandler):
         include: list[str] | None = None,
         exclude: list[str] | None = None,
         debounce: float = 0.5,
+        self_writes=None,
     ):
         self.agent_id = agent_id
         self.watch_paths = watch_paths
@@ -496,6 +498,7 @@ class _AgentWatchHandler(FileSystemEventHandler):
         self._include = list(include or [])
         self._exclude = list(exclude or [])
         self._debounce = debounce
+        self._self_writes = self_writes if self_writes is not None else process_ledger()
         self._debounce_timers: dict[Path, asyncio.TimerHandle] = {}
         self._pending_contexts: dict[Path, str] = {}
 
@@ -507,8 +510,22 @@ class _AgentWatchHandler(FileSystemEventHandler):
             return False
         return True
 
+    def _is_own_write(self, path: Path) -> bool:
+        """True when this agent's own built-in write produced the event.
+
+        The local anti-loop guard. An agent watching a directory it writes to
+        would otherwise retrigger itself forever, and no amount of persisted
+        depth would stop it — the event arrives as a root cause. Scoped to this
+        agent, so another agent writing into the same directory still triggers
+        us. Best-effort: MCP and custom tools write without leaving a record.
+        """
+        if self._self_writes.is_self_write(path, self.agent_id):
+            logger.debug(f"Suppressed self-written path for '{self.agent_id}': {path}")
+            return True
+        return False
+
     def _is_relevant(self, event_path: str) -> bool:
-        """Check if event path is within watched paths and passes filters."""
+        """Check if event path is within watched paths, passes filters, and is not ours."""
         path = Path(event_path).resolve()
         in_watch = False
         for watch_path in self.watch_paths:
@@ -525,7 +542,9 @@ class _AgentWatchHandler(FileSystemEventHandler):
                     break
         if not in_watch:
             return False
-        return self._passes_filters(path)
+        if not self._passes_filters(path):
+            return False
+        return not self._is_own_write(path)
 
     def _build_context(self, event) -> str:
         """Build trigger context string from event."""
