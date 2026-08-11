@@ -51,6 +51,7 @@ openrouter = [
 dev = [
     { name = "mkdocs-git-revision-date-localized-plugin" },
     { name = "mkdocs-material" },
+    { name = "packaging" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -89,6 +90,7 @@ requires-dist = [
 dev = [
     { name = "mkdocs-git-revision-date-localized-plugin", specifier = ">=1.3.0" },
     { name = "mkdocs-material", specifier = ">=9.5.0" },
+    { name = "packaging", specifier = ">=24.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "ruff", specifier = ">=0.15.5" },
