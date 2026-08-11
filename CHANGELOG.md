@@ -3,6 +3,13 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`agentmd setup` no longer bricks the install on Windows** — on a console whose locale is not UTF-8 (cp1252 on a Brazilian Windows), the wizard wrote a `.env` that agentmd itself refused to read, and since `agent_md.config.settings` loads it at import time, *every* subsequent command died with `UnicodeDecodeError: 'utf-8' codec can't decode byte 0x97 in position 10`. Byte 0x97 is the em dash of the header comment `# Agentmd — API Keys`, and position 10 is where it sits: the wizard wrote with `write_text()` and no encoding, which resolves to the machine's locale, while python-dotenv reads .env as UTF-8 by default. The two only disagree off UTF-8 platforms, which is why it never showed up on macOS, on Linux, or in CI. Setup now names UTF-8 on every file it writes, and the header is plain ASCII so that hand-editing the file in an editor that saves in the ANSI codepage cannot recreate the same crash. Twelve other reads and writes across `settings`, `pricing`, `services`, `spawn` and `commands` were relying on the locale the same way and now name UTF-8 too; a test walks the package AST to keep it that way, allowing binary-mode opens and nothing else.
+- **An install already broken by the old wizard recovers on upgrade** — repairing only the writer would have left those machines crashing forever, since the bad file is on disk and nothing rewrites it. A `.env` that is not valid UTF-8 is now retried with the locale encoding — precisely the inverse of how it was created — and the keys load, with a warning naming the file and asking for it to be re-saved as UTF-8. A file that decodes in no encoding is skipped with a warning instead of raising: an unreadable .env is a missing API key, not an unusable CLI. This had two independent origins, not one — `pydantic_settings` re-reads the same path through its own `env_file` source, so the crash survived the first fix and is now pointed only at files that were actually decoded, with the encoding that worked.
+
 ## [0.17.2] — 2026-08-11
 
 ### Fixed

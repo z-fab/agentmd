@@ -307,6 +307,16 @@ A hang looks like broken CI, not a red test. Follow the conventions in
 masks hangs instead of fixing teardown, and wall-clock mutation checks catch
 the real failure mode.
 
+### File encoding
+
+Always pass `encoding="utf-8"` to `open()`, `read_text()` and `write_text()`,
+or open in binary mode. Without it Python uses the machine's locale, which is
+UTF-8 here and on CI but cp1252 on a Windows console — so the bytes on disk
+depend on who ran the command while every reader asks for UTF-8. That is how
+`agentmd setup` came to write a `.env` it could not read back, taking every
+later command down with it. `tests/test_no_implicit_encoding.py` walks the
+package AST and fails on any new offender.
+
 ---
 
 ## 📜 License
