@@ -203,8 +203,17 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def load_yaml_config(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Load config.yaml and merge (lower priority than env vars)."""
-        config_path = _ensure_default_config()
+        """Load config.yaml and merge (lower priority than env vars).
+
+        Read-only: if the file is missing, leave ``data`` unchanged so field
+        defaults apply in memory. Creating ``config.yaml`` is an explicit
+        action of setup (and ``info``), not a side effect of importing Settings.
+        """
+        # Do not call ``_get_config_dir()`` here — it mkdir's. Absence must
+        # mean absence, with zero filesystem writes on the read path.
+        config_path = Path.home() / ".config" / "agentmd" / "config.yaml"
+        if not config_path.is_file():
+            return data
 
         try:
             raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}

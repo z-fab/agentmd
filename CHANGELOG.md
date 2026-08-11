@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **A first-time `agentmd setup` no longer invents a config and then claims it already exists** — importing the CLI built the Settings singleton, and the Settings loader wrote `~/.config/agentmd/config.yaml` whenever it was missing. By the time the setup wizard checked for an existing configuration, the import had already created one, so a brand-new user pressing Enter got "Setup complete!" with no workspace and nothing to run. Loading config is read-only again; creating the file is an explicit action of setup.
 - **Token limits now measure on custom endpoints; cost limits depend on how the price is known** — `langchain-openai` turns streaming usage reporting off whenever a custom `base_url` is set, so agents on the `local` provider (and any custom endpoint) produced empty `usage_metadata`. `max_execution_tokens` was comparing against zero and could never fire. Streaming usage is now requested on those endpoints, so the **token** limit measures what it claimed to. Cost is not the same fix — it has three regimes:
   - **`max_execution_tokens`** — enforces on every endpoint, including `local` and custom ones. This is the real fix for custom endpoints.
   - **`max_cost_usd` on native providers** — enforces when the model has an entry in the built-in `pricing.yaml` (or your `~/.config/agentmd/pricing.yaml` override).
