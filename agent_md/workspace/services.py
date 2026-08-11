@@ -176,7 +176,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
         try:
             import json
 
-            servers = json.loads(mcp_config_path.read_text()) if mcp_config_path.exists() else {}
+            servers = json.loads(mcp_config_path.read_text(encoding="utf-8")) if mcp_config_path.exists() else {}
         except Exception:
             servers = {}
         for server_name in config.mcp:

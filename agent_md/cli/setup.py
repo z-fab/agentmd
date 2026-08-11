@@ -52,12 +52,20 @@ def _write_config_yaml(workspace: Path, provider: str, model: str, defaults: dic
 
     config_path = _get_config_dir() / "config.yaml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.dump(config, default_flow_style=False, sort_keys=False))
+    config_path.write_text(
+        yaml.dump(config, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
 
 
 def _build_env_content(api_key: str | None, env_var: str | None) -> str:
-    """Build .env file content."""
-    lines = ["# Agentmd — API Keys"]
+    """Build .env file content.
+
+    Kept ASCII on purpose: this is the file we tell users to hand-edit to paste
+    keys, and an editor that saves in the Windows ANSI codepage would turn any
+    non-ASCII byte here into something python-dotenv's UTF-8 reader rejects.
+    """
+    lines = ["# Agentmd - API Keys"]
     if api_key and env_var:
         lines.append(f"{env_var}={api_key}")
     else:
@@ -74,11 +82,11 @@ def _write_env_file(workspace: Path, api_key: str | None, env_var: str | None):
     # Workspace-specific
     ws_env = workspace / "agents" / "_config" / ".env"
     ws_env.parent.mkdir(parents=True, exist_ok=True)
-    ws_env.write_text(content)
+    ws_env.write_text(content, encoding="utf-8")
 
     # Global fallback
     global_env = _get_config_dir() / ".env"
-    global_env.write_text(content)
+    global_env.write_text(content, encoding="utf-8")
 
     return ws_env, global_env
 
@@ -105,13 +113,14 @@ def _create_workspace(workspace: Path, provider: str, model: str):
             "---\n"
             "\n"
             "You are a friendly assistant. Write a creative greeting\n"
-            "and save it to {output}/greeting.txt using file_write.\n"
+            "and save it to {output}/greeting.txt using file_write.\n",
+            encoding="utf-8",
         )
 
     # Empty MCP config
     mcp = config_dir / "mcp-servers.json"
     if not mcp.exists():
-        mcp.write_text("{}\n")
+        mcp.write_text("{}\n", encoding="utf-8")
 
 
 def _effective_db_paths(db_path_setting: str, workspace: Path) -> tuple[Path, Path]:
