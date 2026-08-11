@@ -1,16 +1,17 @@
 # Providers
 
-Agentmd supports five LLM providers: Google, OpenAI, Anthropic, Ollama, and Local (self-hosted). Each provider is an optional dependency—install only what you need.
+Agentmd supports six LLM providers: Google, OpenAI, Anthropic, Ollama, Local (self-hosted), and OpenRouter. Any other OpenAI-compatible endpoint works from config alone—give it a provider name and a `base_url`. Each named provider is an optional dependency—install only what you need.
 
 ## Supported Providers
 
-| Provider | Package | Default Model |
-|----------|---------|---------------|
+| Provider | Package | Default Model / Notes |
+|----------|---------|------------------------|
 | `google` | `langchain-google-genai` | `gemini-2.5-flash` |
 | `openai` | `langchain-openai` | `gpt-4o` |
 | `anthropic` | `langchain-anthropic` | `claude-sonnet-4` |
 | `ollama` | `langchain-ollama` | User-defined |
-| `local` | `langchain-openai` | User-defined |
+| `local` | `langchain-openai` | User-defined (OpenAI-compatible) |
+| `openrouter` | `langchain-openrouter` | Model format `provider/model` (e.g. `anthropic/claude-sonnet-4`) |
 
 ## Installation
 
@@ -34,11 +35,14 @@ pip install agentmd[anthropic]
 # Ollama
 pip install agentmd[ollama]
 
+# OpenRouter
+pip install agentmd[openrouter]
+
 # All providers
 pip install agentmd[all]
 ```
 
-**Note:** The `local` provider uses the same package as OpenAI (`langchain-openai`).
+**Note:** The `local` provider and any custom OpenAI-compatible endpoint use the same package as OpenAI (`langchain-openai`).
 
 ## API Key Setup
 
@@ -48,17 +52,19 @@ Create a `.env` file in your project root:
 GOOGLE_API_KEY=your-key-here
 OPENAI_API_KEY=your-key-here
 ANTHROPIC_API_KEY=your-key-here
+OPENROUTER_API_KEY=your-key-here
 ```
 
-Agentmd automatically loads `.env` at startup via `python-dotenv`.
+Agentmd automatically loads `.env` at startup via `python-dotenv`. Keys are read from `<PROVIDER>_API_KEY` by default (e.g. `groq` → `GROQ_API_KEY`). Override with `model.api_key_env` only when the variable name disagrees with the provider name.
 
 ### Get Your API Keys
 
 - **Google**: [Google AI Studio](https://aistudio.google.com/app/apikey)
 - **OpenAI**: [OpenAI Platform](https://platform.openai.com/api-keys)
 - **Anthropic**: [Anthropic Console](https://console.anthropic.com/settings/keys)
+- **OpenRouter**: [OpenRouter Keys](https://openrouter.ai/keys)
 
-Ollama and Local providers don't require API keys.
+Ollama and loopback `local` endpoints don't require API keys.
 
 ## Google
 
@@ -239,6 +245,42 @@ settings:
 Summarize confidential files without sending data to external APIs.
 ```
 
+## OpenRouter
+
+One API key for 400+ models across providers. Model names use `provider/model` format.
+
+**Installation:**
+```bash
+pip install agentmd[openrouter]
+```
+
+**Configuration:**
+
+```yaml
+model:
+  provider: openrouter
+  name: anthropic/claude-sonnet-4
+```
+
+Set `OPENROUTER_API_KEY` in `.env` ([get a key](https://openrouter.ai/keys)).
+
+Cost is taken from what OpenRouter reports it actually charged, so `max_cost_usd` is enforced against a real number. `agentmd validate` rejects models that cannot call tools, using the capability table bundled with the provider package.
+
+**Example:**
+
+```yaml
+---
+name: openrouter-agent
+model:
+  provider: openrouter
+  name: anthropic/claude-sonnet-4
+trigger:
+  type: manual
+---
+
+Use any OpenRouter-hosted model through a single key.
+```
+
 ## Local (OpenAI-Compatible)
 
 Self-hosted or third-party OpenAI-compatible endpoints (vLLM, LM Studio, LocalAI).
@@ -278,6 +320,41 @@ trigger:
 ---
 
 Use your custom fine-tuned model hosted on vLLM.
+```
+
+## Any OpenAI-compatible endpoint
+
+Any provider name plus a `base_url` is treated as an OpenAI-compatible endpoint—no new code and no release from us. Groq, Together, DeepSeek, xAI, Fireworks, vLLM, and LM Studio all work this way.
+
+**Rule:** the key is read from `<PROVIDER>_API_KEY` unless `api_key_env` says otherwise. An unknown provider name **requires** `base_url`; without it, validation fails (typo protection).
+
+**Installation:**
+```bash
+pip install agentmd[openai]
+```
+
+**Example — Groq:**
+
+```yaml
+model:
+  provider: groq
+  name: llama-3.3-70b-versatile
+  base_url: https://api.groq.com/openai
+```
+
+```bash
+# .env
+GROQ_API_KEY=gsk-...
+```
+
+`base_url` is normalized to end in `/v1` when missing. If the env var name does not match the provider (e.g. provider `gemini` but key in `GOOGLE_API_KEY`), set `api_key_env`:
+
+```yaml
+model:
+  provider: gemini
+  name: gemini-2.0-flash
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  api_key_env: GOOGLE_API_KEY
 ```
 
 ## Common Settings
@@ -342,6 +419,8 @@ Error: OPENAI_API_KEY not found
 2. Add: `OPENAI_API_KEY=your-key`
 
 3. Restart the runtime
+
+Scheduled agents whose key is missing are refused at schedule time (error names the variable) instead of registering and failing when the run starts.
 
 ### Ollama Connection Error
 

@@ -169,12 +169,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Secrets (from .env) ---
-    GOOGLE_API_KEY: str | None = None
-    OPENAI_API_KEY: str | None = None
-    ANTHROPIC_API_KEY: str | None = None
-
     # --- App config (from config.yaml) ---
+    # API keys are not Settings fields: they live in os.environ (loaded from
+    # .env by python-dotenv) and are resolved via providers.keys.api_key_env_for.
     workspace: str = ""
     agents_dir: str = "agents"
     db_path: str = ""

@@ -35,9 +35,7 @@ def _assert_exact_gte_floor(req: Requirement, package: str, version: str) -> Non
     assert req.name == package, f"expected package {package!r}, got {req.name!r}"
     assert not req.extras, f"{package} must not carry extras markers, got {sorted(req.extras)!r}"
     expected = SpecifierSet(f">={version}")
-    assert req.specifier == expected, (
-        f"{package} specifier is {str(req.specifier)!r}, expected {str(expected)!r}"
-    )
+    assert req.specifier == expected, f"{package} specifier is {str(req.specifier)!r}, expected {str(expected)!r}"
     specs = list(req.specifier)
     assert len(specs) == 1, f"{package} must declare exactly one specifier, got {req.specifier!r}"
     assert specs[0].operator == ">=", f"{package} operator must be '>=', got {specs[0].operator!r}"

@@ -272,9 +272,7 @@ async def bootstrap(
                         missing_key += 1
 
                 if missing_key:
-                    logger.info(
-                        f"{missing_key} agent(s) registered but not scheduled: missing API key"
-                    )
+                    logger.info(f"{missing_key} agent(s) registered but not scheduled: missing API key")
 
                 scheduler.start(agents_dir)
             except BaseException:

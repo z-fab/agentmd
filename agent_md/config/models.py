@@ -243,7 +243,12 @@ class ModelConfig(BaseModel):
 
     @property
     def is_openai_compatible(self) -> bool:
-        """True for family B, and for `openai` pointed at a custom base_url."""
+        """True for family B and for every ``openai`` provider (with or without base_url).
+
+        ``openai`` always counts so ``/v1`` normalization applies when a custom
+        endpoint is set; official OpenAI URLs already end in ``/v1`` or omit
+        ``base_url`` entirely.
+        """
         if self.provider in self.COMPAT_PROVIDERS:
             return True
         if self.provider == "openai":

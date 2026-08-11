@@ -97,7 +97,7 @@ def test_factory_uses_shared_local_default():
 
     source = Path("agent_md/providers/factory.py").read_text(encoding="utf-8")
     assert "DEFAULT_LOCAL_BASE_URL" in source
-    assert 'http://localhost:11434/v1' not in source
+    assert "http://localhost:11434/v1" not in source
     assert DEFAULT_LOCAL_BASE_URL == "http://localhost:11434/v1"
 
 

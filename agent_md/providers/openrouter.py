@@ -63,8 +63,7 @@ def build_openrouter(model: str, settings: dict, api_key: str) -> BaseChatModel:
         from langchain_openrouter import ChatOpenRouter
     except ImportError:
         raise ImportError(
-            "Provider 'openrouter' requires langchain-openrouter. "
-            "Install with: pip install agentmd[openrouter]"
+            "Provider 'openrouter' requires langchain-openrouter. Install with: pip install agentmd[openrouter]"
         )
 
     class CostTrackingChatOpenRouter(ChatOpenRouter):  # type: ignore[misc, valid-type]

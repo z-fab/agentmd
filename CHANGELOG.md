@@ -3,6 +3,19 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.18.0] — 2026-08-11
+
+### Added
+
+- **OpenRouter as a first-class provider** — `provider: openrouter` with a model name like `anthropic/claude-sonnet-4` reaches 400+ models through one API key. Install with `pip install agentmd[openrouter]`. Cost is taken from what OpenRouter reports it actually charged, so `max_cost_usd` is enforced against a real number rather than a pricing table that would need hundreds of entries. `agentmd validate` rejects models that cannot call tools, using the capability table bundled with the provider package.
+- **Any OpenAI-compatible endpoint, without new code** — give a provider name and a `base_url` and agentmd treats it as an OpenAI-compatible endpoint, reading the key from `<PROVIDER>_API_KEY`. Groq, Together, DeepSeek, xAI, Fireworks, vLLM and LM Studio need no release from us. The primary rule is the derived env-var name; the new `api_key_env` field is the exception when the variable does not match the provider name. `stream_usage` (default `true`) asks the endpoint for streaming token counts; set it `false` only for older endpoints that reject `stream_options`.
+- **Setup wizard knows OpenRouter and derived keys** — `agentmd setup` offers OpenRouter and derives env-var names the same way the runtime does, instead of a hardcoded list of three providers.
+
+### Fixed
+
+- **Token and cost limits now actually measure on custom endpoints** — `langchain-openai` turns streaming usage reporting off whenever a custom `base_url` is set, so agents on the `local` provider (and any custom endpoint) produced empty `usage_metadata`. Both `max_execution_tokens` and `max_cost_usd` were comparing against zero and could never fire: the limits were written in the agent file, read by the runtime, and silently inert. They now measure what they always claimed to. **This can surface as an agent that "stopped working":** a `local` or custom-endpoint agent that has been quietly running past its configured limit will now be stopped by it. If that happens, the limit was never being honoured — raise it deliberately, or remove it.
+- **An agent whose API key is missing is refused at schedule time** — previously a scheduled agent with no key still registered and only died when the run started. Scheduling now fails early with an error that names the missing variable (e.g. `OPENROUTER_API_KEY`), so the agent is not left to fail unattended.
+
 ## [0.17.3] — 2026-08-11
 
 ### Fixed

@@ -1273,9 +1273,10 @@ def validate(
     api_status = "[green]\u2713 API key set[/green]" if result.api_key_set else "[red]\u2717 API key missing[/red]"
     from agent_md.providers.keys import api_key_env_for
 
-    needs_key = config.model is not None and api_key_env_for(
-        config.model.provider, config.model.base_url, config.model.api_key_env
-    ) is not None
+    needs_key = (
+        config.model is not None
+        and api_key_env_for(config.model.provider, config.model.base_url, config.model.api_key_env) is not None
+    )
     if not result.api_key_set and needs_key:
         errors += 1
     print_kv("Model", f"{model_str}         {api_status}")

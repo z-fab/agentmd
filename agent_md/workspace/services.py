@@ -117,9 +117,7 @@ def _openrouter_capability_notes(model_name: str, has_tools: bool) -> tuple[list
     errors: list[str] = []
     warnings: list[str] = []
     if has_tools and not profile.get("tool_calling", True):
-        errors.append(
-            f"model '{model_name}' does not support tool calling, and agent.md always binds tools"
-        )
+        errors.append(f"model '{model_name}' does not support tool calling, and agent.md always binds tools")
     return errors, warnings
 
 
