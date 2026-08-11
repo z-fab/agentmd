@@ -63,6 +63,10 @@ def create_chat_model(
             }
             if base_url:
                 kwargs["base_url"] = base_url
+                # langchain-openai turns stream_usage off whenever base_url is
+                # set; without it usage_metadata stays empty and the token/cost
+                # limits silently never fire.
+                kwargs["stream_usage"] = True
             if timeout is not None:
                 kwargs["timeout"] = timeout
             return ChatOpenAI(**kwargs)
@@ -116,6 +120,7 @@ def create_chat_model(
                 "max_tokens": max_tokens,
                 "base_url": base_url or "http://localhost:11434/v1",
                 "api_key": "not-needed",
+                "stream_usage": True,
             }
             if timeout is not None:
                 kwargs["timeout"] = timeout
