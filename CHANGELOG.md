@@ -3,6 +3,16 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A `start` that fails during bootstrap now exits instead of holding the database forever** ([#17](https://github.com/z-fab/agentmd/issues/17)) — a backend that lost the race for the database printed `sqlite3.OperationalError: database is locked`, then uvicorn's "Application startup failed. Exiting.", and stayed alive for minutes still holding the file; the next `start` hit the same lock, in cascade. The thread that wedged it is aiosqlite's connection worker: non-daemon, so the interpreter joins it at exit and blocks forever unless the connection is closed. Three places dropped it. `Database.connect()` opened the connection and only then ran the PRAGMAs, the schema and the migrations, so any failure among them propagated with the connection still open; it now closes what it opened and re-raises the original error, with the close itself guarded so a broken cleanup can never replace `database is locked` with something unrelated. `bootstrap()` held the only reference to a connected `Database` until it returned a `Runtime`, so anything raising in between stranded it; it now closes on the way out, and stops a half-started scheduler too. `_lifespan` had no `try`/`finally` around its `yield`, so a startup that raised never reached `rt.aclose()` — cleanup moved into a `finally` that tolerates a runtime that is missing or half-built, and `Runtime.aclose()` now runs its steps independently so a failing scheduler or runner cannot cost us `db.close()`. Finally, `agentmd start` exits non-zero when startup failed: uvicorn turns a failed lifespan into a log line and a normal return, so the CLI used to report success for a backend that never came up. Measured on the reproducer from the issue: before, still alive when killed at 30s; after, exit code 1 in 6.6s, most of it sqlite's own 5s busy retry.
+
+### Changed
+
+- Tests may now assert inside `async with app.router.lifespan_context(app)`. The convention against it existed because the exception skipped the cleanup that sat after the `yield`; with cleanup in a `finally` it no longer does. `tests/conftest.py` and the README record the change.
+
 ## [0.17.1] — 2026-08-11
 
 ### Fixed
