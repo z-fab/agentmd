@@ -1,7 +1,7 @@
 import difflib
 import re
 from types import UnionType
-from typing import Literal, Optional, Union, get_args, get_origin
+from typing import ClassVar, Literal, Optional, Union, get_args, get_origin
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -205,18 +205,17 @@ class SettingsConfig(BaseModel):
 class ModelConfig(BaseModel):
     """LLM model configuration."""
 
+    # Providers with a dedicated adapter (family A).
+    NATIVE_PROVIDERS: ClassVar[tuple[str, ...]] = ("google", "openai", "anthropic", "ollama", "openrouter")
+    # Known names that route to the generic OpenAI-compatible path (family B).
+    COMPAT_PROVIDERS: ClassVar[tuple[str, ...]] = ("local",)
+
     provider: str
     name: str
     base_url: str | None = None
     url: str | None = None  # alias for base_url
-
-    @field_validator("provider")
-    @classmethod
-    def validate_provider(cls, v: str) -> str:
-        allowed = ("google", "openai", "anthropic", "ollama", "local")
-        if v not in allowed:
-            raise ValueError(f"Provider must be one of {allowed}, got '{v}'")
-        return v
+    api_key_env: str | None = None
+    stream_usage: bool = True
 
     @model_validator(mode="after")
     def normalize_url(self):
@@ -224,13 +223,37 @@ class ModelConfig(BaseModel):
         resolved = self.base_url or self.url
         if resolved:
             resolved = resolved.rstrip("/")
-            # OpenAI-compatible endpoints use the /v1 API prefix. Native
-            # Ollama and Anthropic endpoints do not, so preserve their URL.
-            if self.provider in ("openai", "local") and not resolved.endswith("/v1"):
-                resolved = resolved.rstrip("/") + "/v1"
+            # OpenAI-compatible endpoints use the /v1 API prefix. Native Ollama
+            # and Anthropic endpoints do not, so preserve their URL.
+            if self.is_openai_compatible and not resolved.endswith("/v1"):
+                resolved = resolved + "/v1"
             self.base_url = resolved
         self.url = None  # clear alias after normalization
+
+        # An unknown provider name is only meaningful with an endpoint to point
+        # at. Requiring base_url keeps the typo protection the allowlist gave.
+        known = self.provider in self.NATIVE_PROVIDERS or self.provider in self.COMPAT_PROVIDERS
+        if not known and not self.base_url:
+            raise ValueError(
+                f"Unknown provider '{self.provider}'. Use one of "
+                f"{self.NATIVE_PROVIDERS + self.COMPAT_PROVIDERS}, or supply a "
+                f"`base_url` to treat it as an OpenAI-compatible endpoint."
+            )
         return self
+
+    @property
+    def is_openai_compatible(self) -> bool:
+        """True for family B and for every ``openai`` provider (with or without base_url).
+
+        ``openai`` always counts so ``/v1`` normalization applies when a custom
+        endpoint is set; official OpenAI URLs already end in ``/v1`` or omit
+        ``base_url`` entirely.
+        """
+        if self.provider in self.COMPAT_PROVIDERS:
+            return True
+        if self.provider == "openai":
+            return True
+        return self.provider not in self.NATIVE_PROVIDERS
 
 
 class AgentConfig(BaseModel):

@@ -123,14 +123,18 @@ To override the default for a specific agent:
 |----------|-------|
 | **Type** | string |
 | **Required** | Yes (when `model` is specified) |
-| **Allowed values** | `google`, `openai`, `anthropic`, `ollama`, `local` |
+| **Allowed values** | `google`, `openai`, `anthropic`, `ollama`, `local`, `openrouter`, or any name with `base_url` |
 
-LLM provider to use. Each provider requires its API key in environment variables:
+LLM provider to use. Named providers map to dedicated adapters; any other name with a `base_url` is treated as an OpenAI-compatible endpoint.
+
+API keys are read from `<PROVIDER>_API_KEY` by default:
 - `google` → `GOOGLE_API_KEY`
 - `openai` → `OPENAI_API_KEY`
 - `anthropic` → `ANTHROPIC_API_KEY`
+- `openrouter` → `OPENROUTER_API_KEY`
+- `groq` (with `base_url`) → `GROQ_API_KEY`
 - `ollama` → (local, no key needed)
-- `local` → (custom OpenAI-compatible endpoint)
+- `local` on loopback → (no key needed)
 
 ```yaml
 model:
@@ -150,8 +154,9 @@ Model identifier (provider-specific):
 - **Google:** `gemini-2.5-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`
 - **OpenAI:** `gpt-4`, `gpt-4-turbo`, `gpt-3.5-turbo`
 - **Anthropic:** `claude-opus-4-6`, `claude-sonnet-4-5`, `claude-3-haiku`
+- **OpenRouter:** `provider/model` (e.g. `anthropic/claude-sonnet-4`)
 - **Ollama:** `llama2`, `mistral`, `neural-chat`, etc.
-- **Local:** Any OpenAI-compatible model name
+- **Local / custom:** Any OpenAI-compatible model name
 
 ```yaml
 model:
@@ -164,27 +169,64 @@ model:
 | Property | Value |
 |----------|-------|
 | **Type** | string |
-| **Required** | Conditional (required for `local` provider) |
+| **Required** | Conditional (required for unknown provider names) |
 | **Aliases** | `base_url`, `url` |
-| **Default** | Provider default |
+| **Default** | Provider default (`http://localhost:11434/v1` for `local`) |
 
 Base URL for API endpoint. Only needed for custom or local LLM endpoints.
 
-- For `local` provider: Required
+- For `local` provider: Optional — defaults to `http://localhost:11434/v1` (Ollama's OpenAI-compatible port) when omitted
+- For unknown provider names: Required (treats the endpoint as OpenAI-compatible)
 - For others: Optional (uses provider default)
-- For OpenAI-compatible `openai` and `local` endpoints, the system appends `/v1` if missing
+- For OpenAI-compatible endpoints (`openai`, `local`, OpenRouter-style custom names), the system appends `/v1` if missing
 - For native `ollama` and `anthropic` endpoints, the URL is used unchanged
 
 ```yaml
 model:
   provider: local
   name: llama-3.1-8b
-  base_url: http://localhost:8000
+  # base_url omitted → http://localhost:11434/v1
 
 model:
   provider: local
   name: mistral-7b
   url: http://vllm:5000  # Alias: url instead of base_url
+```
+
+#### `model.api_key_env`
+
+| Property | Value |
+|----------|-------|
+| **Type** | string |
+| **Required** | No |
+| **Default** | `<PROVIDER>_API_KEY` (derived from the provider name) |
+
+**Exception mechanism** — use only when the provider name and the env var disagree. The primary rule is the derived name (`groq` → `GROQ_API_KEY`, `openrouter` → `OPENROUTER_API_KEY`). Set `api_key_env` when you need a different variable:
+
+```yaml
+model:
+  provider: gemini
+  name: gemini-2.0-flash
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  api_key_env: GOOGLE_API_KEY   # provider name ≠ env var
+```
+
+#### `model.stream_usage`
+
+| Property | Value |
+|----------|-------|
+| **Type** | boolean |
+| **Required** | No |
+| **Default** | `true` |
+
+Asks the endpoint for streaming token counts so `max_execution_tokens` can measure usage. That also feeds `max_cost_usd` when a price is known — either an entry in `pricing.yaml` / `~/.config/agentmd/pricing.yaml`, or a cost OpenRouter reports on the response. A model with no pricing entry (typical for `local` and many custom endpoints) still will not enforce a cost cap; the runtime warns instead. Set `false` only for older OpenAI-compatible endpoints that reject `stream_options`. Leaving it `true` (the default) is required for **token** limits to work on `local` and custom `base_url` agents.
+
+```yaml
+model:
+  provider: local
+  name: my-model
+  base_url: http://localhost:8000
+  stream_usage: false   # only if the endpoint rejects stream_options
 ```
 
 ### `description`
@@ -871,10 +913,11 @@ The system validates agent configuration during startup and before execution:
 
 ### Model Configuration
 - `model` is optional — when omitted, uses defaults from `config.yaml`
-- When specified: `provider` must be one of: `google`, `openai`, `anthropic`, `ollama`, `local`
+- When specified: `provider` must be one of `google`, `openai`, `anthropic`, `ollama`, `local`, `openrouter`, **or** any other name paired with a `base_url`
 - When specified: `name` must not be empty
-- `base_url` required for `local` provider
-
+- `base_url` required for unknown provider names; optional for `local` (defaults to `http://localhost:11434/v1`)
+- `api_key_env` optional — overrides the derived `<PROVIDER>_API_KEY` name
+- `stream_usage` optional (default `true`) — disable only for endpoints that reject streaming usage
 ### Trigger Configuration
 - `type` must be: `manual`, `schedule`, or `watch`
 - **Schedule triggers:** Must have `every` OR `cron` (not both, not neither)

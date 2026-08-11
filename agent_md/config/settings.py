@@ -169,12 +169,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Secrets (from .env) ---
-    GOOGLE_API_KEY: str | None = None
-    OPENAI_API_KEY: str | None = None
-    ANTHROPIC_API_KEY: str | None = None
-
     # --- App config (from config.yaml) ---
+    # API keys are not Settings fields: they live in os.environ (loaded from
+    # .env by python-dotenv) and are resolved via providers.keys.api_key_env_for.
     workspace: str = ""
     agents_dir: str = "agents"
     db_path: str = ""
@@ -206,8 +203,17 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def load_yaml_config(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Load config.yaml and merge (lower priority than env vars)."""
-        config_path = _ensure_default_config()
+        """Load config.yaml and merge (lower priority than env vars).
+
+        Read-only: if the file is missing, leave ``data`` unchanged so field
+        defaults apply in memory. Creating ``config.yaml`` is an explicit
+        action of setup (and ``info``), not a side effect of importing Settings.
+        """
+        # Do not call ``_get_config_dir()`` here — it mkdir's. Absence must
+        # mean absence, with zero filesystem writes on the read path.
+        config_path = Path.home() / ".config" / "agentmd" / "config.yaml"
+        if not config_path.is_file():
+            return data
 
         try:
             raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}

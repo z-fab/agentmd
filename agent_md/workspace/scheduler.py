@@ -1,6 +1,7 @@
 import asyncio
 import fnmatch
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from agent_md.workspace.parser import is_agent_file, parse_agent_file
 from agent_md.workspace.registry import AgentConfig, AgentRegistry
 from agent_md.execution.runner import AgentRunner
 from agent_md.execution.self_writes import process_ledger
+from agent_md.providers.keys import api_key_env_for
 
 logger = logging.getLogger(__name__)
 
@@ -133,21 +135,39 @@ class AgentScheduler:
         self._watch_handlers: dict[str, list] = {}  # agent_id -> list of watch_ids
         self._paused = False
 
-    def schedule_agent(self, config: AgentConfig) -> None:
-        """Schedule an agent based on its trigger config."""
+    def schedule_agent(self, config: AgentConfig) -> str:
+        """Schedule an agent based on its trigger config.
+
+        Returns ``"scheduled"`` when a job was added, ``"missing_key"`` when the
+        agent needs a credential that is not set (and so must not run
+        unattended), or ``"skipped"`` for every other non-schedule case.
+        """
         job_id = f"agent_{config.id}"
 
         if not config.enabled:
             logger.info(f"Agent '{config.id}' is disabled, skipping schedule")
-            return
+            return "skipped"
 
         if config.trigger.type == "manual":
             logger.info(f"Agent '{config.id}' is manual-only, skipping schedule")
-            return
+            return "skipped"
 
         if config.trigger.type == "watch":
             logger.info(f"Agent '{config.id}' is watch-only, skipping APScheduler (handled by watchdog)")
-            return
+            return "skipped"
+
+        if config.model is not None:
+            env_var = api_key_env_for(
+                config.model.provider,
+                config.model.base_url,
+                config.model.api_key_env,
+            )
+            if env_var is not None and not os.environ.get(env_var):
+                logger.error(
+                    f"Agent '{config.id}' not scheduled: {env_var} is not set "
+                    f"(required by provider '{config.model.provider}')"
+                )
+                return "missing_key"
 
         if config.trigger.type == "schedule":
             if config.trigger.cron:
@@ -159,10 +179,10 @@ class AgentScheduler:
                 trigger_desc = f"every({config.trigger.every})"
             else:
                 logger.warning(f"Schedule trigger for '{config.id}' has neither 'every' nor 'cron'")
-                return
+                return "skipped"
         else:
             logger.warning(f"Unknown trigger type: {config.trigger.type}")
-            return
+            return "skipped"
 
         self.scheduler.add_job(
             self._execute_agent,
@@ -173,6 +193,7 @@ class AgentScheduler:
             misfire_grace_time=60,
         )
         logger.info(f"Scheduled agent '{config.id}': {trigger_desc}")
+        return "scheduled"
 
     def unschedule_agent(self, agent_id: str) -> None:
         """Remove an agent's scheduled job and watch handlers."""
@@ -486,6 +507,12 @@ class _AgentFileHandler(FileSystemEventHandler):
                 logger.info(f"Hot-reloaded agent (full): {config.id}")
                 event_type = "loaded" if old is None else "updated"
                 self._publish_event(event_type, config.id, config.name)
+
+            if config.model and config.model.provider == "openrouter":
+                from agent_md.workspace.services import openrouter_load_warnings
+
+                for note in openrouter_load_warnings(config.model.name):
+                    logger.warning(f"Agent '{config.id}': {note}")
 
         except Exception as e:
             logger.warning(f"Failed to reload {path.name}: {e}")

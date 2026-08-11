@@ -125,7 +125,7 @@ def _can_use_ai() -> tuple[bool, str, str]:
     """Check if AI generation is available. Returns (available, provider, model)."""
     import os
 
-    from agent_md.workspace.services import _PROVIDER_ENV_VARS
+    from agent_md.providers.keys import api_key_env_for
     from agent_md.config.settings import settings
 
     provider = settings.defaults_provider
@@ -134,11 +134,10 @@ def _can_use_ai() -> tuple[bool, str, str]:
     if not provider:
         return False, "", ""
 
-    if provider in ("ollama", "local"):
+    env_var = api_key_env_for(provider)
+    if env_var is None:
         return True, provider, model
-
-    env_var = _PROVIDER_ENV_VARS.get(provider)
-    if env_var and os.environ.get(env_var):
+    if os.environ.get(env_var):
         return True, provider, model
 
     return False, provider, model
@@ -1272,7 +1271,13 @@ def validate(
     # Model + API key
     model_str = f"{config.model.provider} / {config.model.name}" if config.model else "default"
     api_status = "[green]\u2713 API key set[/green]" if result.api_key_set else "[red]\u2717 API key missing[/red]"
-    if not result.api_key_set and config.model and config.model.provider not in ("ollama", "local"):
+    from agent_md.providers.keys import api_key_env_for
+
+    needs_key = (
+        config.model is not None
+        and api_key_env_for(config.model.provider, config.model.base_url, config.model.api_key_env) is not None
+    )
+    if not result.api_key_set and needs_key:
         errors += 1
     print_kv("Model", f"{model_str}         {api_status}")
 
@@ -1341,6 +1346,12 @@ def validate(
         console.print("\n  [bold]Frontmatter[/bold]")
         for w in unknown_warnings:
             print_check(w, "warn")
+
+    if result.errors:
+        console.print("\n  [bold]Errors[/bold]")
+        for e in result.errors:
+            console.print(f"  [red]✗ {e}[/red]")
+            errors += 1
 
     # Other warnings (not already surfaced above)
     _surfaced = {"cron", "watch path", "path:"}

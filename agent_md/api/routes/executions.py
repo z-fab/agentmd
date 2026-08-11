@@ -52,6 +52,24 @@ def _execution_identity(execution, registry, logs=()) -> dict:
     return agent_identity_payload(agent_id, display_name)
 
 
+def _complete_event_data(execution, identity: dict) -> dict:
+    """Build a ``complete`` payload from a finished DB row.
+
+    Used when the client connects after the run already finished (or after an
+    idle timeout) and the live bus event was missed. Must carry the same fields
+    the runner publishes — especially ``error`` — or a graph-build failure
+    (missing API key, bad config) shows up as a bare status with no message.
+    """
+    return {
+        "status": execution.status,
+        "duration_ms": execution.duration_ms,
+        "total_tokens": execution.total_tokens,
+        "cost_usd": execution.cost_usd,
+        "error": execution.error,
+        **identity,
+    }
+
+
 @router.get("", response_model=list[ExecutionSummary])
 async def list_executions(
     request: Request,
@@ -182,7 +200,7 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             yield ServerSentEvent(data={"status": "waiting", **identity}, event="waiting")
             return
         if execution and execution.status not in ("running", "pending"):
-            yield ServerSentEvent(data={"status": execution.status, **identity}, event="complete")
+            yield ServerSentEvent(data=_complete_event_data(execution, identity), event="complete")
             return
 
         # Drain live events (dedup against replay)
@@ -198,11 +216,15 @@ async def stream_execution(exec_id: int, request: Request) -> AsyncIterable[Serv
             if event is TIMEOUT:
                 execution = await db.get_execution(exec_id)
                 if not execution or execution.status not in ("running", "pending"):
-                    ev = "waiting" if execution and execution.status == "waiting" else "complete"
-                    yield ServerSentEvent(
-                        data={"status": execution.status if execution else "unknown", **identity},
-                        event=ev,
-                    )
+                    if execution and execution.status == "waiting":
+                        yield ServerSentEvent(data={"status": "waiting", **identity}, event="waiting")
+                    elif execution:
+                        yield ServerSentEvent(
+                            data=_complete_event_data(execution, identity),
+                            event="complete",
+                        )
+                    else:
+                        yield ServerSentEvent(data={"status": "unknown", **identity}, event="complete")
                     return
                 continue
 

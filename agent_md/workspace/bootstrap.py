@@ -224,6 +224,11 @@ async def bootstrap(
                 config = parse_agent_file(md_file)
                 registry.register(config)
                 loaded += 1
+                if config.model and config.model.provider == "openrouter":
+                    from agent_md.workspace.services import openrouter_load_warnings
+
+                    for note in openrouter_load_warnings(config.model.name):
+                        logger.warning(f"Agent '{config.id}': {note}")
             except Exception as e:
                 logger.error(f"Failed to load {md_file.name}: {e}")
                 errors += 1
@@ -266,8 +271,13 @@ async def bootstrap(
                 cancel_events=cancel_events if cancel_events is not None else {},
             )
             try:
+                missing_key = 0
                 for config in registry.enabled():
-                    scheduler.schedule_agent(config)
+                    if scheduler.schedule_agent(config) == "missing_key":
+                        missing_key += 1
+
+                if missing_key:
+                    logger.info(f"{missing_key} agent(s) registered but not scheduled: missing API key")
 
                 scheduler.start(agents_dir)
             except BaseException:

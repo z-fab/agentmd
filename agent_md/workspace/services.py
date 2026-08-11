@@ -72,14 +72,7 @@ class ValidationResult:
     history_level: str = "low"
     api_key_set: bool = False
     warnings: list[str] = field(default_factory=list)
-
-
-# Map provider to environment variable name
-_PROVIDER_ENV_VARS = {
-    "google": "GOOGLE_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
+    errors: list[str] = field(default_factory=list)
 
 
 def _resolve_relative(path: str, workspace: Path) -> Path:
@@ -100,6 +93,52 @@ def _resolve_ws_and_agents_dir(workspace: Path | None) -> tuple[Path, Path]:
     ws = ws.resolve()
     agents_dir = _resolve_relative(settings.agents_dir, ws)
     return ws, agents_dir
+
+
+def _openrouter_capability_notes(model_name: str, has_tools: bool) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings) from langchain-openrouter's bundled profiles.
+
+    agent.md always calls bind_tools, so a model without tool calling is not
+    limited here — it is unusable. The profile table is a snapshot that ages,
+    so `validate` is strict (the user asked) while runtime load is lenient
+    (stale data must not break a running system).
+    """
+    try:
+        from langchain_openrouter.data._profiles import _PROFILES
+    except ImportError:
+        return [], []
+
+    profile = _PROFILES.get(model_name)
+    if profile is None:
+        return [], [
+            f"model '{model_name}' is not in the bundled profile table — "
+            f"it may be new, so capabilities were not checked"
+        ]
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    if has_tools and not profile.get("tool_calling", True):
+        errors.append(f"model '{model_name}' does not support tool calling, and agent.md always binds tools")
+    return errors, warnings
+
+
+def openrouter_load_warnings(model_name: str) -> list[str]:
+    """Lenient runtime-load notes for an OpenRouter model.
+
+    ``tool_calling: false`` → warning (do not refuse to load).
+    Absent from the profile table → silence (stale snapshots must not alarm).
+    """
+    try:
+        from langchain_openrouter.data._profiles import _PROFILES
+    except ImportError:
+        return []
+
+    profile = _PROFILES.get(model_name)
+    if profile is None:
+        return []
+    if not profile.get("tool_calling", True):
+        return [f"model '{model_name}' does not support tool calling, and agent.md always binds tools"]
+    return []
 
 
 def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None) -> ValidationResult:
@@ -152,6 +191,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
 
     # Unknown frontmatter keys (typos silently ignored by Pydantic)
     warnings = [format_unknown_key_warning(key) for key in config.unknown_keys]
+    errors: list[str] = []
 
     # Check paths
     paths_valid = []
@@ -188,11 +228,15 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
     # Check API key
     api_key_set = False
     if config.model:
-        env_var = _PROVIDER_ENV_VARS.get(config.model.provider)
-        if env_var:
-            api_key_set = bool(os.environ.get(env_var))
-        elif config.model.provider in ("ollama", "local"):
-            api_key_set = True  # No key needed
+        from agent_md.providers.keys import api_key_env_for
+
+        env_var = api_key_env_for(
+            config.model.provider,
+            config.model.base_url,
+            config.model.api_key_env,
+        )
+        # None means the provider needs no credential (ollama, loopback endpoints).
+        api_key_set = True if env_var is None else bool(os.environ.get(env_var))
 
     # Validate trigger
     if config.trigger.type == "schedule" and config.trigger.cron:
@@ -219,6 +263,27 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
                 f"{config.model.provider}/{config.model.name} — limit will not be enforced at runtime"
             )
 
+    if config.model and config.model.provider == "openrouter":
+        cap_errors, cap_warnings = _openrouter_capability_notes(config.model.name, has_tools=True)
+        warnings.extend(cap_warnings)
+        errors.extend(cap_errors)
+
+        max_out = None
+        try:
+            from langchain_openrouter.data._profiles import _PROFILES
+
+            max_out = (_PROFILES.get(config.model.name) or {}).get("max_output_tokens")
+        except ImportError:
+            pass
+        # settings.max_tokens defaults to 4096, so this fires for a default the
+        # user never chose. That is intended: the truncation is real either way,
+        # and the wording says "effective" rather than blaming the config.
+        if max_out and config.settings.max_tokens > max_out:
+            warnings.append(
+                f"effective max_tokens ({config.settings.max_tokens}) exceeds this model's "
+                f"max_output_tokens ({max_out}); output will be truncated"
+            )
+
     return ValidationResult(
         config=config,
         builtin_tools=builtins,
@@ -233,6 +298,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
         history_level=config.history,
         api_key_set=api_key_set,
         warnings=warnings,
+        errors=errors,
     )
 
 
