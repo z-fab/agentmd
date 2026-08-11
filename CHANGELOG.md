@@ -3,11 +3,12 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.17.1] — 2026-08-11
 
 ### Fixed
 
 - **A watch trigger no longer waits for something else to wake the loop** ([#15](https://github.com/z-fab/agentmd/issues/15)) — the debounce timer was armed with `loop.call_later` from the watchdog's thread. `call_later` is not thread-safe and, more to the point, does not wake a sleeping event loop: the timer went into the heap while `select` was still blocked on a timeout computed before it existed, so the trigger sat there until the loop happened to wake for another reason. In a workspace of watchers alone — where `AsyncIOScheduler` has no jobs to wake it — that wait has no bound; measured, a 50 ms debounce fired at 3.003 s against a loop idle for 3 s. It now fires at 0.053 s. Events are handed to the loop with `call_soon_threadsafe`, and cancelling the previous timer moved along with the arming, so `_debounce_timers` and `_pending_contexts` are read and written from the loop thread only. Beyond latency, this is what made a negative assertion about watch trustworthy: a single long `wait_for` used to report "nothing arrived" for an event that was merely undelivered, so such a test stayed green with the suppression it was guarding switched off.
+- **Tests fail instead of hanging** ([#16](https://github.com/z-fab/agentmd/issues/16)) — 17 tests closed their `Database` as the last statement of the body, so any assertion that failed before it skipped the close and aiosqlite's non-daemon connection thread kept the interpreter alive: pytest printed the failure and the process never exited, which reads as a stuck CI job rather than a red test. Databases now close in fixture teardown. Test-only change; `tests/conftest.py` and the README record the convention.
 
 ## [0.17.0] — 2026-08-10
 
