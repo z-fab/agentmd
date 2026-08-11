@@ -9,7 +9,13 @@ Teardown conventions — a hang looks like broken CI, not a red test:
 - Stream / event waits: always bound with ``asyncio.wait_for`` (or equivalent).
 - Backend servers: stop via the internal path (e.g. ``shutdown_event.set()``),
   never via HTTP the test itself may have broken — cancelling the uvicorn task
-  skips lifespan shutdown and leaks the backend's ``Database``.
+  leaves the lifespan task parked on its shutdown event, so shutdown never runs
+  and the backend's ``Database`` leaks.
+
+Asserting inside ``async with app.router.lifespan_context(app)`` is fine as of
+#17: ``_lifespan`` closes the runtime in a ``finally``, so the exception now
+propagates through a shutdown that has already run. It was not fine before —
+cleanup sat after the ``yield`` and anything raised in the body skipped it.
 """
 
 from __future__ import annotations

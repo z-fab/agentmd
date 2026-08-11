@@ -301,6 +301,7 @@ A hang looks like broken CI, not a red test. Follow the conventions in
   after assertions. aiosqlite's connection thread is non-daemon.
 - Bound stream/event waits with `asyncio.wait_for`.
 - Stop backends via the internal shutdown path, not HTTP.
+- Asserting inside `lifespan_context(...)` is safe: shutdown runs in a `finally`.
 
 `pytest-timeout` is intentionally not a project dependency: a global ceiling
 masks hangs instead of fixing teardown, and wall-clock mutation checks catch
