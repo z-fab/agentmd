@@ -72,6 +72,7 @@ class ValidationResult:
     history_level: str = "low"
     api_key_set: bool = False
     warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 def _resolve_relative(path: str, workspace: Path) -> Path:
@@ -119,6 +120,25 @@ def _openrouter_capability_notes(model_name: str, has_tools: bool) -> tuple[list
     if has_tools and not profile.get("tool_calling", True):
         errors.append(f"model '{model_name}' does not support tool calling, and agent.md always binds tools")
     return errors, warnings
+
+
+def openrouter_load_warnings(model_name: str) -> list[str]:
+    """Lenient runtime-load notes for an OpenRouter model.
+
+    ``tool_calling: false`` → warning (do not refuse to load).
+    Absent from the profile table → silence (stale snapshots must not alarm).
+    """
+    try:
+        from langchain_openrouter.data._profiles import _PROFILES
+    except ImportError:
+        return []
+
+    profile = _PROFILES.get(model_name)
+    if profile is None:
+        return []
+    if not profile.get("tool_calling", True):
+        return [f"model '{model_name}' does not support tool calling, and agent.md always binds tools"]
+    return []
 
 
 def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None) -> ValidationResult:
@@ -171,6 +191,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
 
     # Unknown frontmatter keys (typos silently ignored by Pydantic)
     warnings = [format_unknown_key_warning(key) for key in config.unknown_keys]
+    errors: list[str] = []
 
     # Check paths
     paths_valid = []
@@ -245,7 +266,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
     if config.model and config.model.provider == "openrouter":
         cap_errors, cap_warnings = _openrouter_capability_notes(config.model.name, has_tools=True)
         warnings.extend(cap_warnings)
-        warnings.extend(cap_errors)
+        errors.extend(cap_errors)
 
         max_out = None
         try:
@@ -277,6 +298,7 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
         history_level=config.history,
         api_key_set=api_key_set,
         warnings=warnings,
+        errors=errors,
     )
 
 

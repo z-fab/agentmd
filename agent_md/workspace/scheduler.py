@@ -508,6 +508,12 @@ class _AgentFileHandler(FileSystemEventHandler):
                 event_type = "loaded" if old is None else "updated"
                 self._publish_event(event_type, config.id, config.name)
 
+            if config.model and config.model.provider == "openrouter":
+                from agent_md.workspace.services import openrouter_load_warnings
+
+                for note in openrouter_load_warnings(config.model.name):
+                    logger.warning(f"Agent '{config.id}': {note}")
+
         except Exception as e:
             logger.warning(f"Failed to reload {path.name}: {e}")
 

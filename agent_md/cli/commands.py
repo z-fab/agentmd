@@ -1347,6 +1347,12 @@ def validate(
         for w in unknown_warnings:
             print_check(w, "warn")
 
+    if result.errors:
+        console.print("\n  [bold]Errors[/bold]")
+        for e in result.errors:
+            console.print(f"  [red]✗ {e}[/red]")
+            errors += 1
+
     # Other warnings (not already surfaced above)
     _surfaced = {"cron", "watch path", "path:"}
     other_warnings = [
