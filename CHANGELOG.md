@@ -3,7 +3,7 @@
 All notable changes to Agentmd are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.17.3] — 2026-08-11
 
 ### Fixed
 
