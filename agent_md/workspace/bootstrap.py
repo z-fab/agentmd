@@ -266,8 +266,15 @@ async def bootstrap(
                 cancel_events=cancel_events if cancel_events is not None else {},
             )
             try:
+                missing_key = 0
                 for config in registry.enabled():
-                    scheduler.schedule_agent(config)
+                    if scheduler.schedule_agent(config) == "missing_key":
+                        missing_key += 1
+
+                if missing_key:
+                    logger.info(
+                        f"{missing_key} agent(s) registered but not scheduled: missing API key"
+                    )
 
                 scheduler.start(agents_dir)
             except BaseException:
