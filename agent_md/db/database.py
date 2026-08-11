@@ -89,7 +89,16 @@ class Database:
         self._db: Optional[aiosqlite.Connection] = None
 
     async def connect(self, readonly: bool = False) -> None:
-        """Open the database connection and create tables."""
+        """Open the database connection and create tables.
+
+        Everything after ``aiosqlite.connect()`` — the PRAGMAs, the schema, the
+        migrations — can fail, most visibly with ``database is locked`` when
+        another backend holds the file. The connection exists by then, and with
+        it a *non-daemon* worker thread: leaving it open on the way out does not
+        merely leak, it wedges interpreter shutdown in ``threading._shutdown()``
+        and the process never exits (#17). So a failed connect closes what it
+        opened and re-raises the original error untouched.
+        """
         if readonly:
             if not self.db_path.exists():
                 # Fresh install: create schema so readonly CLI commands don't crash.
@@ -102,17 +111,39 @@ class Database:
                     await self._migrate(tmp)
             uri = f"file:{self.db_path}?mode=ro"
             self._db = await aiosqlite.connect(uri, uri=True)
-            self._db.row_factory = aiosqlite.Row
         else:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._db = await aiosqlite.connect(str(self.db_path))
+
+        # One guard over everything that happens with the connection open, so
+        # the invariant holds by shape rather than by remembering to extend it.
+        try:
             self._db.row_factory = aiosqlite.Row
-            await self._db.execute("PRAGMA journal_mode=WAL")
-            await self._db.execute("PRAGMA synchronous=NORMAL")
-            await self._db.executescript(SCHEMA)
-            await self._db.commit()
-            await self._migrate(self._db)
+            if not readonly:
+                await self._db.execute("PRAGMA journal_mode=WAL")
+                await self._db.execute("PRAGMA synchronous=NORMAL")
+                await self._db.executescript(SCHEMA)
+                await self._db.commit()
+                await self._migrate(self._db)
+        except BaseException:
+            await self._discard_connection()
+            raise
         logger.info(f"Database connected: {self.db_path}")
+
+    async def _discard_connection(self) -> None:
+        """Close a half-open connection without disturbing the error in flight.
+
+        Called from an ``except`` block, so it must not raise: a close that
+        failed would replace ``database is locked`` with something unrelated and
+        send the operator after the wrong bug.
+        """
+        db, self._db = self._db, None
+        if db is None:
+            return
+        try:
+            await db.close()
+        except Exception as e:
+            logger.warning(f"Failed to close half-open database {self.db_path}: {e}")
 
     async def close(self) -> None:
         """Close the database connection."""
