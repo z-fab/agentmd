@@ -40,7 +40,14 @@ def test_derive_key_env(provider, expected):
         ("http://localhost:11434/v1", True),
         ("http://127.0.0.1:8000/v1", True),
         ("http://[::1]:8000/v1", True),
+        ("http://127.0.0.2:8000/v1", True),
+        ("http://[0:0:0:0:0:0:0:1]:8000/v1", True),
+        ("http://localhost.:8000/v1", True),
+        ("http://LOCALHOST:8000/v1", True),
         ("https://api.groq.com/openai/v1", False),
+        ("http://0.0.0.0:8000/v1", False),
+        ("localhost:8000", False),  # missing scheme — not a parseable URL host
+        ("http://[::1", False),  # malformed — must not raise
         (None, False),
     ],
 )

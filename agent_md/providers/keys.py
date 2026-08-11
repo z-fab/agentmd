@@ -12,6 +12,7 @@ GROQ_API_KEY was never set.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from urllib.parse import urlparse
 
@@ -24,8 +25,6 @@ DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1"
 # Providers whose adapter takes no credential at all.
 _KEYLESS_PROVIDERS = frozenset({"ollama"})
 
-_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-
 
 def derive_key_env(provider: str) -> str:
     """``groq`` -> ``GROQ_API_KEY``; ``together-ai`` -> ``TOGETHER_AI_API_KEY``."""
@@ -33,11 +32,28 @@ def derive_key_env(provider: str) -> str:
 
 
 def is_loopback(base_url: str | None) -> bool:
-    """True when the endpoint is on this machine, and so needs no credential."""
+    """True when the endpoint is on this machine, and so needs no credential.
+
+    Uses ``ipaddress`` for numeric hosts (covers all of 127.0.0.0/8 and ::1 in
+    any spelling). Hostnames are only trusted when they are ``localhost``
+    (case-insensitive, optional trailing dot) — never DNS-resolved.
+    Malformed URLs return False rather than raising.
+    """
     if not base_url:
         return False
-    host = urlparse(base_url).hostname
-    return host in _LOOPBACK_HOSTS
+    try:
+        host = urlparse(base_url).hostname
+    except ValueError:
+        return False
+    if not host:
+        return False
+    host = host.rstrip(".").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def api_key_env_for(
