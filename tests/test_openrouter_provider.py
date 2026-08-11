@@ -13,7 +13,7 @@ import textwrap
 
 import pytest
 
-from agent_md.providers.openrouter import _CostCapturingClient, _cost_sink
+from agent_md.providers.openrouter import _CostCapturingClient, _cost_sink, _reset_cost_sink
 
 
 class _FakeUsage:
@@ -60,7 +60,7 @@ async def _drain_with_attach(client: _CostCapturingClient) -> list[float]:
             if getattr(chunk, "usage", None) is not None and sink:
                 costs.append(sink.pop(0))
     finally:
-        _cost_sink.reset(token)
+        _reset_cost_sink(token)
     return costs
 
 
@@ -72,7 +72,7 @@ async def test_cost_capturing_client_records_reported_cost():
         stream = await client.chat.send_async()
         seen = [chunk async for chunk in stream]
     finally:
-        _cost_sink.reset(token)
+        _reset_cost_sink(token)
 
     assert len(seen) == 2, "the proxy must pass every chunk through untouched"
     assert sink == [0.0042]
@@ -86,7 +86,7 @@ async def test_cost_capturing_client_ignores_chunks_without_usage():
         stream = await client.chat.send_async()
         _ = [chunk async for chunk in stream]
     finally:
-        _cost_sink.reset(token)
+        _reset_cost_sink(token)
     assert sink == []
 
 
@@ -128,7 +128,7 @@ async def test_interleaved_streams_keep_their_own_costs():
                     return sink.pop(0)
             raise AssertionError("no usage chunk")
         finally:
-            _cost_sink.reset(token)
+            _reset_cost_sink(token)
 
     task_a = asyncio.create_task(run_stream(cost=1.0, is_a=True))
     await a_captured.wait()
@@ -154,6 +154,45 @@ async def test_failed_stream_leaves_no_cost_for_the_next():
     costs_b = await _drain_with_attach(client_b)
     assert costs_b == [2.0]
     assert _cost_sink.get() is None
+
+
+async def test_cross_task_drain_does_not_raise_on_reset():
+    """Consuming an _astream across tasks must not crash on ContextVar.reset.
+
+    Reproduces: task A takes the first chunk; task B drains the rest and hits
+    ``ValueError: Token ... was created in a different Context`` in finally.
+    Reset must tolerate that without dropping the per-stream isolation that
+    ``set`` still provides on the next call.
+    """
+
+    async def _astream_like():
+        sink: list[float] = []
+        token = _cost_sink.set(sink)
+        try:
+            sink.append(1.0)
+            yield 1
+            sink.append(2.0)
+            yield 2
+        finally:
+            _reset_cost_sink(token)
+
+    stream = _astream_like()
+    assert await stream.__anext__() == 1
+
+    async def _drain_rest():
+        return [item async for item in stream]
+
+    rest = await asyncio.create_task(_drain_rest())
+    assert rest == [2]
+
+    # A fresh stream in this task still gets an isolated sink.
+    sink2: list[float] = []
+    token2 = _cost_sink.set(sink2)
+    try:
+        assert _cost_sink.get() is sink2
+        assert sink2 == []
+    finally:
+        _reset_cost_sink(token2)
 
 
 async def test_guard_upstream_still_drops_cost_on_the_terminal_chunk():

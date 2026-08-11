@@ -33,6 +33,21 @@ from langchain_core.language_models import BaseChatModel
 _cost_sink: ContextVar[list[float] | None] = ContextVar("openrouter_cost_sink", default=None)
 
 
+def _reset_cost_sink(token: Any) -> None:
+    """Reset the per-stream sink, tolerating cross-task generator consumption.
+
+    ``ContextVar.reset`` raises ``ValueError`` when the token was created in a
+    different context (e.g. task A started ``_astream`` and task B drained it).
+    Swallow that so the crash does not escape; a fresh ``_astream`` always
+    installs a new sink via ``set``, so sink state still cannot leak between
+    streams.
+    """
+    try:
+        _cost_sink.reset(token)
+    except ValueError:
+        pass
+
+
 class _CostCapturingChat:
     """Proxies the SDK's ``chat`` namespace, recording each reported cost."""
 
@@ -93,7 +108,7 @@ def build_openrouter(model: str, settings: dict, api_key: str) -> BaseChatModel:
                         message.response_metadata["cost"] = sink.pop(0)
                     yield generation
             finally:
-                _cost_sink.reset(token)
+                _reset_cost_sink(token)
 
     kwargs: dict = {
         "model": model,
