@@ -8,6 +8,8 @@ def create_chat_model(
     model: str,
     settings: dict,
     base_url: str | None = None,
+    api_key_env: str | None = None,
+    stream_usage: bool = True,
 ) -> BaseChatModel:
     """Create a ChatModel instance for the given provider.
 
@@ -15,10 +17,13 @@ def create_chat_model(
     are read from environment variables (loaded via python-dotenv at boot).
 
     Args:
-        provider: Provider identifier ('google', 'openai', 'anthropic', 'ollama', 'local').
+        provider: Provider identifier ('google', 'openai', 'anthropic', 'ollama', 'local',
+            or any name with a ``base_url`` for an OpenAI-compatible endpoint).
         model: Model name (e.g. 'gemini-2.5-flash').
         settings: Dict with temperature, max_tokens, timeout, etc.
-        base_url: Optional base URL for openai/ollama/local providers.
+        base_url: Optional base URL for openai/ollama/local/OpenAI-compatible providers.
+        api_key_env: Optional env var name holding the API key (defaults to ``<PROVIDER>_API_KEY``).
+        stream_usage: Whether to request streaming token usage on OpenAI-compatible endpoints.
 
     Returns:
         A configured BaseChatModel instance.
@@ -108,24 +113,32 @@ def create_chat_model(
             return ChatOllama(**kwargs)
 
         case "local":
-            try:
-                from langchain_openai import ChatOpenAI
-            except ImportError:
-                raise ImportError(
-                    "Provider 'local' requires langchain-openai. Install with: pip install langchain-openai"
-                )
-            kwargs = {
-                "model": model,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "base_url": base_url or "http://localhost:11434/v1",
-                "api_key": "not-needed",
-                "stream_usage": True,
-            }
-            if timeout is not None:
-                kwargs["timeout"] = timeout
-            return ChatOpenAI(**kwargs)
+            from agent_md.providers.keys import resolve_api_key
+            from agent_md.providers.openai_compat import build_openai_compatible
+
+            resolved_url = base_url or "http://localhost:11434/v1"
+            return build_openai_compatible(
+                model=model,
+                settings=settings,
+                base_url=resolved_url,
+                api_key=resolve_api_key(provider, resolved_url, api_key_env),
+                stream_usage=stream_usage,
+            )
 
         case _:
-            supported = ["google", "openai", "anthropic", "ollama", "local"]
-            raise ValueError(f"Unsupported provider: '{provider}'. Supported: {supported}")
+            # Family B — any OpenAI-compatible endpoint, driven by config alone.
+            if not base_url:
+                raise ValueError(
+                    f"Unsupported provider: '{provider}'. Supply a `base_url` to use it "
+                    f"as an OpenAI-compatible endpoint."
+                )
+            from agent_md.providers.keys import resolve_api_key
+            from agent_md.providers.openai_compat import build_openai_compatible
+
+            return build_openai_compatible(
+                model=model,
+                settings=settings,
+                base_url=base_url,
+                api_key=resolve_api_key(provider, base_url, api_key_env),
+                stream_usage=stream_usage,
+            )

@@ -515,6 +515,8 @@ class AgentRunner:
             model=config.model.name,
             settings=config.settings.model_dump(),
             base_url=config.model.base_url,
+            api_key_env=config.model.api_key_env,
+            stream_usage=config.model.stream_usage,
         )
 
         from agent_md.config.models import effective_confirm_tools
