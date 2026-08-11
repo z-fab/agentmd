@@ -50,6 +50,32 @@ def _check_limits(settings, tool_call_count: int, total_tokens: int, cost_usd: f
         raise LimitExceeded("max_cost_usd", f"${cost_usd:.4f} (limit: ${settings.max_cost_usd:.2f})")
 
 
+def _resolve_cost(reported: float | None, estimated: float | None) -> float | None:
+    """Reported cost wins; the two are never summed.
+
+    estimate_cost() recomputes from cumulative totals while reported cost
+    accumulates per response, so adding them produces a number that is neither.
+    An execution uses a single model, so this is all-or-nothing per run.
+    """
+    return reported if reported is not None else estimated
+
+
+def _message_reported_cost(msg) -> float | None:
+    """OpenRouter (and similar) put the billed cost on ``response_metadata['cost']``.
+
+    Requires a real ``dict`` — ``MagicMock`` attributes are truthy and
+    ``float(MagicMock())`` is ``1.0``, which would invent a dollar of cost on
+    every mocked message.
+    """
+    reported = getattr(msg, "response_metadata", None)
+    if not isinstance(reported, dict):
+        return None
+    chunk_cost = reported.get("cost")
+    if chunk_cost is None:
+        return None
+    return float(chunk_cost)
+
+
 def _looks_like_error(msg) -> bool:
     """Return True if a tool response looks like an error."""
     if getattr(msg, "type", "") != "tool":
@@ -685,6 +711,7 @@ class AgentRunner:
         child_output_tokens = 0
         tool_call_count = 0
         cost_usd: float | None = None
+        reported_cost_usd: float | None = None
         child_cost_usd = 0.0
         _pricing_warned = False
         last_errors: list[tuple[str, str]] = []  # (tool_name, normalized_error)
@@ -749,6 +776,7 @@ class AgentRunner:
                         child_output_tokens, \
                         tool_call_count, \
                         cost_usd, \
+                        reported_cost_usd, \
                         child_cost_usd, \
                         _pricing_warned, \
                         last_errors
@@ -782,6 +810,9 @@ class AgentRunner:
                             total_input_tokens += usage.get("input_tokens", 0)
                             total_output_tokens += usage.get("output_tokens", 0)
 
+                        if (chunk_cost := _message_reported_cost(msg)) is not None:
+                            reported_cost_usd = (reported_cost_usd or 0.0) + chunk_cost
+
                         # Fold in sub-agent usage reported by run_agent tool
                         if sub_agent_usage["input_tokens"] or sub_agent_usage["output_tokens"]:
                             child_input_tokens += sub_agent_usage["input_tokens"]
@@ -797,11 +828,14 @@ class AgentRunner:
                             tool_call_count += len(msg.tool_calls)
 
                         # Estimate running cost (parent model only) + child costs as reported
-                        parent_cost = estimate_cost(
-                            config.model.provider,
-                            config.model.name,
-                            total_input_tokens,
-                            total_output_tokens,
+                        parent_cost = _resolve_cost(
+                            reported_cost_usd,
+                            estimate_cost(
+                                config.model.provider,
+                                config.model.name,
+                                total_input_tokens,
+                                total_output_tokens,
+                            ),
                         )
                         if parent_cost is not None or child_cost_usd:
                             cost_usd = (parent_cost or 0.0) + child_cost_usd
@@ -1036,6 +1070,7 @@ class AgentRunner:
         total_output_tokens = base_output
         tool_call_count = base_tool_calls
         cost_usd = base_cost
+        reported_cost_usd: float | None = None
         child_input_tokens = sunk_child_tokens
         child_output_tokens = 0
         child_cost_usd = 0.0  # only NEW child costs this segment; sunk_child_cost is separate
@@ -1074,6 +1109,7 @@ class AgentRunner:
                     child_output_tokens, \
                     tool_call_count, \
                     cost_usd, \
+                    reported_cost_usd, \
                     child_cost_usd, \
                     last_errors
                 async for msg in _stream_state(graph, Command(resume=response), config=graph_config):
@@ -1089,6 +1125,8 @@ class AgentRunner:
                     if usage:
                         total_input_tokens += usage.get("input_tokens", 0)
                         total_output_tokens += usage.get("output_tokens", 0)
+                    if (chunk_cost := _message_reported_cost(msg)) is not None:
+                        reported_cost_usd = (reported_cost_usd or 0.0) + chunk_cost
                     if sub_agent_usage["input_tokens"] or sub_agent_usage["output_tokens"]:
                         child_input_tokens += sub_agent_usage["input_tokens"]
                         child_output_tokens += sub_agent_usage["output_tokens"]
@@ -1097,8 +1135,11 @@ class AgentRunner:
                     if sub_agent_usage["cost_usd"]:
                         child_cost_usd += sub_agent_usage["cost_usd"]
                         sub_agent_usage["cost_usd"] = 0.0
-                    parent_cost = estimate_cost(
-                        config.model.provider, config.model.name, total_input_tokens, total_output_tokens
+                    parent_cost = _resolve_cost(
+                        reported_cost_usd,
+                        estimate_cost(
+                            config.model.provider, config.model.name, total_input_tokens, total_output_tokens
+                        ),
                     )
                     if parent_cost is not None or sunk_child_cost or child_cost_usd or base_cost is not None:
                         # Parent tokens priced at parent rate; sunk + new child costs kept as-reported.

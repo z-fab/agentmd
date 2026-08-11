@@ -94,6 +94,35 @@ def _resolve_ws_and_agents_dir(workspace: Path | None) -> tuple[Path, Path]:
     return ws, agents_dir
 
 
+def _openrouter_capability_notes(model_name: str, has_tools: bool) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings) from langchain-openrouter's bundled profiles.
+
+    agent.md always calls bind_tools, so a model without tool calling is not
+    limited here — it is unusable. The profile table is a snapshot that ages,
+    so `validate` is strict (the user asked) while runtime load is lenient
+    (stale data must not break a running system).
+    """
+    try:
+        from langchain_openrouter.data._profiles import _PROFILES
+    except ImportError:
+        return [], []
+
+    profile = _PROFILES.get(model_name)
+    if profile is None:
+        return [], [
+            f"model '{model_name}' is not in the bundled profile table — "
+            f"it may be new, so capabilities were not checked"
+        ]
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    if has_tools and not profile.get("tool_calling", True):
+        errors.append(
+            f"model '{model_name}' does not support tool calling, and agent.md always binds tools"
+        )
+    return errors, warnings
+
+
 def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None) -> ValidationResult:
     """Parse and validate an agent file, returning structured results.
 
@@ -213,6 +242,27 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
             warnings.append(
                 f"max_cost_usd is set (${config.settings.max_cost_usd:.2f}) but no pricing data for "
                 f"{config.model.provider}/{config.model.name} — limit will not be enforced at runtime"
+            )
+
+    if config.model and config.model.provider == "openrouter":
+        cap_errors, cap_warnings = _openrouter_capability_notes(config.model.name, has_tools=True)
+        warnings.extend(cap_warnings)
+        warnings.extend(cap_errors)
+
+        max_out = None
+        try:
+            from langchain_openrouter.data._profiles import _PROFILES
+
+            max_out = (_PROFILES.get(config.model.name) or {}).get("max_output_tokens")
+        except ImportError:
+            pass
+        # settings.max_tokens defaults to 4096, so this fires for a default the
+        # user never chose. That is intended: the truncation is real either way,
+        # and the wording says "effective" rather than blaming the config.
+        if max_out and config.settings.max_tokens > max_out:
+            warnings.append(
+                f"effective max_tokens ({config.settings.max_tokens}) exceeds this model's "
+                f"max_output_tokens ({max_out}); output will be truncated"
             )
 
     return ValidationResult(

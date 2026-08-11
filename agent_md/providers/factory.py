@@ -135,6 +135,16 @@ def create_chat_model(
                 stream_usage=stream_usage,
             )
 
+        case "openrouter":
+            from agent_md.providers.keys import resolve_api_key
+            from agent_md.providers.openrouter import build_openrouter
+
+            return build_openrouter(
+                model=model,
+                settings=settings,
+                api_key=resolve_api_key(provider, base_url, api_key_env),
+            )
+
         case _:
             # Family B — any OpenAI-compatible endpoint, driven by config alone.
             if not base_url:
