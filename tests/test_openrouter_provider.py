@@ -156,17 +156,21 @@ async def test_failed_stream_leaves_no_cost_for_the_next():
     assert _cost_sink.get() is None
 
 
-def test_guard_upstream_still_drops_cost_on_the_terminal_chunk():
+async def test_guard_upstream_still_drops_cost_on_the_terminal_chunk():
     """Fails when langchain-openrouter starts attaching cost on the usage-only chunk.
 
-    Robust to whitespace/formatting: walks the AST of ``_astream`` for
-    ``AIMessageChunk`` constructors that carry ``usage_metadata`` (the
-    terminal usage-only path) and asserts none of them also pass
-    ``response_metadata``. Combined with a check that the choices path still
-    writes ``cost`` into ``response_metadata``, that is exactly the split the
-    shim compensates for.
+    Two signals, both required:
+
+    1. AST walk — every ``AIMessageChunk`` constructed with ``usage_metadata``
+       in ``_astream`` must not also pass ``response_metadata``. Formatting
+       alone cannot trip this.
+    2. Behavioural probe — drive upstream ``_astream`` with a fake SDK client
+       over a terminal usage chunk that carries ``cost``, and assert the emitted
+       message still has no ``response_metadata["cost"]``. An assignment *after*
+       construction (the false-pass shape for the AST check) fails this probe.
     """
-    from langchain_openrouter import chat_models
+    from langchain_core.messages import HumanMessage
+    from langchain_openrouter import ChatOpenRouter, chat_models
 
     source = textwrap.dedent(inspect.getsource(chat_models.ChatOpenRouter._astream))
     tree = ast.parse(source)
@@ -197,4 +201,42 @@ def test_guard_upstream_still_drops_cost_on_the_terminal_chunk():
     convert_src = inspect.getsource(chat_models._convert_chunk_to_message_chunk)
     assert "response_metadata" in convert_src and "cost" in convert_src, (
         "choices-path cost assembly disappeared — the shim's premise may no longer hold"
+    )
+
+    class _UsageOnlyChunk:
+        def model_dump(self, by_alias=True):
+            return {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                    "cost": 0.0042,
+                },
+            }
+
+    class _FakeSdkChat:
+        async def send_async(self, **kwargs):
+            async def _gen():
+                yield _UsageOnlyChunk()
+
+            return _gen()
+
+    class _FakeSdkClient:
+        def __init__(self):
+            self.chat = _FakeSdkChat()
+
+    model = ChatOpenRouter(model="probe", api_key="sk-test")
+    model.client = _FakeSdkClient()
+
+    seen_cost = None
+    async for generation in model._astream([HumanMessage(content="hi")]):
+        seen_cost = generation.message.response_metadata.get("cost")
+        break
+    else:
+        raise AssertionError("upstream _astream yielded nothing")
+
+    assert seen_cost is None, (
+        "langchain-openrouter now surfaces cost on the usage-only chunk — "
+        "re-check whether the cost shim in agent_md/providers/openrouter.py is still needed"
     )
