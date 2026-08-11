@@ -169,13 +169,13 @@ model:
 | Property | Value |
 |----------|-------|
 | **Type** | string |
-| **Required** | Conditional (required for `local` and for unknown provider names) |
+| **Required** | Conditional (required for unknown provider names) |
 | **Aliases** | `base_url`, `url` |
-| **Default** | Provider default |
+| **Default** | Provider default (`http://localhost:11434/v1` for `local`) |
 
 Base URL for API endpoint. Only needed for custom or local LLM endpoints.
 
-- For `local` provider: Required
+- For `local` provider: Optional — defaults to `http://localhost:11434/v1` (Ollama's OpenAI-compatible port) when omitted
 - For unknown provider names: Required (treats the endpoint as OpenAI-compatible)
 - For others: Optional (uses provider default)
 - For OpenAI-compatible endpoints (`openai`, `local`, OpenRouter-style custom names), the system appends `/v1` if missing
@@ -185,7 +185,7 @@ Base URL for API endpoint. Only needed for custom or local LLM endpoints.
 model:
   provider: local
   name: llama-3.1-8b
-  base_url: http://localhost:8000
+  # base_url omitted → http://localhost:11434/v1
 
 model:
   provider: local
@@ -915,7 +915,7 @@ The system validates agent configuration during startup and before execution:
 - `model` is optional — when omitted, uses defaults from `config.yaml`
 - When specified: `provider` must be one of `google`, `openai`, `anthropic`, `ollama`, `local`, `openrouter`, **or** any other name paired with a `base_url`
 - When specified: `name` must not be empty
-- `base_url` required for `local` and for unknown provider names
+- `base_url` required for unknown provider names; optional for `local` (defaults to `http://localhost:11434/v1`)
 - `api_key_env` optional — overrides the derived `<PROVIDER>_API_KEY` name
 - `stream_usage` optional (default `true`) — disable only for endpoints that reject streaming usage
 ### Trigger Configuration
