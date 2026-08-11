@@ -8,6 +8,7 @@ all four.
 from __future__ import annotations
 
 import agent_md.workspace.services as services
+from agent_md.workspace.services import validate_agent
 
 
 def test_provider_env_var_table_is_gone():
@@ -16,12 +17,42 @@ def test_provider_env_var_table_is_gone():
     )
 
 
-def test_no_hardcoded_keyless_tuples_remain():
-    from pathlib import Path
+def _write_agent(path, provider: str, base_url: str | None = None) -> None:
+    lines = [
+        "---",
+        "model:",
+        f"  provider: {provider}",
+        "  name: test-model",
+    ]
+    if base_url is not None:
+        lines.append(f"  base_url: {base_url}")
+    lines.extend(["---", "system prompt"])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    for rel in ("agent_md/cli/commands.py", "agent_md/workspace/services.py"):
-        source = Path(rel).read_text(encoding="utf-8")
-        assert '("ollama", "local")' not in source, f"{rel} still hardcodes the keyless provider list"
+
+def test_ollama_reports_key_not_required(tmp_path, monkeypatch):
+    """Outcome guard: ollama never needs a credential, regardless of env."""
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    agent = tmp_path / "ollama-agent.md"
+    _write_agent(agent, "ollama")
+    result = validate_agent(agent)
+    assert result.api_key_set is True
+
+
+def test_loopback_local_reports_key_not_required(tmp_path, monkeypatch):
+    monkeypatch.delenv("LOCAL_API_KEY", raising=False)
+    agent = tmp_path / "local-agent.md"
+    _write_agent(agent, "local", base_url="http://127.0.0.1:8000/v1")
+    result = validate_agent(agent)
+    assert result.api_key_set is True
+
+
+def test_remote_provider_reports_missing_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    agent = tmp_path / "openai-agent.md"
+    _write_agent(agent, "openai")
+    result = validate_agent(agent)
+    assert result.api_key_set is False
 
 
 def test_openrouter_key_is_detected(monkeypatch, tmp_path):
