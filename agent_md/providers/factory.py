@@ -45,10 +45,13 @@ def create_chat_model(
                     "Provider 'google' requires langchain-google-genai. "
                     "Install with: pip install langchain-google-genai"
                 )
+            from agent_md.providers.keys import resolve_api_key
+
             kwargs: dict = {
                 "model": model,
                 "temperature": temperature,
                 "max_output_tokens": max_tokens,
+                "api_key": resolve_api_key(provider, base_url, api_key_env),
             }
             if timeout is not None:
                 kwargs["timeout"] = timeout
@@ -61,10 +64,13 @@ def create_chat_model(
                 raise ImportError(
                     "Provider 'openai' requires langchain-openai. Install with: pip install langchain-openai"
                 )
+            from agent_md.providers.keys import resolve_api_key
+
             kwargs = {
                 "model": model,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
+                "api_key": resolve_api_key(provider, base_url, api_key_env),
             }
             if base_url:
                 kwargs["base_url"] = base_url
@@ -83,10 +89,13 @@ def create_chat_model(
                 raise ImportError(
                     "Provider 'anthropic' requires langchain-anthropic. Install with: pip install langchain-anthropic"
                 )
+            from agent_md.providers.keys import resolve_api_key
+
             kwargs = {
                 "model": model,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
+                "api_key": resolve_api_key(provider, base_url, api_key_env),
             }
             if timeout is not None:
                 kwargs["timeout"] = timeout
