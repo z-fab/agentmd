@@ -1661,7 +1661,7 @@ def _backend_pid(client) -> int | None:
         pass
 
     try:
-        return int(get_pid_path().read_text().strip())
+        return int(get_pid_path().read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
         return None
 

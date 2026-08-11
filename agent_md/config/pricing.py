@@ -28,12 +28,12 @@ def load_pricing() -> dict:
     if _pricing_cache is not None:
         return _pricing_cache
 
-    with open(_BUILTIN_PATH) as f:
+    with open(_BUILTIN_PATH, encoding="utf-8") as f:
         pricing = yaml.safe_load(f) or {}
 
     user_path = _get_user_pricing_path()
     if user_path.is_file():
-        with open(user_path) as f:
+        with open(user_path, encoding="utf-8") as f:
             user = yaml.safe_load(f) or {}
         # Deep merge: provider → model level
         for provider, models in user.items():

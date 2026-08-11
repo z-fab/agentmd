@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import locale
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -48,7 +50,10 @@ def _ensure_default_config() -> Path:
             },
             "log_level": "INFO",
         }
-        config_path.write_text(yaml.dump(default_config, default_flow_style=False, sort_keys=False))
+        config_path.write_text(
+            yaml.dump(default_config, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
     return config_path
 
 
@@ -68,7 +73,7 @@ def _find_env_files() -> list[str]:
     agents_subdir = "agents"
     if config_path.is_file():
         try:
-            raw = yaml.safe_load(config_path.read_text()) or {}
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             if raw.get("workspace"):
                 workspace_path = Path(raw["workspace"]).expanduser()
             if raw.get("agents_dir"):
@@ -88,20 +93,79 @@ def _find_env_files() -> list[str]:
     return files
 
 
+def _load_env_file(path: str | None = None, *, override: bool = False) -> str | None:
+    """Load one .env into ``os.environ``, tolerating a file that is not UTF-8.
+
+    python-dotenv reads .env as UTF-8. Setup wizards up to 0.17.2 wrote it with
+    the platform's locale encoding, so on a Windows console (cp1252) agentmd
+    produced a file it then refused to read. Since this module is imported by
+    every command, that surfaced as a traceback on *any* invocation, and
+    repairing the writer alone would leave those installs broken forever — the
+    bad file is already on disk and nothing rewrites it.
+
+    So: decode with the locale encoding as a fallback, which is precisely the
+    inverse of how such a file was created, and if even that fails, warn and
+    move on. A .env we cannot parse is a missing API key, not a dead CLI.
+
+    Returns the encoding that worked, or ``None`` if the file was unreadable.
+    Callers need this because pydantic-settings reads the same file a second
+    time, through its own ``env_file`` source, and has to be told the same
+    answer — otherwise it raises the very error we just absorbed.
+    """
+    args = () if path is None else (path,)
+    try:
+        load_dotenv(*args, override=override)
+        return "utf-8"
+    except UnicodeDecodeError:
+        pass
+
+    log = logging.getLogger(__name__)
+    label = path or ".env"
+    # getencoding() ignores UTF-8 mode, unlike getpreferredencoding(): we want
+    # the ANSI codepage that wrote the file, not what this interpreter prefers.
+    fallback = locale.getencoding()
+    if fallback.lower().replace("-", "").replace("_", "") != "utf8":
+        try:
+            load_dotenv(*args, override=override, encoding=fallback)
+        except (UnicodeDecodeError, LookupError):
+            pass
+        else:
+            log.warning(
+                "%s is not valid UTF-8; read it as %s instead. Re-save it as UTF-8.",
+                label,
+                fallback,
+            )
+            return fallback
+
+    log.warning(
+        "%s could not be decoded and was skipped; any API keys in it were not loaded.",
+        label,
+    )
+    return None
+
+
 # Load secrets into os.environ so third-party libs (e.g. LangChain) can find the keys.
 _env_files = _find_env_files()
+_readable_env_files: list[str] = []
+_env_file_encoding = "utf-8"
 for ef in _env_files:
-    load_dotenv(ef, override=True)  # later files override earlier ones
+    _used = _load_env_file(ef, override=True)  # later files override earlier ones
+    if _used:
+        _readable_env_files.append(ef)
+        _env_file_encoding = _used
 if not _env_files:
-    load_dotenv()  # fallback to default behavior
+    _load_env_file()  # fallback to default behavior
 
 
 class Settings(BaseSettings):
     """Application settings loaded from config.yaml + .env."""
 
+    # Only files _load_env_file could actually decode, paired with the encoding
+    # that worked for the last of them: pydantic-settings re-reads this file
+    # itself, so pointing it at an undecodable one resurrects the crash.
     model_config = SettingsConfigDict(
-        env_file=_env_files[-1] if _env_files else ".env",
-        env_file_encoding="utf-8",
+        env_file=_readable_env_files[-1] if _readable_env_files else ".env",
+        env_file_encoding=_env_file_encoding,
         extra="ignore",
     )
 

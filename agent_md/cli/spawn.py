@@ -115,6 +115,6 @@ def _spawn_backend(workspace: Path | None = None, extra_args: list[str] | None =
     finally:
         log_file.close()
 
-    get_pid_path().write_text(str(proc.pid))
+    get_pid_path().write_text(str(proc.pid), encoding="utf-8")
 
     return proc.pid
