@@ -113,10 +113,10 @@ def create_chat_model(
             return ChatOllama(**kwargs)
 
         case "local":
-            from agent_md.providers.keys import resolve_api_key
+            from agent_md.providers.keys import DEFAULT_LOCAL_BASE_URL, resolve_api_key
             from agent_md.providers.openai_compat import build_openai_compatible
 
-            resolved_url = base_url or "http://localhost:11434/v1"
+            resolved_url = base_url or DEFAULT_LOCAL_BASE_URL
             return build_openai_compatible(
                 model=model,
                 settings=settings,

@@ -17,6 +17,10 @@ from urllib.parse import urlparse
 
 SENTINEL_API_KEY = "not-needed"
 
+# Default endpoint for provider ``local`` — shared by key resolution and the factory
+# so both agree that an omitted base_url is loopback and needs no credential.
+DEFAULT_LOCAL_BASE_URL = "http://localhost:11434/v1"
+
 # Providers whose adapter takes no credential at all.
 _KEYLESS_PROVIDERS = frozenset({"ollama"})
 
@@ -46,6 +50,8 @@ def api_key_env_for(
         return api_key_env
     if provider in _KEYLESS_PROVIDERS:
         return None
+    if provider == "local" and not base_url:
+        base_url = DEFAULT_LOCAL_BASE_URL
     if is_loopback(base_url):
         return None
     return derive_key_env(provider)

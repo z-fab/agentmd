@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from agent_md.providers.keys import (
+    DEFAULT_LOCAL_BASE_URL,
     SENTINEL_API_KEY,
     api_key_env_for,
     derive_key_env,
@@ -59,6 +60,11 @@ def test_loopback_needs_no_key():
     assert api_key_env_for("local", base_url="http://localhost:11434/v1") is None
 
 
+def test_local_without_base_url_needs_no_key():
+    """Factory defaults local to loopback; key resolution must agree when base_url is omitted."""
+    assert api_key_env_for("local") is None
+
+
 def test_remote_unknown_provider_needs_derived_key():
     assert api_key_env_for("groq", base_url="https://api.groq.com/openai/v1") == "GROQ_API_KEY"
 
@@ -71,6 +77,21 @@ def test_resolve_returns_key_from_env(monkeypatch):
 def test_resolve_returns_sentinel_for_loopback(monkeypatch):
     monkeypatch.delenv("LOCAL_API_KEY", raising=False)
     assert resolve_api_key("local", base_url="http://localhost:8000/v1") == SENTINEL_API_KEY
+
+
+def test_resolve_returns_sentinel_for_local_without_base_url(monkeypatch):
+    monkeypatch.delenv("LOCAL_API_KEY", raising=False)
+    assert resolve_api_key("local") == SENTINEL_API_KEY
+
+
+def test_factory_uses_shared_local_default():
+    """The factory must import DEFAULT_LOCAL_BASE_URL, not restate the URL literal."""
+    from pathlib import Path
+
+    source = Path("agent_md/providers/factory.py").read_text(encoding="utf-8")
+    assert "DEFAULT_LOCAL_BASE_URL" in source
+    assert 'http://localhost:11434/v1' not in source
+    assert DEFAULT_LOCAL_BASE_URL == "http://localhost:11434/v1"
 
 
 def test_resolve_raises_when_key_missing(monkeypatch):
