@@ -76,8 +76,9 @@ def create_chat_model(
                 kwargs["base_url"] = base_url
                 # langchain-openai turns stream_usage off whenever base_url is
                 # set; without it usage_metadata stays empty and the token/cost
-                # limits silently never fire.
-                kwargs["stream_usage"] = True
+                # limits silently never fire. Honour an explicit False for older
+                # endpoints that reject stream_options.
+                kwargs["stream_usage"] = stream_usage
             if timeout is not None:
                 kwargs["timeout"] = timeout
             return ChatOpenAI(**kwargs)
