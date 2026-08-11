@@ -61,11 +61,16 @@ def api_key_env_for(
     base_url: str | None = None,
     api_key_env: str | None = None,
 ) -> str | None:
-    """Env var holding this model's key, or None when no key is needed."""
-    if api_key_env:
-        return api_key_env
+    """Env var holding this model's key, or None when no key is needed.
+
+    Keyless adapters (today: ``ollama``) stay keyless even when the agent sets
+    ``api_key_env`` — the factory never passes a credential to them, so treating
+    the override as required would block scheduling of an agent that runs fine.
+    """
     if provider in _KEYLESS_PROVIDERS:
         return None
+    if api_key_env:
+        return api_key_env
     if provider == "local" and not base_url:
         base_url = DEFAULT_LOCAL_BASE_URL
     if is_loopback(base_url):

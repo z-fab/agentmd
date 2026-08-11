@@ -100,14 +100,25 @@ def test_native_openai_present_key_allows(monkeypatch):
 @pytest.mark.parametrize(
     ("provider", "base_url", "api_key_env", "env_var"),
     [
+        # keyless adapter — api_key_env must not invent a requirement
         ("ollama", None, None, None),
+        ("ollama", None, "CUSTOM_OLLAMA_KEY", None),
+        # loopback local — default is keyless; explicit api_key_env is honoured
         ("local", None, None, None),
+        ("local", None, "CUSTOM_LOCAL_KEY", "CUSTOM_LOCAL_KEY"),
         ("local", "http://127.0.0.1:8000/v1", None, None),
+        ("local", "http://127.0.0.1:8000/v1", "CUSTOM_LOCAL_KEY", "CUSTOM_LOCAL_KEY"),
+        # remote local / family B / native — default env and explicit override
         ("local", "https://remote.example.com/v1", None, "LOCAL_API_KEY"),
+        ("local", "https://remote.example.com/v1", "MY_LOCAL_KEY", "MY_LOCAL_KEY"),
         ("groq", "https://api.groq.com/openai/v1", None, "GROQ_API_KEY"),
+        ("groq", "https://api.groq.com/openai/v1", "MY_GROQ_KEY", "MY_GROQ_KEY"),
         ("openai", None, None, "OPENAI_API_KEY"),
+        ("openai", None, "MY_OPENAI_KEY", "MY_OPENAI_KEY"),
         ("anthropic", None, None, "ANTHROPIC_API_KEY"),
+        ("anthropic", None, "MY_ANTHROPIC_KEY", "MY_ANTHROPIC_KEY"),
         ("google", None, None, "GOOGLE_API_KEY"),
+        ("google", None, "MY_GOOGLE_KEY", "MY_GOOGLE_KEY"),
         ("openai", "https://proxy.example.com/v1", "MY_PROXY_KEY", "MY_PROXY_KEY"),
     ],
 )
@@ -115,13 +126,16 @@ def test_gate_agrees_with_resolve_api_key(monkeypatch, provider, base_url, api_k
     """The schedule gate and create_chat_model's resolve_api_key must ask the same question.
 
     For every representative config: gate blocks iff resolve_api_key raises when
-    the key is unset, and both allow when the key is set.
+    the key is unset, and both allow when the key is set. Crosses api_key_env
+    set/unset against keyless, loopback, family B, and native providers.
     """
     config = _scheduled_config(provider, base_url, api_key_env)
     model = config.model
     assert model is not None
 
     if env_var is None:
+        if api_key_env:
+            monkeypatch.delenv(api_key_env, raising=False)
         monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
         monkeypatch.delenv("LOCAL_API_KEY", raising=False)
         assert _would_schedule(config)

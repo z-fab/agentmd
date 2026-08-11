@@ -63,6 +63,11 @@ def test_ollama_needs_no_key():
     assert api_key_env_for("ollama") is None
 
 
+def test_ollama_stays_keyless_even_with_api_key_env():
+    """The ollama adapter ignores credentials; api_key_env must not invent a requirement."""
+    assert api_key_env_for("ollama", api_key_env="CUSTOM_OLLAMA_KEY") is None
+
+
 def test_loopback_needs_no_key():
     assert api_key_env_for("local", base_url="http://localhost:11434/v1") is None
 
