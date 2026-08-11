@@ -219,7 +219,7 @@ model:
 | **Required** | No |
 | **Default** | `true` |
 
-Asks the endpoint for streaming token counts so `max_execution_tokens` and `max_cost_usd` can measure usage. Set `false` only for older OpenAI-compatible endpoints that reject `stream_options`. Leaving it `true` (the default) is required for limits to work on `local` and custom `base_url` agents.
+Asks the endpoint for streaming token counts so `max_execution_tokens` can measure usage. That also feeds `max_cost_usd` when a price is known — either an entry in `pricing.yaml` / `~/.config/agentmd/pricing.yaml`, or a cost OpenRouter reports on the response. A model with no pricing entry (typical for `local` and many custom endpoints) still will not enforce a cost cap; the runtime warns instead. Set `false` only for older OpenAI-compatible endpoints that reject `stream_options`. Leaving it `true` (the default) is required for **token** limits to work on `local` and custom `base_url` agents.
 
 ```yaml
 model:

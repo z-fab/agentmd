@@ -13,7 +13,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **Token and cost limits now actually measure on custom endpoints** — `langchain-openai` turns streaming usage reporting off whenever a custom `base_url` is set, so agents on the `local` provider (and any custom endpoint) produced empty `usage_metadata`. Both `max_execution_tokens` and `max_cost_usd` were comparing against zero and could never fire: the limits were written in the agent file, read by the runtime, and silently inert. They now measure what they always claimed to. **This can surface as an agent that "stopped working":** a `local` or custom-endpoint agent that has been quietly running past its configured limit will now be stopped by it. If that happens, the limit was never being honoured — raise it deliberately, or remove it.
+- **Token limits now measure on custom endpoints; cost limits depend on how the price is known** — `langchain-openai` turns streaming usage reporting off whenever a custom `base_url` is set, so agents on the `local` provider (and any custom endpoint) produced empty `usage_metadata`. `max_execution_tokens` was comparing against zero and could never fire. Streaming usage is now requested on those endpoints, so the **token** limit measures what it claimed to. Cost is not the same fix — it has three regimes:
+  - **`max_execution_tokens`** — enforces on every endpoint, including `local` and custom ones. This is the real fix for custom endpoints.
+  - **`max_cost_usd` on native providers** — enforces when the model has an entry in the built-in `pricing.yaml` (or your `~/.config/agentmd/pricing.yaml` override).
+  - **`max_cost_usd` on OpenRouter** — enforces against what OpenRouter reports it actually charged.
+  - **`max_cost_usd` on models with no pricing entry** (typical for `local` and family-B endpoints such as Groq) — still not enforced; the runtime logs a warning naming the model. Add the model to `~/.config/agentmd/pricing.yaml` if you need a cost cap there.
+
+  **This can surface as an agent that "stopped working":** a `local` or custom-endpoint agent that has been quietly running past its configured **token** limit will now be stopped by it. If that happens, the limit was never being honoured — raise it deliberately, or remove it. A cost cap on a model without pricing data was never enforcing and still is not.
 - **An agent whose API key is missing is refused at schedule time** — previously a scheduled agent with no key still registered and only died when the run started. Scheduling now fails early with an error that names the missing variable (e.g. `OPENROUTER_API_KEY`), so the agent is not left to fail unattended.
 
 ## [0.17.3] — 2026-08-11
