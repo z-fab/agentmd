@@ -415,7 +415,7 @@ def start(
     """Start the Agentmd backend."""
     from rich.console import Console
 
-    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
+    from agent_md.cli.errors import BackendAlreadyRunning, BackendStartupFailed, TcpRequiresApiKey
 
     console = Console()
     ws = Path(workspace) if workspace else None
@@ -453,6 +453,9 @@ def start(
     except (BackendAlreadyRunning, TcpRequiresApiKey) as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1)
+    except BackendStartupFailed as e:
+        console.print(f"[red]Backend failed to start: {e}[/red]")
+        raise typer.Exit(1)
 
 
 def _server_args(keep_alive: bool, port: int | None, host: str, api_key: str | None) -> list[str]:
@@ -470,7 +473,7 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
     import uvicorn
     from agent_md.api.app import create_app
     from agent_md.cli.client import BackendClient, get_socket_path, get_state_dir
-    from agent_md.cli.errors import BackendAlreadyRunning, TcpRequiresApiKey
+    from agent_md.cli.errors import BackendAlreadyRunning, BackendStartupFailed, TcpRequiresApiKey
     from agent_md.util.tasks import spawn_background
 
     # Refuse an unauthenticated TCP bind before touching the socket or the runtime.
@@ -544,6 +547,13 @@ async def _run_backend(workspace, keep_alive, port, host, api_key, quiet):
         await asyncio.gather(server.serve(), tcp_server.serve())
     else:
         await server.serve()
+
+    # uvicorn turns a failed lifespan startup into a log line and a normal
+    # return, so without this `agentmd start` exits 0 for a backend that came up
+    # on nothing — and callers like `ensure_backend` read that as success.
+    startup_error = getattr(app.state, "startup_error", None)
+    if startup_error is not None:
+        raise BackendStartupFailed(str(startup_error) or type(startup_error).__name__) from startup_error
 
 
 # ---------------------------------------------------------------------------

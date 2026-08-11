@@ -63,10 +63,28 @@ class Runtime:
             self.scheduler.stop()
 
     async def aclose(self):
-        """Async cleanup — call instead of stop() + db.close()."""
-        self.stop()
-        await self.runner.aclose()
-        await self.db.close()
+        """Async cleanup — call instead of stop() + db.close().
+
+        Every step is independent and none of them may raise. This runs from the
+        lifespan's ``finally``, including when startup itself failed, so it has
+        to tolerate a runtime whose parts are in unknown states — and a failure
+        here would both skip the steps after it and mask the error that caused
+        the shutdown in the first place. ``db.close()`` is the one that must
+        never be skipped: aiosqlite's worker thread is non-daemon and an
+        unclosed connection hangs interpreter exit (#17).
+        """
+        try:
+            self.stop()
+        except Exception as e:
+            logger.warning(f"Scheduler shutdown failed: {e}")
+        try:
+            await self.runner.aclose()
+        except Exception as e:
+            logger.warning(f"Runner shutdown failed: {e}")
+        try:
+            await self.db.close()
+        except Exception as e:
+            logger.warning(f"Database close failed: {e}")
 
 
 def _resolve_path(value: str, workspace: Path) -> Path:
@@ -161,97 +179,120 @@ async def bootstrap(
     db = Database(db_path)
     await db.connect(readonly=readonly)
 
-    # Sweep orphaned executions from previous crashes (skip in read-only mode)
-    if not readonly:
-        cleaned = await sweep_orphans(db)
-        if cleaned:
-            logger.info(f"Cleaned {cleaned} orphaned execution(s)")
-
-        # Checkpoint retention sweep (HILT-aware)
-        try:
-            from agent_md.execution.checkpoint_maint import sweep_old_checkpoints
-
-            removed = await sweep_old_checkpoints(db, db_path, settings.defaults_checkpoint_retention_days)
-            if removed:
-                logger.info(f"Checkpoint sweep removed {removed} old thread(s)")
-        except Exception as e:
-            logger.warning(f"Checkpoint sweep skipped: {e}")
-
-    # Load MCP server configuration — invalid JSON must not prevent startup
+    # Everything from here to the `return` runs with the connection open, and
+    # `db` is the only reference to it until the caller gets a Runtime. A step
+    # that raises in between would strand it, and aiosqlite's non-daemon worker
+    # thread then blocks interpreter exit: the process prints its error and
+    # never dies (#17). Hence one guard over the whole assembly.
     try:
-        mcp_servers = load_mcp_config(mcp_config)
-    except Exception as e:
-        logger.error(f"Failed to load MCP config from {mcp_config}: {e}. Continuing with no MCP servers.")
-        mcp_servers = {}
-    mcp_manager = MCPManager(mcp_servers)
+        # Sweep orphaned executions from previous crashes (skip in read-only mode)
+        if not readonly:
+            cleaned = await sweep_orphans(db)
+            if cleaned:
+                logger.info(f"Cleaned {cleaned} orphaned execution(s)")
 
-    # Create core components
-    registry = AgentRegistry()
-    runner = AgentRunner(db, mcp_manager, path_context, db_path=str(db_path), registry=registry)
-    scheduler = None
-
-    # Scan agents directory for .md files
-    md_files = sorted(f for f in agents_dir.glob("*.md") if is_agent_file(f))
-    loaded = 0
-    errors = 0
-
-    for md_file in md_files:
-        try:
-            config = parse_agent_file(md_file)
-            registry.register(config)
-            loaded += 1
-        except Exception as e:
-            logger.error(f"Failed to load {md_file.name}: {e}")
-            errors += 1
-
-    logger.info(f"Loaded {loaded} agents ({errors} errors) from {agents_dir}")
-
-    # Scan skills directory for SKILL.md files
-    if skills_dir.exists():
-        from agent_md.skills.parser import parse_skill_metadata
-
-        skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir())
-        skills_loaded = 0
-        skills_errors = 0
-
-        for skill_dir in skill_dirs:
-            skill_file = skill_dir / "SKILL.md"
-            if not skill_file.exists():
-                continue
+            # Checkpoint retention sweep (HILT-aware)
             try:
-                parse_skill_metadata(skill_file)
-                skills_loaded += 1
+                from agent_md.execution.checkpoint_maint import sweep_old_checkpoints
+
+                removed = await sweep_old_checkpoints(db, db_path, settings.defaults_checkpoint_retention_days)
+                if removed:
+                    logger.info(f"Checkpoint sweep removed {removed} old thread(s)")
             except Exception as e:
-                logger.error(f"Failed to load skill {skill_dir.name}: {e}")
-                skills_errors += 1
+                logger.warning(f"Checkpoint sweep skipped: {e}")
 
-        if skills_loaded or skills_errors:
-            logger.info(f"Discovered {skills_loaded} skills ({skills_errors} errors) from {skills_dir}")
+        # Load MCP server configuration — invalid JSON must not prevent startup
+        try:
+            mcp_servers = load_mcp_config(mcp_config)
+        except Exception as e:
+            logger.error(f"Failed to load MCP config from {mcp_config}: {e}. Continuing with no MCP servers.")
+            mcp_servers = {}
+        mcp_manager = MCPManager(mcp_servers)
 
-    # Schedule enabled agents (only when explicitly requested)
-    if start_scheduler:
-        scheduler = AgentScheduler(
-            registry,
-            runner,
-            path_context,
-            on_event=on_event,
-            on_complete=on_complete,
-            on_start=on_start,
-            event_bus=event_bus,
-            global_event_bus=global_event_bus,
-            cancel_events=cancel_events if cancel_events is not None else {},
+        # Create core components
+        registry = AgentRegistry()
+        runner = AgentRunner(db, mcp_manager, path_context, db_path=str(db_path), registry=registry)
+        scheduler = None
+
+        # Scan agents directory for .md files
+        md_files = sorted(f for f in agents_dir.glob("*.md") if is_agent_file(f))
+        loaded = 0
+        errors = 0
+
+        for md_file in md_files:
+            try:
+                config = parse_agent_file(md_file)
+                registry.register(config)
+                loaded += 1
+            except Exception as e:
+                logger.error(f"Failed to load {md_file.name}: {e}")
+                errors += 1
+
+        logger.info(f"Loaded {loaded} agents ({errors} errors) from {agents_dir}")
+
+        # Scan skills directory for SKILL.md files
+        if skills_dir.exists():
+            from agent_md.skills.parser import parse_skill_metadata
+
+            skill_dirs = sorted(d for d in skills_dir.iterdir() if d.is_dir())
+            skills_loaded = 0
+            skills_errors = 0
+
+            for skill_dir in skill_dirs:
+                skill_file = skill_dir / "SKILL.md"
+                if not skill_file.exists():
+                    continue
+                try:
+                    parse_skill_metadata(skill_file)
+                    skills_loaded += 1
+                except Exception as e:
+                    logger.error(f"Failed to load skill {skill_dir.name}: {e}")
+                    skills_errors += 1
+
+            if skills_loaded or skills_errors:
+                logger.info(f"Discovered {skills_loaded} skills ({skills_errors} errors) from {skills_dir}")
+
+        # Schedule enabled agents (only when explicitly requested)
+        if start_scheduler:
+            scheduler = AgentScheduler(
+                registry,
+                runner,
+                path_context,
+                on_event=on_event,
+                on_complete=on_complete,
+                on_start=on_start,
+                event_bus=event_bus,
+                global_event_bus=global_event_bus,
+                cancel_events=cancel_events if cancel_events is not None else {},
+            )
+            try:
+                for config in registry.enabled():
+                    scheduler.schedule_agent(config)
+
+                scheduler.start(agents_dir)
+            except BaseException:
+                # Half-started is the worst state to abandon: the caller never gets
+                # a Runtime, so nothing else can reach this scheduler to stop it.
+                scheduler.stop()
+                raise
+
+        return Runtime(
+            registry=registry,
+            runner=runner,
+            scheduler=scheduler,
+            db=db,
+            workspace=workspace,
+            mcp_manager=mcp_manager,
+            path_context=path_context,
         )
-        for config in registry.enabled():
-            scheduler.schedule_agent(config)
+    except BaseException:
+        await _close_quietly(db)
+        raise
 
-        scheduler.start(agents_dir)
 
-    return Runtime(
-        registry=registry,
-        runner=runner,
-        scheduler=scheduler,
-        db=db,
-        workspace=workspace,
-        mcp_manager=mcp_manager,
-        path_context=path_context,
-    )
+async def _close_quietly(db: Database) -> None:
+    """Close *db* from an except block without replacing the error in flight."""
+    try:
+        await db.close()
+    except Exception as e:
+        logger.warning(f"Failed to close database after a failed bootstrap: {e}")
