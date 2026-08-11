@@ -74,14 +74,6 @@ class ValidationResult:
     warnings: list[str] = field(default_factory=list)
 
 
-# Map provider to environment variable name
-_PROVIDER_ENV_VARS = {
-    "google": "GOOGLE_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
-
-
 def _resolve_relative(path: str, workspace: Path) -> Path:
     """Resolve a potentially relative path against a workspace root."""
     p = Path(path).expanduser()
@@ -188,11 +180,15 @@ def validate_agent(agent_name_or_file: str | Path, workspace: Path | None = None
     # Check API key
     api_key_set = False
     if config.model:
-        env_var = _PROVIDER_ENV_VARS.get(config.model.provider)
-        if env_var:
-            api_key_set = bool(os.environ.get(env_var))
-        elif config.model.provider in ("ollama", "local"):
-            api_key_set = True  # No key needed
+        from agent_md.providers.keys import api_key_env_for
+
+        env_var = api_key_env_for(
+            config.model.provider,
+            config.model.base_url,
+            config.model.api_key_env,
+        )
+        # None means the provider needs no credential (ollama, loopback endpoints).
+        api_key_set = True if env_var is None else bool(os.environ.get(env_var))
 
     # Validate trigger
     if config.trigger.type == "schedule" and config.trigger.cron:
