@@ -15,12 +15,16 @@ from rich.table import Table
 
 from agent_md.cli import app
 from agent_md.cli.theme import console, make_panel, print_error, print_success
+from agent_md.providers.keys import api_key_env_for
 
+# Curation only: which providers the wizard offers, and a sane default model.
+# Env-var names are derived via api_key_env_for — never restated here.
 PROVIDERS = {
-    "google": {"env_var": "GOOGLE_API_KEY", "default_model": "gemini-2.5-flash"},
-    "openai": {"env_var": "OPENAI_API_KEY", "default_model": "gpt-4o"},
-    "anthropic": {"env_var": "ANTHROPIC_API_KEY", "default_model": "claude-sonnet-4-20250514"},
-    "ollama": {"env_var": None, "default_model": "llama3"},
+    "google": {"default_model": "gemini-2.5-flash"},
+    "openai": {"default_model": "gpt-4o"},
+    "anthropic": {"default_model": "claude-sonnet-4-20250514"},
+    "openrouter": {"default_model": "anthropic/claude-sonnet-4"},
+    "ollama": {"default_model": "llama3"},
 }
 
 
@@ -69,9 +73,10 @@ def _build_env_content(api_key: str | None, env_var: str | None) -> str:
     if api_key and env_var:
         lines.append(f"{env_var}={api_key}")
     else:
-        lines.append("# GOOGLE_API_KEY=...")
-        lines.append("# OPENAI_API_KEY=sk-...")
-        lines.append("# ANTHROPIC_API_KEY=sk-ant-...")
+        for provider in PROVIDERS:
+            key_env = api_key_env_for(provider)
+            if key_env:
+                lines.append(f"# {key_env}=...")
     return "\n".join(lines) + "\n"
 
 
@@ -156,14 +161,16 @@ def _build_config_panel():
     workspace = current.workspace or str(Path.home() / "agentmd")
     ws_path = Path(workspace).expanduser().resolve()
 
-    # Detect which providers have keys
+    # Detect which providers have keys (wizard offerings + configured default,
+    # so a family-B user on groq/etc. sees their own key rather than a blank).
+    candidates = list(PROVIDERS.keys())
+    if current.defaults_provider and current.defaults_provider not in candidates:
+        candidates.append(current.defaults_provider)
     providers = []
-    if current.GOOGLE_API_KEY:
-        providers.append("google")
-    if current.OPENAI_API_KEY:
-        providers.append("openai")
-    if current.ANTHROPIC_API_KEY:
-        providers.append("anthropic")
+    for name in candidates:
+        env_var = api_key_env_for(name)
+        if env_var and os.environ.get(env_var):
+            providers.append(name)
 
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Key", style="bold")
@@ -236,7 +243,7 @@ def setup():
     # 3. API Key
     console.print("\n  [bold]3/4 · API Key[/bold]")
     api_key = None
-    env_var = PROVIDERS[provider]["env_var"]
+    env_var = api_key_env_for(provider)
     if env_var:
         existing_key = os.environ.get(env_var, "")
         if existing_key:
@@ -249,7 +256,7 @@ def setup():
         else:
             api_key = Prompt.ask(f"  {env_var}", password=True)
     else:
-        console.print("  No API key needed for ollama")
+        console.print(f"  No API key needed for {provider}")
 
     # 4. Defaults (optional)
     console.print("\n  [bold]4/4 · Defaults[/bold] [dim](press Enter to keep defaults)[/dim]")
